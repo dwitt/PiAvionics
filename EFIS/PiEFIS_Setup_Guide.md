@@ -49,7 +49,7 @@ Notes:
 
 - Verify the oscillator frequency on your CAN board
 - Some boards require `spimaxfrequency=1000000`
-- The `gpio-shutdown` overlay enables a clean shutdown when GPIO17 is pulled low (e.g. via a pushbutton to ground)
+- The `gpio-shutdown` overlay enables a clean shutdown when GPIO17 is pulled low — see the "Power Button (Shutdown and Wake)" section below for wiring and details
 
 Save and reboot:
 
@@ -73,6 +73,49 @@ candump can0
 ```
 
 If CAN traffic appears, continue.
+
+---
+
+## Power Button (Shutdown and Wake)
+
+A single momentary pushbutton provides both clean shutdown and power-up, using the `gpio-shutdown` overlay added in the CAN section above.
+
+### Wiring
+
+Connect one momentary pushbutton to ground, wired through two diodes to **GPIO17** and **GPIO3** (cathodes toward the GPIO pins). Pressing the button pulls both pins low simultaneously, while the diodes keep the two pins isolated from each other.
+
+The isolation matters because GPIO3 is also the I²C clock line (SCL) — without diodes, GPIO17's pull-up would interact with the I²C bus.
+
+### How It Works
+
+- **Pressed while running:** GPIO17 goes low and the `gpio-shutdown` overlay triggers a clean OS shutdown. The Pi ends in a halted state with the power rails still live.
+- **Pressed while halted:** the firmware watches GPIO3; pulling it low boots the Pi.
+- The brief low pulse on SCL when the button is pressed during runtime is harmless — I²C transactions simply retry.
+
+### Pi 4 EEPROM Requirements
+
+On a Pi 4 / Pi 400 / CM4 the wake behavior is governed by two bootloader EEPROM settings, which must be:
+
+```ini
+WAKE_ON_GPIO=1
+POWER_OFF_ON_HALT=0
+```
+
+These are the factory defaults. Verify with:
+
+```bash
+sudo rpi-eeprom-config | grep -E "WAKE_ON_GPIO|POWER_OFF_ON_HALT"
+```
+
+### Standby Current
+
+In the halted state a Pi 4 still draws roughly 250–350 mA (~1.5 W), because the rails stay powered so the firmware can watch GPIO3. The avionics master switch is the true power cutoff. (Setting `POWER_OFF_ON_HALT=1` would drop standby draw to a few milliamps, but disables GPIO3 wake entirely.)
+
+### Model Compatibility
+
+- **Pi 1 / 2 / 3 / Zero / Zero 2 W** — works; halt always leaves the rails powered and GPIO3 wake is hardwired. No settings to check.
+- **Pi 4 / Pi 400 / CM4** — works, governed by the EEPROM settings above.
+- **Pi 5 / CM5** — GPIO3 wake is **not supported**; the power management chip only listens to the dedicated power button. Wire an external button to the 2-pin **J2** header instead — it handles both shutdown and wake, no diodes needed.
 
 ---
 
