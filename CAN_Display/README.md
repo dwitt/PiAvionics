@@ -68,50 +68,99 @@ needs to move.
 
 ## Hardware wiring
 
+### Reading from the GLCD: not supported, by the library, not just by choice
+
+u8g2's KS0108 driver is write-only at the code level, independent of wiring.
+Checked directly against the installed library source
+(`U8x8lib.cpp:u8x8_byte_arduino_ks0108`, and the `U8G2_KS0108_128X64_F`
+constructor in `U8g2lib.h`): the constructor never takes an R/W pin, and the
+byte-callback only implements the write-side message set (`BYTE_SEND`,
+`BYTE_INIT`, `SET_DC`, `START/END_TRANSFER`) -- there's no busy-flag poll and
+no VRAM readback path on any platform. Enabling reads would mean writing a
+custom driver, not extra wiring. It also buys little here: u8g2's full-buffer
+mode keeps the entire 1KB framebuffer in the Feather's RAM (trivial against
+264KB) and resends it each refresh; busy-flag polling only pays off at
+redraw rates well beyond what a several-times-a-second backup instrument
+needs. So R/W is tied directly to GND (5V side) -- a static level, not a
+signal the firmware ever toggles.
+
+### Level shifting (3.3V -> 5V, all 13 dynamic lines)
+
+This GLCD module is 5V-logic (typical for KS0108 clones of this vintage) and
+the Feather RP2040's GPIO are 3.3V and not 5V-tolerant. Driving 5V-CMOS
+inputs directly from 3.3V is marginal on *every* line the RP2040 drives, not
+just a read-related concern -- so rather than rely on that margin, the 8
+data lines and 5 control lines (RS, E, CS1, CS2, RST) are level-shifted with
+two **74HCT541** octal non-inverting buffers (~$1 each). HCT-family inputs
+have TTL-compatible thresholds regardless of the 5V supply, so 3.3V CMOS
+highs from the RP2040 register cleanly, and the output side runs a full,
+unambiguous 5V logic swing into the GLCD.
+
+74HCT541 wiring (both chips): `OE1`/`OE2` (pins 1, 19) tied to GND (outputs
+always enabled), `VCC` (pin 20) to the 5V rail, `GND` (pin 10) to common
+ground shared with the Feather and GLCD, plus a 0.1&#181;F ceramic decoupling
+cap across VCC/GND close to each chip. Inputs `A1-A8` (pins 2-9) are 3.3V
+side, from the Feather; outputs `Y1-Y8` (pins 18-11, note the reversed pin
+order) are 5V side, to the GLCD.
+
+| 74HCT541 #1 (data bus) | A (3.3V, from Feather) | Y (5V, to GLCD) |
+|---|---|---|
+| ch 1 | D5 | DB0 |
+| ch 2 | D6 | DB1 |
+| ch 3 | D9 | DB2 |
+| ch 4 | D10 | DB3 |
+| ch 5 | D11 | DB4 |
+| ch 6 | D12 | DB5 |
+| ch 7 | D24 | DB6 |
+| ch 8 | D25 | DB7 |
+
+| 74HCT541 #2 (control) | A (3.3V, from Feather) | Y (5V, to GLCD) |
+|---|---|---|
+| ch 1 | A0 | RS (DI) |
+| ch 2 | A2 | E (enable) |
+| ch 3 | A3 | CS1 |
+| ch 4 | D0 | CS2 |
+| ch 5 | D1 | RST |
+| ch 6-8 | tie A6-A8 to GND (unused CMOS inputs shouldn't float) | not connected |
+
 ### Display_Feather -- KS0108 GLCD
 
 Standard 20-pin KS0108 header. **Verify pin *order* against your specific
 board's silkscreen** -- CS1/CS2 left/right assignment is known to vary
 between manufacturers of this clone; everything else below is consistent
-across boards.
+across boards. "Feather RP2040 pin" below means "through the matching
+74HCT541 channel above," except VCC/GND/contrast/backlight/R-W which connect
+directly (no shifting needed for static levels or the analog contrast tap).
 
-| GLCD pin | Signal | Feather RP2040 pin | Notes |
+| GLCD pin | Signal | Connects to | Notes |
 |---|---|---|---|
 | 1 | GND | GND | |
-| 2 | VCC | 5V (`USB`/`BAT`) | see logic-level note below |
+| 2 | VCC | 5V (`USB`/`BAT`) | |
 | 3 | V0 (contrast) | wiper of 10-20k&#8486; trimpot between VCC and GND | not a GPIO |
-| 4 | RS (DI) | A0 | |
-| 5 | R/W | **GND** (tie permanently low) | write-only mode -- see logic-level note |
-| 6 | E (enable) | A2 | |
-| 7 | DB0 | D5 | |
-| 8 | DB1 | D6 | |
-| 9 | DB2 | D9 | |
-| 10 | DB3 | D10 | |
-| 11 | DB4 | D11 | |
-| 12 | DB5 | D12 | |
-| 13 | DB6 | D24 | |
-| 14 | DB7 | D25 | |
-| 15 | CS1 | A3 | |
-| 16 | CS2 | D0 | |
-| 17 | RST | D1 | |
+| 4 | RS (DI) | Feather A0, via 74HCT541 #2 ch1 | |
+| 5 | R/W | **GND** (tie permanently low, 5V side, no shifter needed) | write-only -- see above |
+| 6 | E (enable) | Feather A2, via 74HCT541 #2 ch2 | |
+| 7 | DB0 | Feather D5, via 74HCT541 #1 ch1 | |
+| 8 | DB1 | Feather D6, via 74HCT541 #1 ch2 | |
+| 9 | DB2 | Feather D9, via 74HCT541 #1 ch3 | |
+| 10 | DB3 | Feather D10, via 74HCT541 #1 ch4 | |
+| 11 | DB4 | Feather D11, via 74HCT541 #1 ch5 | |
+| 12 | DB5 | Feather D12, via 74HCT541 #1 ch6 | |
+| 13 | DB6 | Feather D24, via 74HCT541 #1 ch7 | |
+| 14 | DB7 | Feather D25, via 74HCT541 #1 ch8 | |
+| 15 | CS1 | Feather A3, via 74HCT541 #2 ch3 | |
+| 16 | CS2 | Feather D0, via 74HCT541 #2 ch4 | |
+| 17 | RST | Feather D1, via 74HCT541 #2 ch5 | |
 | 18 | VEE | -- | charge-pump output, do not connect externally |
 | 19 | LED+ (backlight) | 5V through a series resistor (value depends on backlight forward current, typ. ~10-22&#8486; for these modules -- confirm against your module) | omit if no backlight fitted |
 | 20 | LED- (backlight) | GND | |
 
 Leaves `SCK`/`MOSI`/`MISO` free (future expansion, e.g. SD logging) and
 `D13` free (onboard red LED, no extra wiring needed for a status LED).
-`SDA`/`SCL` reserved for I2C to CAN_Feather.
-
-**Logic-level risk**: this GLCD module is a 5V-logic part (typical for
-KS0108 clones of this vintage) but the Feather RP2040's GPIO are 3.3V and
-**not 5V-tolerant**. Driving the panel's inputs from 3.3V logic usually still
-registers a valid HIGH on 5V-CMOS inputs, but the GLCD's data-out lines (when
-reading the busy flag) would drive 5V back into a 3.3V-only RP2040 pin, which
-is out of spec and can damage it. **Tying R/W permanently to GND** (as
-above) sidesteps this entirely -- the display is write-only, u8g2's KS0108
-driver never reads the busy flag, and no pin on the GLCD ever drives back
-into the Feather. If you ever want bidirectional reads, add a level-shifter
-(e.g. 74HCT245) instead of wiring R/W to a GPIO directly.
+`SDA`/`SCL` reserved for I2C to CAN_Feather. Firmware pin `#define`s in
+`Display_Feather.ino` are unchanged by the level shifter -- it sits
+physically between the Feather and the GLCD; the GPIO numbers the code
+drives are the same either way.
 
 ### CAN_Feather -- MCP2515 FeatherWing
 

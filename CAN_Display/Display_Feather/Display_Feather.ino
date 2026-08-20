@@ -5,9 +5,10 @@
 // CAN_Display/README.md for wiring.
 //
 // Hardware: Adafruit Feather RP2040 + KS0108 128x64 GLCD (20-pin, 2x KS0108 +
-// KS0107 + charge-pump). R/W is tied to GND on the GLCD (write-only mode --
-// see README for why): the GLCD never drives data back into the RP2040's
-// 3.3V-only GPIO.
+// KS0107 + charge-pump), through two 74HCT541 3.3V->5V level shifters (data
+// bus + control lines). R/W is tied to GND on the 5V side (write-only mode
+// -- u8g2's KS0108 driver has no read path regardless of wiring). See
+// README for the full level-shifter wiring and why.
 // ============================================================================
 
 #include <U8g2lib.h>
