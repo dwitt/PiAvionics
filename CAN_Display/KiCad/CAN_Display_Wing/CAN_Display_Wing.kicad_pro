@@ -1,0 +1,14 @@
+{
+  "board": { "3dviewports": [] },
+  "boards": [],
+  "cvpcb": { "equivalence_files": [] },
+  "libraries": { "pinned_footprint_libs": [], "pinned_symbol_libs": [] },
+  "meta": { "filename": "CAN_Display_Wing.kicad_pro", "version": 1 },
+  "net_settings": { "classes": [{"name": "Default", "priority": 0}] },
+  "pcbnew": {
+    "last_paths": { "gencad": "", "idf": "", "netlist": "", "specctra_dsn": "", "step": "", "vrml": "" },
+    "page_layout_descr_file": ""
+  },
+  "schematic": { "legacy_lib_dir": "", "legacy_lib_list": [] },
+  "sheets": [["6a1e6f2e-9a0b-4e5a-8a2a-2f6e2a6c1a01", "Root"]]
+}

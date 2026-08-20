@@ -257,6 +257,39 @@ is a first-pass starting point -- expect to tune exact column x-positions
 once it's visible on the real panel; glyph metrics can shift things a few
 pixels from what's planned on paper.
 
+## KiCad schematic
+
+`KiCad/CAN_Display_Wing/` has a starting-point KiCad 10 project for a
+FeatherWing implementing the Display_Feather side (GLCD + both level
+shifters) -- `CAN_Display_Wing.kicad_pro`/`.kicad_sch`, plus a project-local
+symbol library (`CAN_Display_Wing.kicad_sym`) holding hand-authored
+`SN74LVC4245A` and `KS0108_GLCD_20` symbols (verified pin-for-pin against
+the datasheet and this README's GLCD table -- not from a stock library,
+since neither part had a ready-made KiCad symbol). Reuses the existing
+`Dave KiCad Library:Feather_RP2040` symbol for U1, and stock
+`74xx:74HCT541` / `Device:*` / `Connector_Generic:*` symbols elsewhere.
+
+All 35 nets in the schematic were generated programmatically from the exact
+pin tables above (not hand-drawn), then checked with `kicad-cli sch erc`.
+The only ERC violations that remain are either intentionally-spare Feather
+pins (Rst, Aref, SPI bus, D4/D13, EN/BAT/USB -- matching the "leaves ...
+free" note above), the two intentionally-unused 74HCT541 channels, or a
+handful of pin-type false positives inherited from the shared
+`Feather_RP2040` symbol (some GPIO pins are typed "input" in that symbol
+even though they're driven outputs in this design) -- not actual wiring
+mistakes. Component placement is a first pass (like the GLCD text layout,
+expect some `endpoint_off_grid` nudging once you're arranging things in the
+GUI); the electrical connectivity is what's been verified.
+
+**Design decision baked into this schematic, not yet reflected anywhere
+else**: it deliberately does *not* source 5V from the Feather's `USB` pin
+(only present when a literal USB cable is connected, not from `BAT`) --
+that would make the backup display go dark exactly when main-bus/USB power
+is the thing that failed. Instead there's a dedicated `PWR_5V_IN` 2-pin
+connector (J3) for an independent 5V feed from your aircraft power
+distribution. Confirm this matches how you intend to power the Feather
+itself before wiring it up.
+
 ## Phase 2 (not implemented)
 
 - **GPS** (`0x64`: ground speed, altitude, track) -- struct/validMask have
