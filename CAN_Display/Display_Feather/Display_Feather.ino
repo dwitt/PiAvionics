@@ -5,10 +5,12 @@
 // CAN_Display/README.md for wiring.
 //
 // Hardware: Adafruit Feather RP2040 + KS0108 128x64 GLCD (20-pin, 2x KS0108 +
-// KS0107 + charge-pump), through two 74HCT541 3.3V->5V level shifters (data
-// bus + control lines). R/W is tied to GND on the 5V side (write-only mode
-// -- u8g2's KS0108 driver has no read path regardless of wiring). See
-// README for the full level-shifter wiring and why.
+// KS0107 + charge-pump), through an SN74LVC4245A bidirectional level shifter
+// (data bus) and a 74HCT541 unidirectional shifter (control lines). The data
+// bus and R/W are wired for real bidirectional capability, but u8g2's KS0108
+// driver has no read path on any platform -- so GLCD_RW is held low at boot
+// and never toggled; a future custom read-capable driver would take over
+// that pin. See README for the full level-shifter wiring and why.
 // ============================================================================
 
 #include <U8g2lib.h>
@@ -18,9 +20,11 @@
 #define VERSION "1.0.0"
 
 // ----------------------------------------------------------------------------
-// GLCD wiring -- see README.md for the full GLCD-pin -> Feather-pin table.
-// R/W is tied to GND in hardware (not driven by a GPIO): u8g2's KS0108
-// driver is write-only and never needs it.
+// GLCD wiring -- see README.md for the full GLCD-pin -> Feather-pin table
+// (via the SN74LVC4245A data-bus shifter and 74HCT541 control-line shifter).
+// GLCD_RW is a real GPIO (the board is wired for bidirectional capability)
+// but u8g2's KS0108 driver never reads, so it's held low at boot -- see
+// README's "Firmware today: write-only regardless of the hardware".
 // ----------------------------------------------------------------------------
 #define GLCD_D0 D5
 #define GLCD_D1 D6
@@ -31,6 +35,7 @@
 #define GLCD_D6 D24
 #define GLCD_D7 D25
 #define GLCD_RS A0   // register select (DI)
+#define GLCD_RW A1   // read/write -- held low (write) at boot, see above
 #define GLCD_E  A2   // enable strobe
 #define GLCD_CS1 A3
 #define GLCD_CS2 D0
@@ -76,6 +81,12 @@ void onI2CReceive(int numBytes) {
 // ----------------------------------------------------------------------------
 void setup() {
   Serial.begin(115200);
+
+  // u8g2's KS0108 driver never drives this pin (it has no read path), and
+  // it's not part of the U8G2_KS0108_128X64_F constructor -- hold it low
+  // (write) ourselves so the SN74LVC4245A's DIR input isn't left floating.
+  pinMode(GLCD_RW, OUTPUT);
+  digitalWrite(GLCD_RW, LOW);
 
   u8g2.begin();
   u8g2.setFont(u8g2_font_6x10_tf);

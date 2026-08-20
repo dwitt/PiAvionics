@@ -81,47 +81,98 @@ custom driver, not extra wiring. It also buys little here: u8g2's full-buffer
 mode keeps the entire 1KB framebuffer in the Feather's RAM (trivial against
 264KB) and resends it each refresh; busy-flag polling only pays off at
 redraw rates well beyond what a several-times-a-second backup instrument
-needs. So R/W is tied directly to GND (5V side) -- a static level, not a
-signal the firmware ever toggles.
+needs. The hardware below is bidirectional-capable anyway (see "Level
+shifting"), so R/W is a real GPIO -- but the current firmware just holds it
+low permanently at boot and never toggles it.
 
-### Level shifting (3.3V -> 5V, all 13 dynamic lines)
+### Level shifting (3.3V <-> 5V)
 
 This GLCD module is 5V-logic (typical for KS0108 clones of this vintage) and
 the Feather RP2040's GPIO are 3.3V and not 5V-tolerant. Driving 5V-CMOS
-inputs directly from 3.3V is marginal on *every* line the RP2040 drives, not
-just a read-related concern -- so rather than rely on that margin, the 8
-data lines and 5 control lines (RS, E, CS1, CS2, RST) are level-shifted with
-two **74HCT541** octal non-inverting buffers (~$1 each). HCT-family inputs
-have TTL-compatible thresholds regardless of the 5V supply, so 3.3V CMOS
-highs from the RP2040 register cleanly, and the output side runs a full,
-unambiguous 5V logic swing into the GLCD.
+inputs directly from 3.3V is marginal on every line the RP2040 drives.
 
-74HCT541 wiring (both chips): `OE1`/`OE2` (pins 1, 19) tied to GND (outputs
-always enabled), `VCC` (pin 20) to the 5V rail, `GND` (pin 10) to common
-ground shared with the Feather and GLCD, plus a 0.1&#181;F ceramic decoupling
-cap across VCC/GND close to each chip. Inputs `A1-A8` (pins 2-9) are 3.3V
-side, from the Feather; outputs `Y1-Y8` (pins 18-11, note the reversed pin
-order) are 5V side, to the GLCD.
+The **data bus (8 lines) is genuinely bidirectional** -- level-shifted with
+one **SN74LVC4245A** dual-supply translating transceiver, so a future
+custom driver could add real reads (busy-flag poll, VRAM readback) as a
+pure firmware change with no board respin. u8g2's KS0108 driver doesn't use
+that path today (see below), but the hardware supports it.
+The **5 always-host-to-display control lines** (RS, E, CS1, CS2, RST) plus
+**R/W's 5V-side copy** stay on a single-supply **74HCT541** octal buffer,
+since those never reverse direction.
 
-| 74HCT541 #1 (data bus) | A (3.3V, from Feather) | Y (5V, to GLCD) |
+**I/O budget** (why there's room to spare): 8 data + RS + E + CS1 + CS2 +
+RST + R/W = **14 signals**, against ~19-21 general-purpose digital pins
+available on the Feather RP2040 header outside the dedicated I2C SDA/SCL
+pair. Verified against the actual `rp2040:rp2040:adafruit_feather` pin
+definitions, not guessed -- `D4`, `D13`, `SCK`, `MOSI`, `MISO` are left over.
+
+#### SN74LVC4245A (data bus, bidirectional)
+
+Verified against the TI datasheet (SCAS375K) rather than assumed, because
+two things about this part are easy to get backwards on a fabricated board:
+
+- **Port assignment is fixed by the part, not a free choice.** `V`<sub>CCA</sub>
+  is specified as the 5V rail, `V`<sub>CCB</sub> as 3.3V. The GLCD (5V)
+  connects to the **A-port** (pins 3-10, `A1-A8`); the Feather (3.3V)
+  connects to the **B-port** (pins 14-21, `B8-B1`, note reversed pin order).
+  Wiring it the other way around runs the part outside its rated operating
+  conditions.
+- **`DIR` maps straight to R/W, no inverter needed.** Per the datasheet's
+  function table: `OE=L, DIR=L` &rarr; B-to-A (Feather writes into the
+  GLCD); `OE=L, DIR=H` &rarr; A-to-B (GLCD drives back to the Feather). That's
+  the same polarity as the KS0108's own R/W (low=write, high=read), so
+  R/W wires directly to `DIR` with no logic gate in between.
+- `DIR`/`OE` are "powered by V`<sub>CCA</sub>`" (5V) per the datasheet, but
+  their recommended `V`<sub>IH</sub> is 2V min -- the Feather's 3.3V logic
+  HIGH clears that with margin, so `DIR` and `OE` connect **directly** to
+  the Feather, no shifting needed for those two control pins even though
+  everything else on this chip is about shifting.
+- **Package**: SSOP-24 / SOIC-24 / TSSOP-24 only -- no DIP option exists for
+  this part (unlike the 74HCT541 below, which is a common PDIP-20 part). For
+  a fabricated board this is a non-issue; SOIC-24 (1.27mm pitch) is the
+  easiest of the three to hand-rework if that ever matters.
+
+| SN74LVC4245A pin | Connects to | Notes |
 |---|---|---|
-| ch 1 | D5 | DB0 |
-| ch 2 | D6 | DB1 |
-| ch 3 | D9 | DB2 |
-| ch 4 | D10 | DB3 |
-| ch 5 | D11 | DB4 |
-| ch 6 | D12 | DB5 |
-| ch 7 | D24 | DB6 |
-| ch 8 | D25 | DB7 |
+| 1 `V`<sub>CCA</sub> | 5V rail | |
+| 2 `DIR` | Feather A1 (= R/W), direct, no shifting | |
+| 3-10 `A1-A8` | GLCD DB0-DB7 | 5V side |
+| 11-13 `GND` | common GND | |
+| 14-21 `B8-B1` | Feather D25,D24,D12,D11,D10,D9,D6,D5 (= DB7..DB0, reversed pin order) | 3.3V side |
+| 22 `OE` (active low) | GND (always enabled) | |
+| 23-24 `V`<sub>CCB</sub> | 3.3V rail | |
 
-| 74HCT541 #2 (control) | A (3.3V, from Feather) | Y (5V, to GLCD) |
+Plus a 0.1&#181;F ceramic decoupling cap across each VCC/GND pair, close to the chip.
+
+#### 74HCT541 (control lines, unidirectional)
+
+Same part/wiring as before, minus the 3 previously-spare channels -- one now
+carries R/W's 5V-side copy (the GLCD's own R/W input still needs 5V-clean
+logic, same as every other GLCD input, independent of the 4245's DIR pin).
+
+| 74HCT541 (control) | A (3.3V, from Feather) | Y (5V, to GLCD) |
 |---|---|---|
 | ch 1 | A0 | RS (DI) |
-| ch 2 | A2 | E (enable) |
-| ch 3 | A3 | CS1 |
-| ch 4 | D0 | CS2 |
-| ch 5 | D1 | RST |
-| ch 6-8 | tie A6-A8 to GND (unused CMOS inputs shouldn't float) | not connected |
+| ch 2 | A1 (same net as the 4245's DIR) | R/W |
+| ch 3 | A2 | E (enable) |
+| ch 4 | A3 | CS1 |
+| ch 5 | D0 | CS2 |
+| ch 6 | D1 | RST |
+| ch 7-8 | tie A6-A8-equivalent inputs to GND (unused CMOS inputs shouldn't float) | not connected |
+
+`OE1`/`OE2` (pins 1, 19) tied to GND (outputs always enabled), `VCC` (pin
+20) to the 5V rail, `GND` (pin 10) to common ground, plus a 0.1&#181;F
+decoupling cap.
+
+#### Firmware today: write-only regardless of the hardware
+
+u8g2's KS0108 driver has no read code path on any platform (checked the
+installed library source: the `U8G2_KS0108_128X64_F` constructor has no R/W
+parameter, and its byte-callback only implements write-side messages). So
+`Display_Feather.ino` drives R/W (Feather A1) low at boot and never
+toggles it -- `DIR` stays fixed at B-to-A, matching write-only operation,
+even though the board now has a real bidirectional path. Adding reads later
+means writing a custom driver that takes over that pin, not a board change.
 
 ### Display_Feather -- KS0108 GLCD
 
@@ -137,30 +188,29 @@ directly (no shifting needed for static levels or the analog contrast tap).
 | 1 | GND | GND | |
 | 2 | VCC | 5V (`USB`/`BAT`) | |
 | 3 | V0 (contrast) | wiper of 10-20k&#8486; trimpot between VCC and GND | not a GPIO |
-| 4 | RS (DI) | Feather A0, via 74HCT541 #2 ch1 | |
-| 5 | R/W | **GND** (tie permanently low, 5V side, no shifter needed) | write-only -- see above |
-| 6 | E (enable) | Feather A2, via 74HCT541 #2 ch2 | |
-| 7 | DB0 | Feather D5, via 74HCT541 #1 ch1 | |
-| 8 | DB1 | Feather D6, via 74HCT541 #1 ch2 | |
-| 9 | DB2 | Feather D9, via 74HCT541 #1 ch3 | |
-| 10 | DB3 | Feather D10, via 74HCT541 #1 ch4 | |
-| 11 | DB4 | Feather D11, via 74HCT541 #1 ch5 | |
-| 12 | DB5 | Feather D12, via 74HCT541 #1 ch6 | |
-| 13 | DB6 | Feather D24, via 74HCT541 #1 ch7 | |
-| 14 | DB7 | Feather D25, via 74HCT541 #1 ch8 | |
-| 15 | CS1 | Feather A3, via 74HCT541 #2 ch3 | |
-| 16 | CS2 | Feather D0, via 74HCT541 #2 ch4 | |
-| 17 | RST | Feather D1, via 74HCT541 #2 ch5 | |
+| 4 | RS (DI) | Feather A0, via 74HCT541 ch1 | |
+| 5 | R/W | Feather A1, via 74HCT541 ch2 (same net also goes direct to the 4245's DIR) | firmware holds this low today -- see below |
+| 6 | E (enable) | Feather A2, via 74HCT541 ch3 | |
+| 7 | DB0 | Feather D5, via SN74LVC4245A B8/A1 | |
+| 8 | DB1 | Feather D6, via SN74LVC4245A B7/A2 | |
+| 9 | DB2 | Feather D9, via SN74LVC4245A B6/A3 | |
+| 10 | DB3 | Feather D10, via SN74LVC4245A B5/A4 | |
+| 11 | DB4 | Feather D11, via SN74LVC4245A B4/A5 | |
+| 12 | DB5 | Feather D12, via SN74LVC4245A B3/A6 | |
+| 13 | DB6 | Feather D24, via SN74LVC4245A B2/A7 | |
+| 14 | DB7 | Feather D25, via SN74LVC4245A B1/A8 | |
+| 15 | CS1 | Feather A3, via 74HCT541 ch4 | |
+| 16 | CS2 | Feather D0, via 74HCT541 ch5 | |
+| 17 | RST | Feather D1, via 74HCT541 ch6 | |
 | 18 | VEE | -- | charge-pump output, do not connect externally |
 | 19 | LED+ (backlight) | 5V through a series resistor (value depends on backlight forward current, typ. ~10-22&#8486; for these modules -- confirm against your module) | omit if no backlight fitted |
 | 20 | LED- (backlight) | GND | |
 
-Leaves `SCK`/`MOSI`/`MISO` free (future expansion, e.g. SD logging) and
-`D13` free (onboard red LED, no extra wiring needed for a status LED).
-`SDA`/`SCL` reserved for I2C to CAN_Feather. Firmware pin `#define`s in
-`Display_Feather.ino` are unchanged by the level shifter -- it sits
+Leaves `SCK`/`MOSI`/`MISO` and `D13` (onboard red LED) free. `SDA`/`SCL`
+reserved for I2C to CAN_Feather. Firmware pin `#define`s in
+`Display_Feather.ino` are unchanged by the level shifters -- they sit
 physically between the Feather and the GLCD; the GPIO numbers the code
-drives are the same either way.
+drives are the same either way, plus the new `GLCD_RW` pin (A1).
 
 ### CAN_Feather -- MCP2515 FeatherWing
 
