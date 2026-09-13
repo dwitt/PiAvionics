@@ -1,6 +1,8 @@
 """ Asynchronous I/O based webserver to handle page and websocket"""
 # pyright: reportMissingImports=false
 
+VERSION = "1.0.1"
+
 import asyncio
 import json
 import struct
@@ -74,6 +76,9 @@ BACKLIGHT_DIR = "/sys/class/backlight"  # Base directory for backlight devices
 ENCODER_I2C_BUS = 1  # I2C bus number for rotary encoder
 ENCODER_I2C_ADDRESS = 0x36  # Default I2C address for rotary encoder
 ENCODER_THRESHOLD = 100  # Minimum change in encoder position to register
+ENCODER_MAX_PLAUSIBLE = 2**30  # Reads near +/-2^31 are corrupted I2C transfers (sign-bit glitch)
+ENCODER_REBASELINE_COUNT = 5  # Consecutive rejected reads before accepting a new baseline
+ENCODER_POLL_INTERVAL = 0.02  # Encoder poll period in seconds (50 Hz)
 ENCODER_BUTTON_PIN = 24  # GPIO pin for encoder button
 SEESAW_EXPECTED_PRODUCT_ID = 4991  # Expected product ID for seesaw encoder
 
@@ -1123,14 +1128,30 @@ async def read_input(encoder, button, data):
     button -- an adafruit digitalio object
     data -- an object in which the data can be stored
     """
-    last_encoder_position = -encoder.position
+    last_encoder_position = None
+    consecutive_rejects = 0
     error_count = 0
     while True:
         try:
             new_encoder_position = -encoder.position
-            if abs(new_encoder_position - last_encoder_position) < ENCODER_THRESHOLD:
+            if abs(new_encoder_position) >= ENCODER_MAX_PLAUSIBLE:
+                # Corrupted I2C read (sign-bit glitch lands near +/-2^31).
+                # Discard without touching the baseline.
+                pass
+            elif (last_encoder_position is None or
+                  abs(new_encoder_position - last_encoder_position) < ENCODER_THRESHOLD):
                 data.position = new_encoder_position
                 last_encoder_position = new_encoder_position
+                consecutive_rejects = 0
+            else:
+                # Plausible value but far from the baseline. One or two of
+                # these are glitches; a steady stream means the baseline
+                # itself is bad (poisoned by a corrupt read), so re-baseline.
+                consecutive_rejects += 1
+                if consecutive_rejects >= ENCODER_REBASELINE_COUNT:
+                    data.position = new_encoder_position
+                    last_encoder_position = new_encoder_position
+                    consecutive_rejects = 0
             data.pressed = not button.value
             error_count = 0  # Reset error count on successful read
         except Exception as e:
@@ -1140,7 +1161,7 @@ async def read_input(encoder, button, data):
             # Keep the last known good values
             await asyncio.sleep(0.1)  # Add a small delay when errors occur
             continue
-        await asyncio.sleep(0)
+        await asyncio.sleep(ENCODER_POLL_INTERVAL)
 
 def connect_to_rotary_encoder(addr=ENCODER_I2C_ADDRESS):
     """
