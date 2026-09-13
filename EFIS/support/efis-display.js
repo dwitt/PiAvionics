@@ -4,7 +4,7 @@
  * The proram uses PixiJS to support the graphics display
  * 19-May-2025
  * Current PixiJS Version 8.6.6
- * version 0.1
+ * version 0.2
  * 
  *****************************************************************************/
 'use strict';
@@ -164,13 +164,28 @@ dataObject.magz = 0.0;
 // ----------------------------------------------------------------------------
 
 var webSocketURL = "ws://" + location.host + "/ws";
-var myWebSocket = new WebSocket(webSocketURL);
+var myWebSocket;
+const WEBSOCKET_RECONNECT_MS = 1000;    // delay between reconnect attempts
 
-// listen for the 'open' event and respond with "ready"
-myWebSocket.addEventListener('open', function(event){
-    // Let the server know we are ready for data
-    myWebSocket.send("ready")
-})
+function connectWebSocket() {
+    myWebSocket = new WebSocket(webSocketURL);
+
+    // listen for the 'open' event and respond with "ready"
+    myWebSocket.addEventListener('open', function(event){
+        // Let the server know we are ready for data
+        myWebSocket.send("ready")
+    })
+
+    myWebSocket.onmessage = RecieveWebSocketMessage;
+
+    // Reconnect when the connection drops (e.g. the server restarts).
+    // 'close' also fires when a connection attempt fails, so this one
+    // handler retries until the server is back.
+    myWebSocket.addEventListener('close', function(event){
+        setTimeout(connectWebSocket, WEBSOCKET_RECONNECT_MS);
+    })
+}
+connectWebSocket();
 
 // ----------------------------------------------------------------------------
 // --- Load Fonts                                                           ---
@@ -223,10 +238,8 @@ document.fonts.ready.then(function() {
 });
 
 // ----------------------------------------------------------------------------
-// --- Assign a function to receive WebSocket Messages                      ===
+// --- WebSocket message handler is assigned in connectWebSocket() above    ===
 // ----------------------------------------------------------------------------
-
-myWebSocket.onmessage = RecieveWebSocketMessage;
 
 // ****************************************************************************
 // *** END OF SCRIPT - We are event based from this point onward            ***
