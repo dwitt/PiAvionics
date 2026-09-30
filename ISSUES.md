@@ -59,6 +59,32 @@ Status: **Open**, **Monitoring** (fix applied, watching), **Fixed**.
 - Logged 2026-09-30; not yet fixed. Noted while comparing with OnSpeed Gen2, which
   stores fixed zero biases in its config instead (`PFWD_BIAS`, `P45_BIAS`).
 
+### 9. Enhancement: module identity, version and commands over CAN
+- Idea (2026-09-30): let the EFIS read each module's firmware version and send it
+  commands (reset, zero) over CAN. Nothing is designed or implemented yet.
+- Motivation: during the GPS/AIR debugging there was no way to tell which firmware
+  a module was running, or whether a module was absent, without a USB cable. Zero
+  over CAN would also fix the power-up-only limit in issue 8, and reset would let
+  a module be restarted from the Pi.
+- Suggested order:
+  1. Version/heartbeat: each module sends module type + VERSION (major/minor/patch)
+     every few seconds. Also acts as a "module present" indicator for the EFIS.
+  2. A shared command message and reply (target module in byte 0, command code,
+     result/ack). The IMU calibration design (`Sensors/IMU_AHRS/IMU_Calibration_Design.md`,
+     CAN 0x23) already proposes commands over CAN and should use the same scheme.
+  3. Zero command for the AIR module. The module refuses unless pressure is near zero
+     and steady, and replies with the offset it computed.
+  4. Reset command (RP2040 watchdog reboot), two-step arm/confirm so a stray frame
+     cannot reboot a module in flight.
+- Open decisions: command/response CAN IDs (none reserved yet; existing IDs are
+  0x19, 0x23, 0x28-0x2E, 0x32, 0x48/49, 0x51-53, 0x63-65); whether commands are
+  ground-only (suggested default, enforced in the module as well as the EFIS);
+  where the EFIS triggers them (soft-button menu).
+- Out of scope for now: reading or updating the firmware image over CAN, which would
+  need a bootloader.
+- First step when picked up: draft the protocol in `CAN Reference/Can Docs.md` for
+  review before any firmware changes.
+
 ## Monitoring
 
 ### 6. MCP2515 not initialising on the Pi (`Cannot initialize MCP2515. Wrong wiring?`)
