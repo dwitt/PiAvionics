@@ -1,0 +1,443 @@
+# =============================================================================
+# PiAvionics CAN bus messages  --  SOURCE OF TRUTH
+#
+# Edit this file, then regenerate the documents:
+#     Protocol/.venv/bin/python Protocol/generate_can_docs.py
+#
+# Do not edit the generated .md files by hand.
+#
+# Byte positions are written "0-1" (two bytes) or "2" (one byte).
+# Every multi-byte value is little-endian (least significant byte first).
+# Field "scale" is what you multiply the raw integer by to get the physical
+# value, e.g. raw 123 with scale 0.1 is 12.3.
+#
+# Message status:
+#   active    sent by the module and used by the receiver
+#   partial   exists, but something is missing or always zero (see notes)
+#   planned   designed but not implemented in firmware or the EFIS yet
+#   reserved  ID is claimed or named in code, but nothing is sent on it
+# =============================================================================
+
+schema_version: 1
+
+protocol:
+  name: PiAvionics CAN
+  version: 0.1.0
+  last_reviewed: 2026-09-30
+  bitrate: 250000
+  identifier: Standard 11-bit
+  byte_order: Little-endian
+  data_length: 8 bytes for every message unless stated (mag messages use 4)
+  termination: 120 ohm at each end of the bus
+  hardware: MCP2515 controller, 250 kbit/s (Pi uses can0 via SocketCAN)
+  summary: >
+    Sensor modules broadcast their data on fixed IDs. The Pi EFIS listens,
+    and sends QNH to the AIR module. There are no addressed commands yet
+    (see ISSUES.md issue 9).
+  notes:
+    - >
+      Lower IDs win bus arbitration. All PiAvionics IDs (0x19 to 0x83) are lower
+      than every MGL device ID (0x200 and up).
+    - >
+      Modules send each message on a timer (period_ms). The firmware adds up to
+      50 ms of random jitter; it has little effect in practice and is not needed
+      for collision handling, because CAN arbitration never drops a frame.
+    - >
+      The EFIS treats AHRS data (0x48, 0x49) as stale after 0.2 s. No other
+      message has a timeout yet (see ISSUES.md).
+
+# Who sends and receives messages
+nodes:
+  air:
+    name: AIR module
+    description: Airspeed, altitude, AOA, static and outside air temperature
+    code: Sensors/AIR_Module/AIR_Module.ino
+  imu:
+    name: IMU / AHRS module
+    description: Attitude, heading, acceleration
+    code: Sensors/IMU_AHRS/IMU_AHRS.ino
+  gps:
+    name: GPS module
+    description: Position, speed, track, time
+    code: Sensors/GPS_Module/GPS_Module.ino
+  efis:
+    name: Pi EFIS
+    description: Display computer (Raspberry Pi). Listens to everything, sends QNH.
+    code: EFIS/aio_server.py
+  can_display:
+    name: CAN display feather
+    description: Listens for airspeed/altitude and attitude for the small LCD display
+    code: CAN_Display/CAN_Feather/CAN_Feather.ino
+  ems:
+    name: EMS module
+    description: Engine monitor (planned). Only a legacy CircuitPython version exists.
+    code: null
+
+messages:
+
+  # ---------------------------------------------------------------------------
+  - id: 0x19
+    name: TIME_SYNC
+    title: UTC date and time
+    sender: gps
+    receivers: [efis]
+    period_ms: 1000
+    dlc: 8
+    status: active
+    fields:
+      - {bytes: "0", name: year,   type: uint8, unit: years since 2000, desc: "26 means 2026"}
+      - {bytes: "1", name: month,  type: uint8, unit: month, desc: "1 to 12"}
+      - {bytes: "2", name: day,    type: uint8, unit: day, desc: "1 to 31"}
+      - {bytes: "3", name: hour,   type: uint8, unit: h, desc: UTC}
+      - {bytes: "4", name: minute, type: uint8, unit: min}
+      - {bytes: "5", name: second, type: uint8, unit: s}
+      - {bytes: "6-7", name: reserved, type: uint8, desc: "Always 0"}
+    notes:
+      - Sent only once the GPS has received a valid date.
+      - The EFIS decodes the bytes as signed (fine for the values here).
+      - >
+        ID 0x19 collides with MGL's "General Command" message from host 1
+        (see CAN_BUS_MAP.md). It works today only because byte 0 (the year)
+        is not a valid MGL destination (0 to 3).
+    code:
+      sender: "GPS_Module.ino (CAN_TIME_SYNC_MSG_ID)"
+      receiver: "aio_server.py process_time_sync_message"
+
+  # ---------------------------------------------------------------------------
+  - id: 0x23
+    name: AHRS_CONTROL
+    title: AHRS control command
+    sender: efis
+    receivers: [imu]
+    period_ms: null
+    dlc: 8
+    status: planned
+    fields:
+      - {bytes: "0", name: calibration, type: uint8, desc: "1 = save calibration"}
+      - {bytes: "1-7", name: reserved, type: uint8}
+    notes:
+      - >
+        IMU_AHRS.ino defines CAN_CALIB_MSG_ID as 0x23, but nothing sends or
+        receives it. See Sensors/IMU_AHRS/IMU_Calibration_Design.md.
+
+  # ---------------------------------------------------------------------------
+  - id: 0x28
+    name: AIR_DATA
+    title: Airspeed, altitude and vertical speed
+    sender: air
+    receivers: [efis, can_display]
+    period_ms: 100
+    dlc: 8
+    status: partial
+    fields:
+      - {bytes: "0-1", name: airspeed,       type: int16, unit: kt,     desc: Indicated airspeed from the pitot sensor}
+      - {bytes: "2-5", name: altitude,       type: int32, unit: ft,     desc: Pressure altitude using the QNH from 0x2E}
+      - {bytes: "6-7", name: vertical_speed, type: int16, unit: ft/min, desc: "Not calculated yet; always 0"}
+    notes:
+      - >
+        Altitude is a full 4-byte integer with no padding byte. The older
+        Can Docs.md showed a 3-byte altitude and is wrong.
+      - The AIR firmware never computes vertical speed (the value stays 0).
+    code:
+      sender: "AIR_Module.ino (CAN_AIR_MSG_ID)"
+      receiver: "aio_server.py process_altitude_message, CAN_Feather.ino"
+
+  # ---------------------------------------------------------------------------
+  - id: 0x29
+    name: AOA
+    title: Angle of attack
+    sender: air
+    receivers: []
+    period_ms: 200
+    dlc: 8
+    status: partial
+    fields:
+      - {bytes: "0-1", name: aoa, type: int16, unit: deg, desc: "Scaling not decided. Not calculated yet; always 0"}
+      - {bytes: "2-7", name: unused, type: uint8, desc: "Not defined. Currently carries stale bytes from the previous message"}
+    notes:
+      - The AIR module sends this message, but the AOA value is never calculated.
+      - The EFIS has no handler for 0x29.
+      - Stale bytes 2-7 come from a shared buffer in AIR_Module.ino.
+    code:
+      sender: "AIR_Module.ino (CAN_AOA_MSG_ID)"
+
+  # ---------------------------------------------------------------------------
+  - id: 0x2A
+    name: OAT
+    title: Outside air temperature
+    sender: air
+    receivers: [efis]
+    period_ms: 200
+    dlc: 8
+    status: active
+    fields:
+      - {bytes: "0-1", name: oat,      type: int16, unit: degC, scale: 0.1, desc: MAX31865 RTD temperature}
+      - {bytes: "2",   name: humidity, type: uint8, unit: "%",  desc: "Not available; always 0"}
+      - {bytes: "3-7", name: unused,   type: uint8, desc: "Always 0"}
+    notes:
+      - Sent only when the RTD (MAX31865) is present and initialised.
+    code:
+      sender: "AIR_Module.ino (CAN_TEMP_MSG_ID)"
+      receiver: "aio_server.py process_oat_message"
+
+  # ---------------------------------------------------------------------------
+  - id: 0x2B
+    name: STATIC_PRESSURE
+    title: Raw static and pitot pressure
+    sender: air
+    receivers: [efis]
+    period_ms: 200
+    dlc: 8
+    status: active
+    fields:
+      - {bytes: "0-1", name: static_pressure,       type: int16, unit: hPa, scale: 0.1, desc: Filtered static pressure}
+      - {bytes: "2",   name: sensor_temperature,    type: int8,  unit: degC, desc: Whole degrees, from the static pressure sensor}
+      - {bytes: "3-4", name: differential_pressure, type: int16, unit: Pa,   desc: Filtered pitot (differential) pressure}
+      - {bytes: "5-7", name: padding,               type: uint8, desc: "Always 0"}
+    notes:
+      - >
+        Matches the legacy CircuitPython format (struct "<hbhBBB").
+        The differential pressure (bytes 3-4) was missing from the old Can Docs.md.
+    code:
+      sender: "AIR_Module.ino (CAN_RAW_MSG_ID)"
+      receiver: "aio_server.py process_static_pressure_message"
+
+  # ---------------------------------------------------------------------------
+  - id: 0x2E
+    name: QNH
+    title: Altimeter setting
+    sender: efis
+    receivers: [air]
+    period_ms: 1000
+    period_note: "Sent when the setting changes, and at least once a second"
+    dlc: 8
+    status: active
+    fields:
+      - {bytes: "0-1", name: qnh_hpa,  type: int16, unit: hPa,  desc: "Informational. The AIR module does not use it"}
+      - {bytes: "2-3", name: qnh_inhg, type: int16, unit: inHg, scale: 0.0025, desc: "inHg x 400 (2992 x 4 = 11968 is 29.92 inHg)"}
+      - {bytes: "4-7", name: reserved, type: uint8, desc: "Always 0"}
+    notes:
+      - >
+        The inHg field is x400, not x100 as the old Can Docs.md said. The AIR
+        module divides it by 4 to get x100, so the extra resolution is not used.
+      - EFIS accepts QNH between 28.00 and 31.00 inHg (the range is enforced in aio_server.py).
+    code:
+      sender: "aio_server.py pack_can_qnh_msg"
+      receiver: "AIR_Module.ino (CAN_QNH_MSG_ID); the AIR module accepts only this ID"
+
+  # ---------------------------------------------------------------------------
+  - id: 0x32
+    name: EMS_RPM
+    title: Engine RPM
+    sender: ems
+    receivers: []
+    period_ms: null
+    dlc: 8
+    status: planned
+    fields:
+      - {bytes: "0-1", name: rpm, type: uint16, unit: rpm}
+      - {bytes: "2-7", name: unused, type: uint8}
+    notes:
+      - From the old Can Docs.md. No C++ firmware or EFIS handler exists yet.
+
+  # ---------------------------------------------------------------------------
+  - id: 0x48
+    name: AHRS_ORIENT
+    title: Heading, pitch, roll and turn rate
+    sender: imu
+    receivers: [efis, can_display]
+    period_ms: 100
+    dlc: 8
+    status: active
+    fields:
+      - {bytes: "0-1", name: heading,   type: int16, unit: deg,   scale: 0.1, desc: "Fused yaw, clockwise positive (NED), 0 to 360"}
+      - {bytes: "2-3", name: pitch,     type: int16, unit: deg,   scale: 0.1, desc: "Aircraft (NED) convention"}
+      - {bytes: "4-5", name: roll,      type: int16, unit: deg,   scale: 0.1, desc: "Aircraft (NED) convention"}
+      - {bytes: "6-7", name: turn_rate, type: int16, unit: deg/s, scale: 0.1, desc: "Derived from yaw; 0.5 deg/s deadband"}
+    notes:
+      - >
+        The IMU converts its native frame (NWU) to aircraft NED before sending.
+        The EFIS only divides by 10.
+      - The EFIS treats this message as stale after 0.2 s and blanks the values.
+    code:
+      sender: "IMU_AHRS.ino (CAN_EULER_MSG_ID)"
+      receiver: "aio_server.py process_ahrs_orient_message, CAN_Feather.ino"
+
+  # ---------------------------------------------------------------------------
+  - id: 0x49
+    name: AHRS_ACCEL
+    title: Acceleration
+    sender: imu
+    receivers: [efis]
+    period_ms: 100
+    dlc: 8
+    status: active
+    fields:
+      - {bytes: "0-1", name: accel_x, type: int16, unit: m/s2, scale: 0.01, desc: "Sensor X (forward)"}
+      - {bytes: "2-3", name: accel_y, type: int16, unit: m/s2, scale: 0.01, desc: "Sensor Y (left)"}
+      - {bytes: "4-5", name: accel_z, type: int16, unit: m/s2, scale: 0.01, desc: "Sensor Z (up)"}
+      - {bytes: "6-7", name: calibration, type: int16, desc: "Calibration status; always 0 today"}
+    notes:
+      - Calibrated values in the sensor's native frame, not converted to aircraft axes.
+      - The EFIS treats this message as stale after 0.2 s.
+    code:
+      sender: "IMU_AHRS.ino (CAN_ACC_MSG_ID)"
+      receiver: "aio_server.py process_ahrs_accel_message"
+
+  # ---------------------------------------------------------------------------
+  - id: 0x51
+    name: EMS_OIL
+    title: Oil pressure and temperature
+    sender: ems
+    receivers: []
+    period_ms: null
+    dlc: 8
+    status: planned
+    fields:
+      - {bytes: "0-1", name: oil_pressure_kpa, type: int16, unit: kPa,  scale: 0.1}
+      - {bytes: "2-3", name: oil_temp_c,       type: int16, unit: degC, scale: 0.1}
+      - {bytes: "4-5", name: oil_pressure_psi, type: int16, unit: psi,  scale: 0.1}
+      - {bytes: "6-7", name: oil_temp_f,       type: int16, unit: degF, scale: 0.1}
+    notes:
+      - From the old Can Docs.md. Nothing sends or decodes it yet.
+
+  - id: 0x52
+    name: EMS_EGT_CHT_12
+    title: EGT and CHT, cylinders 1 and 2
+    sender: ems
+    receivers: []
+    period_ms: null
+    dlc: 8
+    status: planned
+    fields:
+      - {bytes: "0-1", name: egt_1, type: int16, unit: degF}
+      - {bytes: "2-3", name: egt_2, type: int16, unit: degF}
+      - {bytes: "4-5", name: cht_1, type: int16, unit: degF}
+      - {bytes: "6-7", name: cht_2, type: int16, unit: degF}
+    notes:
+      - From the old Can Docs.md, where EGT 2 was labelled "byte 0 / byte 2" (a typo; bytes 2-3 here).
+
+  - id: 0x53
+    name: EMS_EGT_CHT_34
+    title: EGT and CHT, cylinders 3 and 4
+    sender: ems
+    receivers: []
+    period_ms: null
+    dlc: 8
+    status: planned
+    fields:
+      - {bytes: "0-1", name: egt_3, type: int16, unit: degF}
+      - {bytes: "2-3", name: egt_4, type: int16, unit: degF}
+      - {bytes: "4-5", name: cht_3, type: int16, unit: degF}
+      - {bytes: "6-7", name: cht_4, type: int16, unit: degF}
+    notes:
+      - From the old Can Docs.md.
+
+  # ---------------------------------------------------------------------------
+  - id: 0x63
+    name: GPS_POSITION
+    title: GPS position
+    sender: gps
+    receivers: [efis]
+    period_ms: 1000
+    dlc: 8
+    status: active
+    fields:
+      - {bytes: "0-3", name: latitude,  type: int32, unit: deg, scale: 0.000001, desc: "North positive"}
+      - {bytes: "4-7", name: longitude, type: int32, unit: deg, scale: 0.000001, desc: "East positive"}
+    notes:
+      - Sent only while the GPS has a fix. The EFIS keeps the last value when the fix is lost.
+    code:
+      sender: "GPS_Module.ino (CAN_GPS1_MSG_ID)"
+      receiver: "aio_server.py process_gps1_message"
+
+  - id: 0x64
+    name: GPS_SPEED_TRACK
+    title: GPS ground speed, altitude and track
+    sender: gps
+    receivers: [efis]
+    period_ms: 1000
+    dlc: 8
+    status: active
+    fields:
+      - {bytes: "0-1", name: ground_speed, type: int16, unit: kt,  desc: Whole knots}
+      - {bytes: "2-3", name: altitude,     type: int16, unit: ft,  desc: GPS altitude}
+      - {bytes: "4-5", name: true_track,   type: int16, unit: deg, desc: "Whole degrees; held at 0 below 2 kt"}
+      - {bytes: "6-7", name: mag_track,    type: int16, unit: deg, desc: "True track corrected with WMM2025 declination. The EFIS ignores it"}
+    notes:
+      - Sent only while the GPS has a fix.
+    code:
+      sender: "GPS_Module.ino (CAN_GPS2_MSG_ID)"
+      receiver: "aio_server.py process_gps2_message"
+
+  - id: 0x65
+    name: GPS_STATUS
+    title: GPS fix status
+    sender: gps
+    receivers: [efis]
+    period_ms: 1000
+    dlc: 8
+    status: active
+    fields:
+      - {bytes: "0", name: fix_quality, type: uint8, desc: "0 = no fix, 1 = GPS, 2 = DGPS (WAAS)"}
+      - {bytes: "1", name: fix_type,    type: uint8, desc: "1 = no fix, 2 = 2D, 3 = 3D"}
+      - {bytes: "2", name: satellites,  type: uint8, unit: count, desc: Satellites used in the fix}
+      - {bytes: "3", name: reserved,    type: uint8, desc: "Always 0 (free for a probe/diagnostic code)"}
+      - {bytes: "4-5", name: hdop, type: int16, scale: 0.01, desc: Horizontal dilution of precision}
+      - {bytes: "6-7", name: vdop, type: int16, scale: 0.01, desc: Vertical dilution of precision}
+    notes:
+      - Sent every second whether or not there is a fix, so the display can show "No Fix".
+      - Also a good "GPS module is alive" indicator.
+    code:
+      sender: "GPS_Module.ino (CAN_GPS3_MSG_ID)"
+      receiver: "aio_server.py process_gps3_message"
+
+  # ---------------------------------------------------------------------------
+  - id: 0x81
+    name: MAG_X
+    title: Magnetometer X
+    sender: imu
+    receivers: [efis]
+    period_ms: null
+    dlc: 4
+    status: reserved
+    fields:
+      - {bytes: "0-3", name: mag_x, type: float32, desc: "Units not confirmed (probably uT)"}
+    notes:
+      - >
+        Defined in IMU_AHRS.ino and decoded by the EFIS (for a calibration
+        display), but IMU_AHRS.ino never sends it.
+
+  - id: 0x82
+    name: MAG_Y
+    title: Magnetometer Y
+    sender: imu
+    receivers: [efis]
+    period_ms: null
+    dlc: 4
+    status: reserved
+    fields:
+      - {bytes: "0-3", name: mag_y, type: float32, desc: "Units not confirmed (probably uT)"}
+    notes:
+      - See 0x81.
+
+  - id: 0x83
+    name: MAG_Z
+    title: Magnetometer Z
+    sender: imu
+    receivers: [efis]
+    period_ms: null
+    dlc: 4
+    status: reserved
+    fields:
+      - {bytes: "0-3", name: mag_z, type: float32, desc: "Units not confirmed (probably uT)"}
+    notes:
+      - See 0x81.
+
+# IDs that code refers to but which carry no CAN traffic
+reserved_ids:
+  - id: 0x38
+    name: ENCODER
+    note: >
+      Named in the EFIS code (CAN_MSG_ID.ENCODER) but unused. The rotary encoder
+      is read over I2C, not CAN.

@@ -1,0 +1,336 @@
+# =============================================================================
+# MGL Avionics CAN bus messages  --  transcribed from the MGL document
+#
+# Source: "CAN Communications Protocol for MGL Avionics CAN bus devices",
+#         Release 10, 16 August 2018 (MGL CAN Protocol.pdf).
+#
+# This is a hand transcription kept so we can check whether MGL devices and
+# PiAvionics can share one bus. Check the MGL PDF before relying on a detail.
+# Two typing mistakes in the PDF are corrected here (byte ranges written
+# "6...8" are really "6-7"; the ECB current bytes are numbered 0 to 7).
+#
+# How an MGL CAN ID is built (11-bit standard ID):
+#     ID = (device address << 4) | message type
+#     device address: upper 7 bits (0-127), message type: lower 4 bits (0-15)
+#
+# Host messages (EFIS to devices) use the host address, currently always 1, so
+# they sit at 0x10-0x1F. Device messages use that device's own address.
+#
+# Regenerate documents:  Protocol/.venv/bin/python Protocol/generate_can_docs.py
+# =============================================================================
+
+schema_version: 1
+
+protocol:
+  name: MGL Avionics CAN
+  version: "Release 10 (2018-08-16)"
+  source: MGL CAN Protocol.pdf
+  bitrate: 250000
+  identifier: Standard 11-bit
+  byte_order: Little-endian
+  termination: >
+    No MGL device has a termination resistor. Fit 120 ohm at each end of the bus
+    (a single 60 to 120 ohm at the host end is acceptable for a short run).
+  summary: >
+    MGL devices each own a block of 16 message IDs, chosen by a 7-bit device
+    address. Devices never send to each other; only the host (address 1) sends
+    commands.
+  notes:
+    - >
+      Host addresses 1 to 15 are reserved for EFIS hosts. Only host 1 is used
+      today; MGL says the others will be used as more message types are needed.
+    - >
+      Servo messages (addresses 16 to 31) and the SP-10 / ECB details that are
+      not in this document are not transcribed here.
+
+# Device address map. "first" and "last" are device addresses (upper 7 bits).
+devices:
+  host:        {name: "Host / EFIS",         first: 1,  last: 15, selection: "Fixed (only host 1 in use)"}
+  servo:       {name: "CAN servos",          first: 16, last: 31, selection: "Set by an identification message (not detailed in this document)"}
+  rdac:        {name: "RDAC XF engine unit", first: 32, last: 35, selection: "2 DIP switches"}
+  compass:     {name: "SP-6 compass",        first: 36, last: 39, selection: "Software command (host message 5)"}
+  ahrs:        {name: "SP-7 / SP-9 AHRS",    first: 40, last: 43, selection: "Software command (host message 5)"}
+  transponder: {name: "Transponder",         first: 44, last: 45, selection: "Software command"}
+  reserved_a:  {name: "Reserved by MGL",     first: 46, last: 47, selection: "-"}
+  sp10:        {name: "SP-10 flap/trim/motor controller", first: 48, last: 51, selection: "DIP switch (function assigned by DIP array)"}
+  ecb:         {name: "ECB electronic breakers", first: 52, last: 59, selection: "3 DIP switches"}
+  touchpad:    {name: "Touch pad",           first: 60, last: 63, selection: "Software command"}
+  extender:    {name: "iEFIS extender",      first: 64, last: 67, selection: "Software command (extender message type 6)"}
+  autopilot:   {name: "External MGL autopilot", first: 68, last: 69, selection: "-"}
+
+# Messages. "address_of" says whose address forms the ID:
+#   host    -> host address 1 (ID 0x1n)
+#   <device> -> the first address of that device (other instances add 0x10 each)
+messages:
+
+  # ===== Host (EFIS) to devices ==============================================
+  - {address_of: host, type: 2, name: HOST_ATTITUDE_SPEED, title: "Aircraft speed and attitude", to: [compass], period_ms: 500, period_note: "At least once per 500 ms", dlc: 8,
+     fields: [
+       {bytes: "0-1", name: bank,  type: int16,  unit: deg, scale: 0.1, desc: "-180.0 to 180.0; 0x7FFF if unknown"},
+       {bytes: "2-3", name: pitch, type: int16,  unit: deg, scale: 0.1, desc: "-90.0 to 90.0; 0x7FFF if unknown"},
+       {bytes: "4-5", name: yaw,   type: int16,  unit: deg, scale: 0.1, desc: "0 to 359.9; 0x7FFF if unknown"},
+       {bytes: "6-7", name: speed, type: uint16, unit: mph, desc: "Ground speed (TAS if no GPS), 0 to 1000"}]}
+
+  - {address_of: host, type: 3, name: SP7_COMMAND, title: "Command to SP-7 / SP-9 AHRS", to: [ahrs], dlc: "1-7",
+     fields: [
+       {bytes: "0",   name: command, type: uint8, desc: "0 = set gyro horizon from the accelerometers"},
+       {bytes: "1-6", name: data,    type: uint8, desc: "Optional"}]}
+
+  - {address_of: host, type: 4, name: SP6_COMMAND, title: "Command to SP-6 compass", to: [compass], dlc: 2,
+     fields: [
+       {bytes: "0", name: command,        type: uint8, desc: "See commands below"},
+       {bytes: "1", name: command_repeat, type: uint8, desc: "Must repeat byte 0. The SP-6 rejects a command that is not exactly 2 bytes"}],
+     notes: [
+       "Pre-self-calibrating firmware: 0 set North, 1 set South, 2 set East, 3 set West, 4 clear alignment, 5 start deviation calibration, 6 end and keep result, 7 cancel, 8 restore factory settings, 9 operation mode (only 2 and 4 supported: ACEL 3D and EFIS 3D).",
+       "Self-calibrating firmware: 12 clear and start a new calibration, 13 end and store result (restores the last stored calibration if none is active), 14 set pitch and bank to zero (level), 15 set bank to 90 degrees, 16 set pitch to 90 degrees."]}
+
+  - {address_of: host, type: 5, variant: set_device_id, name: SET_DEVICE_ID, title: "Set SP-6/7/9 device number", to: [compass, ahrs], dlc: 4,
+     fields: [
+       {bytes: "0", name: key_1,  type: uint8, desc: "0xAA"},
+       {bytes: "1", name: key_2,  type: uint8, desc: "0x55"},
+       {bytes: "2", name: number, type: uint8, desc: "Requested device address 32 to 43 (as documented)"},
+       {bytes: "3", name: check,  type: uint8, desc: "Byte 2 XOR 0xFF"}],
+     notes: ["Send with one device on the bus. A device transmits one data group only."]}
+
+  - {address_of: host, type: 5, variant: set_sp6_address, name: SET_SP6_ADDRESS, title: "Set SP-6 compass bus address", to: [compass], dlc: 4,
+     fields: [
+       {bytes: "0", name: key_1,   type: uint8, desc: "0xAA"},
+       {bytes: "1", name: key_2,   type: uint8, desc: "0x55"},
+       {bytes: "2", name: address, type: uint8, desc: "Requested CAN address 36 to 39"},
+       {bytes: "3", name: check,   type: uint8, desc: "Byte 2 XOR 0xFF"}],
+     notes: ["Send with only one SP-6 connected to the bus."]}
+
+  - {address_of: host, type: 5, variant: transponder_id, name: TRANSPONDER_ID_ALT, title: "EFIS to transponder: aircraft ID and baro altitude", to: [transponder], period_ms: 1000, dlc: 8,
+     fields: [
+       {bytes: "0-5", name: aircraft_id, type: "6-bit x8", desc: "Eight characters, 6 bits each: A-Z = 0x01-0x1A, space = 0x20, 0-9 = 0x30-0x39"},
+       {bytes: "6-7", name: altitude,    type: int16, unit: ft, scale: 10, desc: "Pressure altitude in 10 ft steps; -101 means invalid"}],
+     notes: ["Must be sent once a second. The transponder goes to Off/Standby if nothing arrives for 4 seconds."]}
+
+  - {address_of: host, type: 6, name: TRANSPONDER_STATE, title: "EFIS to transponder: squawk and state", to: [transponder], period_ms: 1000, dlc: 8,
+     fields: [
+       {bytes: "0-1", name: squawk,        type: "octal x4", desc: "3 bits per digit; octal 1234 is sent as 0x9C 0x02"},
+       {bytes: "2",   name: category,      type: uint8, desc: "Bits 0-2 L/W code, bits 3-7 aircraft category (DO-260B)"},
+       {bytes: "3",   name: state,         type: uint8, desc: "Bits 0-2: 0 off, 1 standby, 2 ground, 3 on, 4 alt. Bit 3: IDENT on 0 to 1. Bit 4: 1 = in flight"},
+       {bytes: "4-6", name: icao_address,  type: "uint24", desc: "24-bit ICAO address, LSB first"},
+       {bytes: "7",   name: speed_class,  type: uint8, desc: "0 to 6 speed class; bit 7 = ADS-B In capable"}],
+     notes: ["Must be sent once a second."]}
+
+  - {address_of: host, type: 7, name: TRANSPONDER_SQUITTER, title: "EFIS to transponder: extended squitter (3 messages)", to: [transponder], period_ms: 1000, dlc: 8,
+     fields: [
+       {bytes: "0", name: message_type, type: uint8, desc: "0, 1 or 2 selects the layout below"},
+       {bytes: "1-7", name: data, type: "varies", desc: "Type 0: GPS fix (0-3), ground track (deg x 10), ground speed (kt x 10), height of geoid (ft/5 + 1000). Type 1: satellites tracked, altitude HMSL (ft/5 + 1000), latitude. Type 2: UTC h:m:s, longitude"}],
+     notes: ["MGL position format: 180000 = 1 degree; negative is S or W.", "Mode-S transponders only."]}
+
+  - {address_of: host, type: 8, name: SP10_COMMAND, title: "Command to SP-10 motor/flap/trim controller", to: [sp10], dlc: "1-8",
+     fields: [
+       {bytes: "0", name: command, type: uint8, desc: "0 set position (flap), 1 set position (pitch trim), 2 set position (bank trim), 4/5/6 pulse flap/pitch/bank motor, 8 setup, 9 go to stored position, 10 request diagnostics"},
+       {bytes: "1", name: command_repeat, type: uint8, desc: "Repeat of byte 0"},
+       {bytes: "2-7", name: data, type: "varies", desc: "Position 0-4095 (2 bytes LSB first), direction, timeout (100 ms steps), power; or setup item and value"}],
+     notes: ["Any setup message makes the SP-10 send its setup data."]}
+
+  - {address_of: host, type: 9, name: GENERAL_COMMAND, title: "General command (RDAC and ECB)", to: [rdac, ecb], dlc: "1-8",
+     fields: [
+       {bytes: "0", name: destination, type: uint8, desc: "0 to 3 = RDAC 1 to 4; 8 to 15 = ECB 1 to 8"},
+       {bytes: "1", name: command,     type: uint8, desc: "RDAC: 0x81 request calibration, 0x82-0x86 set ambient/TC/analog/MAP/volt calibration, 0xA0 store in flash. ECB: 0 trip current, 1 trip speed, 2 WIGWAG state, 3 WIGWAG time, 4 breaker on/off, 5 request setup"},
+       {bytes: "2-7", name: data, type: uint8, desc: "Depends on the command"}],
+     notes: ["PiAvionics 0x19 (GPS time) uses this same ID. Byte 0 of the time message is the year, never 0 to 3 or 8 to 15, so the RDAC and ECB ignore it today."]}
+
+  - {address_of: host, type: 10, name: EXTENDER_COMMAND, title: "iEFIS extender command (extender 1; types 10 to 13 address extenders 1 to 4)", to: [extender], dlc: "2-8",
+     fields: [
+       {bytes: "0", name: type, type: uint8, desc: "0 set outputs, 1-5 set up RS232 port, 6 set address, 7-11 send data to RS232 port"},
+       {bytes: "1-7", name: data, type: "varies", desc: "Depends on the type"}],
+     notes: ["Normally unused in an MGL EFIS (the extender uses a serial link). Message type 0 switches the extender into CAN-only mode."]}
+
+  # ===== SP-7 / SP-9 AHRS ====================================================
+  - {address_of: ahrs, type: 1, name: SP7_ACCEL, title: "SP-7 accelerometer data", from: ahrs, period_ms: 50, period_note: "20 per second", dlc: 8,
+     fields: [
+       {bytes: "0-1", name: accel_x, type: int16, unit: g, scale: 0.001},
+       {bytes: "2-3", name: accel_y, type: int16, unit: g, scale: 0.001},
+       {bytes: "4-5", name: accel_z, type: int16, unit: g, scale: 0.001},
+       {bytes: "6-7", name: total_g, type: int16, unit: g, scale: 0.001}]}
+
+  - {address_of: ahrs, type: 2, name: SP7_GYRO, title: "SP-7 gyro rates", from: ahrs, period_ms: 50, period_note: "20 per second", dlc: 8,
+     fields: [
+       {bytes: "0-1", name: turn_rate,  type: int16, unit: deg/min, scale: 0.1, desc: "-60 to 60"},
+       {bytes: "2-3", name: bank_rate,  type: int16, desc: "360 deg/s = 16384"},
+       {bytes: "4-5", name: pitch_rate, type: int16, desc: "360 deg/s = 16384"},
+       {bytes: "6-7", name: yaw_rate,   type: int16, desc: "360 deg/s = 16384"}]}
+
+  - {address_of: ahrs, type: 3, name: SP7_EULER, title: "SP-7 Euler attitude", from: ahrs, period_ms: 50, period_note: "20 per second", dlc: 8,
+     fields: [
+       {bytes: "0-1", name: roll,  type: int16, unit: deg, scale: 0.01, desc: "-179.99 to 180.00"},
+       {bytes: "2-3", name: pitch, type: int16, unit: deg, scale: 0.01, desc: "-90.00 to 90.00"},
+       {bytes: "4-5", name: yaw,   type: int16, unit: deg, scale: 0.01, desc: "-179.99 to 180.00"},
+       {bytes: "6",   name: slip,  type: int8,  desc: "-50 to 50"},
+       {bytes: "7",   name: flags, type: uint8, desc: "Bit 0: 1 = gyro mode. Bit 1: over-range. Bits 5-7: 001 = SP-7"}]}
+
+  # ===== SP-6 compass ========================================================
+  - {address_of: compass, type: 1, name: SP6_HEADING, title: "SP-6 heading and raw magnetometer", from: compass, period_ms: 50, period_note: "20 per second", dlc: 8,
+     fields: [
+       {bytes: "0-1", name: heading, type: uint16, unit: deg, scale: 0.01, desc: "Magnetic heading, 0 to 359.99"},
+       {bytes: "2-6", name: raw_mag_xyz, type: "3 x uint12 packed", desc: "X, Y, Z raw readings, 2048 = zero field, little-endian packed (2-3.5, 3.5-5, 5-6.5)"},
+       {bytes: "7",   name: slip, type: int8, desc: "Ball position"}]}
+
+  - {address_of: compass, type: 2, variant: deviation_1, name: SP6_DEV_1, title: "SP-6 deviation calibration packet 1 (older firmware)", from: compass, dlc: 8,
+     fields: [
+       {bytes: "0-1", name: max_ew, type: uint16}, {bytes: "2-3", name: min_ew, type: uint16},
+       {bytes: "4-5", name: max_ns, type: uint16}, {bytes: "6-7", name: min_ns, type: uint16}],
+     notes: ["Sent only during an active deviation calibration."]}
+
+  - {address_of: compass, type: 3, name: SP6_DEV_2, title: "SP-6 deviation calibration packet 2 (older firmware)", from: compass, dlc: 8,
+     fields: [
+       {bytes: "0-1", name: ew_current, type: uint16}, {bytes: "2-3", name: ns_current, type: uint16},
+       {bytes: "4-5", name: max_z, type: uint16},      {bytes: "6-7", name: min_z, type: uint16}]}
+
+  - {address_of: compass, type: 4, name: SP6_DEV_3, title: "SP-6 deviation calibration packet 3 (older firmware)", from: compass, dlc: 2,
+     fields: [{bytes: "0-1", name: z_current, type: uint16}]}
+
+  - {address_of: compass, type: 2, variant: selfcal, name: SP6_CAL, title: "SP-6 calibration progress (self-calibrating firmware)", from: compass, dlc: 4,
+     fields: [
+       {bytes: "0-1", name: samples, type: uint16, desc: "Unique samples in the calibration buffer"},
+       {bytes: "2-3", name: ellipsoid_fit, type: uint16, unit: "%", desc: "Typical result 96 to 98 %"}],
+     notes: ["Sent while calibration is active, in addition to message 1."]}
+
+  # ===== RDAC XF engine unit =================================================
+  - {address_of: rdac, type: 1, name: RDAC_FUEL_FLOW, title: "RDAC XF fuel flow pulses", from: rdac, period_ms: 4000, dlc: 8,
+     fields: [
+       {bytes: "0-1", name: flow1_count, type: uint16, desc: "Pulses in the last 4 s"},
+       {bytes: "2-3", name: flow1_ratio, type: uint16, desc: "1000 = 100.0 %; 65536 = no pulse"},
+       {bytes: "4-5", name: flow2_count, type: uint16},
+       {bytes: "6-7", name: flow2_ratio, type: uint16}]}
+
+  - {address_of: rdac, type: 2, name: RDAC_TC_1_4, title: "RDAC XF thermocouples 1 to 4", from: rdac, period_ms: 500, dlc: 8,
+     fields: [
+       {bytes: "0-1", name: tc1, type: int16, unit: degC}, {bytes: "2-3", name: tc2, type: int16, unit: degC},
+       {bytes: "4-5", name: tc3, type: int16, unit: degC}, {bytes: "6-7", name: tc4, type: int16, unit: degC}],
+     notes: ["Uncompensated K-type reading (24.9 mV = 600 C). Add the cold junction temperature from message 7."]}
+
+  - {address_of: rdac, type: 3, name: RDAC_TC_5_8, title: "RDAC XF thermocouples 5 to 8", from: rdac, period_ms: 500, dlc: 8,
+     fields: [
+       {bytes: "0-1", name: tc5, type: int16, unit: degC}, {bytes: "2-3", name: tc6, type: int16, unit: degC},
+       {bytes: "4-5", name: tc7, type: int16, unit: degC}, {bytes: "6-7", name: tc8, type: int16, unit: degC}]}
+
+  - {address_of: rdac, type: 4, name: RDAC_TC_9_12, title: "RDAC XF thermocouples 9 to 12", from: rdac, period_ms: 500, dlc: 8,
+     fields: [
+       {bytes: "0-1", name: tc9,  type: int16, unit: degC}, {bytes: "2-3", name: tc10, type: int16, unit: degC},
+       {bytes: "4-5", name: tc11, type: int16, unit: degC}, {bytes: "6-7", name: tc12, type: int16, unit: degC}]}
+
+  - {address_of: rdac, type: 5, name: RDAC_ANALOG_1, title: "RDAC XF analog inputs: oil and aux", from: rdac, period_ms: 500, dlc: 8,
+     fields: [
+       {bytes: "0-1", name: oil_temp, type: uint16, desc: "Raw ADC 0-4095"}, {bytes: "2-3", name: oil_pressure, type: uint16, desc: "Raw ADC"},
+       {bytes: "4-5", name: aux1, type: uint16, desc: "Raw ADC"},          {bytes: "6-7", name: aux2, type: uint16, desc: "Raw ADC"}]}
+
+  - {address_of: rdac, type: 6, name: RDAC_ANALOG_2, title: "RDAC XF analog inputs: fuel and coolant", from: rdac, period_ms: 500, dlc: 8,
+     fields: [
+       {bytes: "0-1", name: fuel_pressure, type: uint16, desc: "Raw ADC"}, {bytes: "2-3", name: coolant, type: uint16, desc: "Raw ADC"},
+       {bytes: "4-5", name: fuel_level_1, type: uint16, desc: "Raw ADC"},  {bytes: "6-7", name: fuel_level_2, type: uint16, desc: "Raw ADC"}]}
+
+  - {address_of: rdac, type: 7, name: RDAC_SUPPLY, title: "RDAC XF temperature and supply voltage", from: rdac, period_ms: 500, dlc: 4,
+     fields: [
+       {bytes: "0-1", name: cold_junction_temp, type: int16, unit: degC},
+       {bytes: "2-3", name: supply_voltage, type: uint16, desc: "Volts = raw / 5.73758, in 0.1 V steps"}],
+     notes: ["Messages 2 to 7 must all be sent. Send them together every 500 ms."]}
+
+  - {address_of: rdac, type: 8, name: RDAC_RPM_MAP, title: "RDAC XF RPM, MAP and current", from: rdac, period_ms: 200, dlc: 8,
+     fields: [
+       {bytes: "0-1", name: rpm1, type: uint16, unit: rpm, desc: "1 pulse per revolution; 50000 or more means RPM x 10"},
+       {bytes: "2-3", name: rpm2, type: uint16, unit: rpm},
+       {bytes: "4-5", name: map,  type: uint16, desc: "Raw ADC 0-4095"},
+       {bytes: "6-7", name: current, type: uint16, desc: "Raw ADC 0-4095"}]}
+
+  - {address_of: rdac, type: 9, name: RDAC_CALIBRATION, title: "RDAC XF calibration reply", from: rdac, dlc: 8,
+     fields: [
+       {bytes: "0", name: id, type: uint8, desc: "0: V1 ambient, V2 TC, V3 analog. 1: V1 MAP, V2 volt"},
+       {bytes: "1", name: spare, type: uint8},
+       {bytes: "2-3", name: v1, type: uint16}, {bytes: "4-5", name: v2, type: uint16}, {bytes: "6-7", name: v3, type: uint16}],
+     notes: ["Reply to a 'request calibration data' command. RDAC firmware from 29 Oct 2013."]}
+
+  # ===== SP-10 flap / trim controller ========================================
+  - {address_of: sp10, type: 0, name: SP10_FLAP, title: "SP-10 flap status", from: sp10, period_ms: 1000, period_note: "At most 1 s apart; on change, no faster than 0.2 s", dlc: 4,
+     fields: [
+       {bytes: "0", name: function, type: uint8, desc: "0 = flaps"},
+       {bytes: "1", name: flags, type: uint8, desc: "Bit 0: motor on. Bits 1-3: last commanded position + 1"},
+       {bytes: "2-3", name: position, type: uint16, desc: "0-4095"}]}
+
+  - {address_of: sp10, type: 1, name: SP10_PITCH_TRIM, title: "SP-10 pitch trim status", from: sp10, period_ms: 1000, dlc: 4,
+     fields: [
+       {bytes: "0", name: function, type: uint8, desc: "1 = pitch trim"},
+       {bytes: "1", name: flags, type: uint8}, {bytes: "2-3", name: position, type: uint16, desc: "0-4095"}]}
+
+  - {address_of: sp10, type: 2, name: SP10_ROLL_TRIM, title: "SP-10 roll trim status", from: sp10, period_ms: 1000, dlc: 4,
+     fields: [
+       {bytes: "0", name: function, type: uint8, desc: "2 = roll trim"},
+       {bytes: "1", name: flags, type: uint8}, {bytes: "2-3", name: position, type: uint16, desc: "0-4095"}]}
+
+  - {address_of: sp10, type: 8, name: SP10_SETUP, title: "SP-10 setup 1 to 7", from: sp10, dlc: "3-7",
+     fields: [
+       {bytes: "0", name: setup_number, type: uint8, desc: "0 to 6 selects which setup group follows"},
+       {bytes: "1-6", name: settings, type: "varies", desc: "Flap, pitch and roll positions (0-4095) or motor timeout, direction and force"}],
+     notes: ["Sent when changed, or on request. The host should request the setup rather than keep its own copy."]}
+
+  - {address_of: sp10, type: 14, name: SP10_DIAG_A, title: "SP-10 raw ADC diagnostics (ADC 0-3)", from: sp10, dlc: 8,
+     fields: [{bytes: "0-7", name: adc_0_3, type: "4 x uint16", desc: "Raw ADC 0 to 3"}]}
+
+  - {address_of: sp10, type: 15, name: SP10_DIAG_B, title: "SP-10 raw ADC diagnostics (ADC 4-7)", from: sp10, dlc: 8,
+     fields: [{bytes: "0-7", name: adc_4_7, type: "4 x uint16", desc: "Raw ADC 4 to 7"}]}
+
+  # ===== Transponder =========================================================
+  - {address_of: transponder, type: 5, name: TRANSPONDER_REPLY_ID, title: "Transponder reply: aircraft ID and altitude", from: transponder, period_ms: 4000, period_note: "Replies to the EFIS message; every 4 s if the EFIS message is missing", dlc: 8,
+     fields: [{bytes: "0-7", name: copy_of_host_5, type: "same as host message 5", desc: "Same layout as TRANSPONDER_ID_ALT"}]}
+
+  - {address_of: transponder, type: 6, name: TRANSPONDER_REPLY_STATE, title: "Transponder reply: squawk and state", from: transponder, period_ms: 4000, dlc: 8,
+     fields: [{bytes: "0-7", name: copy_of_host_6, type: "same as host message 6", desc: "Same layout as TRANSPONDER_STATE. State bits 3-7 differ: 3 reply seen, 4 failure, 5 no data from transponder, 6 IDENT active, 7 squitter sent in last 0.5 s"}]}
+
+  # ===== ECB electronic circuit breaker ======================================
+  - {address_of: ecb, type: 0, name: ECB_STATE, title: "ECB breaker states and voltage", from: ecb, period_ms: 4000, period_note: "Every 4 s or when a breaker changes", dlc: 5,
+     fields: [
+       {bytes: "0", name: breaker_on,  type: uint8, desc: "One bit per breaker, LSB = breaker 1"},
+       {bytes: "1", name: breaker_tripped, type: uint8, desc: "1 = tripped"},
+       {bytes: "2", name: doubling, type: uint8, desc: "Bits 0-3 paired breakers, 4-5 triples, 6-7 quads"},
+       {bytes: "3-4", name: input_voltage, type: uint16, unit: V, scale: 0.1}]}
+
+  - {address_of: ecb, type: 1, name: ECB_CURRENT, title: "ECB breaker currents", from: ecb, period_ms: 4000, period_note: "0.5 to 4 s depending on changes", dlc: 8,
+     fields: [{bytes: "0-7", name: current_1_8, type: "8 x uint8", unit: A, scale: 0.1, desc: "Breakers 1 to 8. Add the currents of doubled breakers"}]}
+
+  - {address_of: ecb, type: 2, name: ECB_TRIP_1_4, title: "ECB trip current, breakers 1 to 4", from: ecb, dlc: 8,
+     fields: [{bytes: "0-7", name: trip_1_4, type: "4 x uint16", unit: A, scale: 0.1}], notes: ["Sent in reply to a request for settings."]}
+
+  - {address_of: ecb, type: 3, name: ECB_TRIP_5_8, title: "ECB trip current, breakers 5 to 8", from: ecb, dlc: 8,
+     fields: [{bytes: "0-7", name: trip_5_8, type: "4 x uint16", unit: A, scale: 0.1}]}
+
+  - {address_of: ecb, type: 4, name: ECB_TRIP_TIME, title: "ECB trip response times", from: ecb, dlc: 8,
+     fields: [{bytes: "0-7", name: trip_time_1_8, type: "8 x uint8", unit: s, scale: 0.1}]}
+
+  - {address_of: ecb, type: 5, name: ECB_WIGWAG, title: "ECB DIP switches and WIGWAG", from: ecb, dlc: 4,
+     fields: [
+       {bytes: "0", name: dip_switch, type: uint8}, {bytes: "1", name: wigwag_even, type: uint8},
+       {bytes: "2", name: wigwag_odd, type: uint8}, {bytes: "3", name: wigwag_time, type: uint8, unit: s, scale: 0.1}]}
+
+  # ===== Touch pad ===========================================================
+  - {address_of: touchpad, type: 0, variant: position, name: TOUCHPAD_XY, title: "Touch pad position", from: touchpad, dlc: 4,
+     fields: [{bytes: "0-1", name: x, type: uint16}, {bytes: "2-3", name: y, type: uint16}],
+     notes: ["Axis direction and orientation depend on mounting; the EFIS has a calibration for it."]}
+
+  - {address_of: touchpad, type: 0, variant: gesture, name: TOUCHPAD_GESTURE, title: "Touch pad gesture", from: touchpad, dlc: 1,
+     fields: [{bytes: "0", name: gesture, type: uint8, desc: "0x10 tap, 0x20 double tap, 0x31/41/51/61 swipe up/right/down/left, 0x11 tap and hold, 0x32/42/52/62 swipe and hold"}]}
+
+  # ===== iEFIS extender ======================================================
+  - {address_of: extender, type: 0, name: EXT_ANALOG_1_4, title: "Extender analog inputs 1 to 4", from: extender, period_ms: 125, period_note: "125 ms if changed, otherwise every 1 s", dlc: 8,
+     fields: [{bytes: "0-7", name: analog_1_4, type: "4 x uint16", desc: "0-4095"}]}
+
+  - {address_of: extender, type: 1, name: EXT_ANALOG_5_8, title: "Extender analog inputs 5 to 8", from: extender, period_ms: 125, dlc: 8,
+     fields: [{bytes: "0-7", name: analog_5_8, type: "4 x uint16", desc: "0-4095"}]}
+
+  - {address_of: extender, type: 2, name: EXT_STATUS, title: "Extender status", from: extender, period_ms: 125, dlc: 6,
+     fields: [
+       {bytes: "0-1", name: pressure, type: uint16, desc: "Raw ADC"},
+       {bytes: "2", name: supply_voltage, type: uint8, unit: V, scale: 0.1, desc: "5.0 to 30.5 V (byte is 0 to 255, offset 5.0 V)"},
+       {bytes: "3", name: ports_ready, type: uint8, desc: "Bits 0-4: RS232 ports 1-5 initialised"},
+       {bytes: "4", name: outputs, type: uint8, desc: "Bits 0-4: outputs 1-5 (1 = on)"},
+       {bytes: "5", name: temperature, type: uint8, unit: degC, desc: "Degrees C + 128"}]}
+
+  - {address_of: extender, type: 3, name: EXT_RS232_RX1, title: "Extender RS232 received data, ports 1 to 5 (types 3 to 7)", from: extender, dlc: "1-8",
+     fields: [{bytes: "0-7", name: data, type: bytes, desc: "1 to 8 received bytes; type 3 is port 1 and type 7 is port 5"}]}
+
+  # ===== Servos ==============================================================
+  # Servo messages (addresses 16 to 31) are not described in this document.
