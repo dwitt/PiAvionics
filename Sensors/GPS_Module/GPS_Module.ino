@@ -16,6 +16,8 @@
 #include <Adafruit_NeoPixel.h>   // for NeoPixel LED
 #include "XYZgeomag.hpp"         // WMM2025 magnetic declination (nhz2/XYZgeomag)
 
+#define VERSION "1.0.1"
+
 /*****************************************************************************
  * Defines to help with debugging
  ****************************************************************************/
@@ -146,6 +148,95 @@ void serialPrintCANMsg(uint16_t id, uint8_t *data, uint8_t len) {
 #endif
 
 
+// ----------------------------------------------------------------------------
+// GPS start-up helpers
+//
+// The GPS powers up at 9600 baud, but may already be at 115200 (after an
+// RP2040-only reset the GPS keeps its settings). If the RP2040 and GPS
+// disagree on baud rate we read noise, never see a valid sentence, and report
+// "no fix" forever. So we probe for valid NMEA instead of assuming a baud rate.
+// ----------------------------------------------------------------------------
+
+#define GPS_PROBE_MS        1500   // listen this long at each baud rate
+#define GPS_INIT_ATTEMPTS   3      // passes at boot
+#define GPS_SILENCE_MS      5000   // no valid NMEA for this long -> re-init
+
+static unsigned long lastValidNmea = 0;
+
+// True if the sentence starts with '$' and its *XX checksum is correct
+static bool gpsNmeaValid(const char *nmea) {
+  if (!nmea || nmea[0] != '$') return false;
+  uint8_t sum = 0;
+  const char *c = nmea + 1;
+  while (*c && *c != '*' && *c != '\r' && *c != '\n') sum ^= (uint8_t)*c++;
+  if (*c != '*') return false;
+  char *end;
+  char hex[3] = { c[1], c[2], 0 };
+  long given = strtol(hex, &end, 16);
+  return (end == hex + 2) && (given == sum);
+}
+
+// Read the GPS for up to timeoutMs; true as soon as a valid sentence arrives
+static bool gpsWaitForNMEA(uint32_t timeoutMs) {
+  uint32_t start = millis();
+  while (millis() - start < timeoutMs) {
+    while (Serial1.available()) gps.read();
+    if (gps.newNMEAreceived()) {
+      const char *nmea = gps.lastNMEA();
+      bool ok = gpsNmeaValid(nmea);
+      if (ok) gps.parse((char *)nmea);
+      if (ok) return true;
+    }
+  }
+  return false;
+}
+
+static void gpsOpenSerial(uint32_t baud) {
+  Serial1.end();
+  Serial1.begin(baud);
+  gps.begin(baud);
+  while (Serial1.available()) Serial1.read();   // discard leftovers
+}
+
+// Find the GPS's current baud rate, move it to 115200, and configure output.
+// Returns true once valid NMEA has been seen at 115200.
+static bool gpsInit(int attempts) {
+  for (int a = 0; a < attempts; a++) {
+    bool ready = false;
+
+    // Already at 115200? (RP2040-only reset, or baud remembered by the GPS)
+    gpsOpenSerial(GPS_BAUD_FAST);
+    if (gpsWaitForNMEA(GPS_PROBE_MS)) {
+      ready = true;
+    } else {
+      // Power-up default: 9600. Confirm it is talking, then switch it.
+      gpsOpenSerial(GPS_BAUD_INITIAL);
+      if (gpsWaitForNMEA(GPS_PROBE_MS)) {
+        gps.sendCommand(PMTK_SET_BAUD_115200);
+        delay(500);
+        gpsOpenSerial(GPS_BAUD_FAST);
+        ready = gpsWaitForNMEA(GPS_PROBE_MS);
+      }
+    }
+
+    if (!ready) continue;
+
+    // Output only RMC, GGA and GSA, at 1 Hz, with SBAS/WAAS enabled.
+    // PMTK314 fields: GLL,RMC,VTG,GGA,GSA,GSV,GRS,GST,...,ZDA,...
+    gps.sendCommand("$PMTK314,0,1,0,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0*29");
+    delay(100);
+    gps.sendCommand(PMTK_SET_NMEA_UPDATE_1HZ);
+    delay(100);
+    gps.sendCommand(PMTK_ENABLE_SBAS);
+    delay(100);
+    gps.sendCommand(PMTK_ENABLE_WAAS);
+    delay(100);
+    return true;
+  }
+  return false;
+}
+
+
 /*****************************************************************************
  * Setup Code
  *
@@ -176,52 +267,11 @@ void setup() {
 
   // --------------------------------------------------------------------------
   // Connect to the GPS module
-  // Start at 9600 baud (GPS default), then switch to 115200
+  // Probe for the GPS baud rate, switch it to 115200, then configure it
   // --------------------------------------------------------------------------
 
-  Serial1.begin(GPS_BAUD_INITIAL);
-  gps.begin(GPS_BAUD_INITIAL);
-
-  // Send command to GPS to change its baud rate to 115200
-  gps.sendCommand(PMTK_SET_BAUD_115200);
-  delay(500);
-
-  // Reinitialize Serial1 at the new baud rate
-  Serial1.end();
-  Serial1.begin(GPS_BAUD_FAST);
-  gps.begin(GPS_BAUD_FAST);
-
-  // --------------------------------------------------------------------------
-  // Configure the GPS NMEA output
-  // Enable RMC, GGA, and GSA sentences
-  //                          A B C D E F G H                   I
-  // PMTK314,                 0,1,0,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0
-  //
-  // A - send GLL - Geographic Position - Latitude/Longitude
-  // B - send RMC - Recommended Minimum Navigation Information
-  // C - send VTG - Track made good and Ground Speed
-  // D - send GGA - Global Positioning System Fix Data
-  // E - send GSA - GPS DOP and active satellites
-  // F - send GSV - Satellites in view
-  // G - send GRS - GPS Range Residuals
-  // H - send GST - GPS Pseudorange Noise Statistics
-  // I - send ZDA - Time & Date
-  // --------------------------------------------------------------------------
-
-  // Enable RMC, GGA, and GSA sentences
-  gps.sendCommand("$PMTK314,0,1,0,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0*29");
-  delay(100);
-
-  // Set the NMEA update rate to 1 Hz (1000 ms)
-  gps.sendCommand(PMTK_SET_NMEA_UPDATE_1HZ);
-  delay(100);
-
-  // Enable SBAS/WAAS for improved accuracy (especially vertical)
-  gps.sendCommand(PMTK_ENABLE_SBAS);
-  delay(100);
-  gps.sendCommand(PMTK_ENABLE_WAAS);
-
-  gps_success = true;  // GPS is fire-and-forget on UART, no handshake
+  gps_success = gpsInit(GPS_INIT_ATTEMPTS);
+  lastValidNmea = millis();
 
   // --------------------------------------------------------------------------
   // Connect to the CAN Bus
@@ -247,8 +297,10 @@ void setup() {
   // Go / No-Go decision
   // --------------------------------------------------------------------------
 
-  if (gps_success && can_success) {
-    pixel.setPixelColor(0, pixel.Color(0, 255, 0));
+  if (can_success) {
+    // Green = GPS talking. Orange = GPS silent for now; loop() keeps retrying.
+    pixel.setPixelColor(0, gps_success ? pixel.Color(0, 255, 0)
+                                       : pixel.Color(255, 80, 0));
     pixel.show();
   } else {
     // Flash red LED to indicate failure
@@ -321,6 +373,7 @@ void loop() {
       Serial.print(gps.lastNMEA());
     }
     #endif
+    if (gpsNmeaValid(gps.lastNMEA())) lastValidNmea = millis();
     gps.parse(gps.lastNMEA());
     #if defined(DEBUG)
     if (printNmea && Serial) {
@@ -336,6 +389,26 @@ void loop() {
       lastNmeaDebug = millis();
     }
     #endif
+  }
+
+  // --------------------------------------------------------------------------
+  // GPS watchdog: if no valid NMEA for GPS_SILENCE_MS, drop the stale fix and
+  // re-run the baud probe / configuration. The 5 s spacing between retries
+  // comes from resetting lastValidNmea after each attempt.
+  // --------------------------------------------------------------------------
+
+  if (millis() - lastValidNmea > GPS_SILENCE_MS) {
+    gps.fix = false;
+    gps.fixquality = 0;
+    gps.fixquality_3d = 0;
+    gps.satellites = 0;
+    gps.HDOP = 0;
+    gps.VDOP = 0;
+
+    bool ok = gpsInit(1);
+    pixel.setPixelColor(0, ok ? pixel.Color(0, 255, 0) : pixel.Color(255, 80, 0));
+    pixel.show();
+    lastValidNmea = millis();
   }
 
   // --------------------------------------------------------------------------
