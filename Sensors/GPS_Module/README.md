@@ -6,7 +6,7 @@ Arduino GPS sensor module for the PiAvionics system. Reads an Adafruit Ultimate 
 
 - Adafruit Feather RP2040
 - Adafruit CAN Bus FeatherWing (MCP2515)
-- Adafruit Ultimate GPS Breakout - 66 channel w/10 Hz updates - Version 3
+- Adafruit Ultimate GPS FeatherWing
 
 ## Pin Connections
 
