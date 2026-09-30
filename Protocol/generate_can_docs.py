@@ -21,7 +21,7 @@ from pathlib import Path
 
 import yaml
 
-VERSION = "1.0.1"
+VERSION = "1.0.3"
 
 HERE = Path(__file__).resolve().parent
 PI_YAML = HERE / "can_messages.yaml"
@@ -109,28 +109,19 @@ def frame_bits(dlc):
 
 
 def byte_map(fields, dlc):
-    """ASCII picture of which fields use which bytes."""
-    cell = 9
+    """Markdown table with one column per byte (Markdown cannot merge cells)."""
     n = int(str(dlc).split("-")[-1])
-    spans = []
-    used = set()
+    cells = {}
     for f in fields:
         a, b = parse_bytes(f["bytes"])
-        spans.append((a, b, f["name"]))
-        used.update(range(a, b + 1))
-    for i in range(n):
-        if i not in used:
-            spans.append((i, i, "-"))
-    spans.sort()
-
-    def box(width, text):
-        text = text if len(text) <= width else text[: width - 1] + "…"
-        return text.center(width)
-
-    head = "byte  " + " ".join(str(i).center(cell) for i in range(n))
-    rule = "      +" + "+".join("-" * (((b - a + 1) * (cell + 1)) - 1) for a, b, _ in spans) + "+"
-    body = "      |" + "|".join(box(((b - a + 1) * (cell + 1)) - 1, name) for a, b, name in spans) + "|"
-    return "\n".join(line.rstrip() for line in [head, rule, body, rule])
+        count = b - a + 1
+        for i in range(a, b + 1):
+            label = f"`{f['name']}`" if count == 1 else f"`{f['name']}` ({i - a + 1}/{count})"
+            cells[i] = label
+    header = "| Byte | " + " | ".join(str(i) for i in range(n)) + " |"
+    rule = "|------|" + "|".join(":---:" for _ in range(n)) + "|"
+    row = "| Field | " + " | ".join(cells.get(i, "—") for i in range(n)) + " |"
+    return "\n".join([header, rule, row])
 
 
 # ---------------------------------------------------------------------------
@@ -271,7 +262,8 @@ def render_pi(doc):
                 f"| Data length | {m['dlc']} bytes |",
                 f"| Status | {STATUS_LABEL[m['status']]} |", "",
                 field_table(m["fields"]), "",
-                "```", byte_map(m["fields"], m["dlc"]), "```", ""]
+                "**Byte layout**", "",
+                byte_map(m["fields"], m["dlc"]), ""]
         if m.get("notes"):
             out += ["**Notes**", ""] + [f"- {' '.join(n.split())}" for n in m["notes"]] + [""]
         if m.get("code"):
