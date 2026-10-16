@@ -29,7 +29,7 @@
 /*****************************************************************************
  * Firmware version - increment the patch number on every change
  *****************************************************************************/
-#define VERSION "1.0.8"
+#define VERSION "1.0.9"
 
 // Set to 0 to run without the AOA sensor (Wire1, GPIO8/9). With 0, Wire1 is not
 // touched at all and a missing AOA sensor does not stop startup.
@@ -110,7 +110,7 @@ Adafruit_MAX31865 rtd(RTD_CS_PIN);
 // machine that never waits: bias on, settle, convert, read, check faults.
 #define RTD_SAMPLE_PERIOD_MS 250  // time between the start of two samples
 #define RTD_BIAS_SETTLE_MS   11   // wait after bias on (chip needs about 10.5 ms)
-#define RTD_CONVERSION_MS    65   // one-shot conversion (52 ms at 60 Hz, 62.5 ms at 50 Hz)
+#define RTD_CONVERSION_MS    65   // one-shot conversion (52 ms with the 60 Hz setting, 62.5 ms with 50 Hz)
 #define RTD_FAULT_CYCLE_MS   2    // automatic fault detection takes about 1 ms
 
 // Smooths the OAT. Samples arrive every 250 ms. The filter time constant is
@@ -118,9 +118,9 @@ Adafruit_MAX31865 rtd(RTD_CS_PIN);
 // Noise on the reading falls by sqrt(alpha / (2 - alpha)): about 0.29 at 0.15,
 // 0.42 at 0.30 and 0.58 at 0.50. The raw reading has about 0.14 C of noise.
 // Most of the lag in the reading is the probe itself (about 5 s in still air,
-// measured), so a lighter filter helps only a little. 0.15 was too slow to
-// feel; 0.50 was chosen on 2026-10-16.
-LowPassFilter oatLowPassFilter(0.5);
+// measured), so a lighter filter helps only a little. 0.15 felt too slow, 0.5
+// was tried, and 0.30 is the current choice (2026-10-16).
+LowPassFilter oatLowPassFilter(0.3);
 
 // CAN Message Constants ------------------------------------------------------
 #define CAN_AIR_MSG_ID    0x28
@@ -226,9 +226,14 @@ static float staticPressureLowPassFiltered = 0;
  * 0.1 C. A sample with a fault is dropped and the last good value is kept.
  *****************************************************************************/
 
-// Base configuration: 3-wire RTD, 60 Hz mains filter, bias off, no conversion
+// Base configuration: 3-wire RTD, 60 Hz filter setting, bias off, no conversion
 // running. Every write to the config register starts from this and adds bits.
-// (Change MAX31865_CONFIG_FILT60HZ to FILT50HZ if the aircraft supply is 50 Hz.)
+// The 50/60 Hz setting is the chip's notch filter against mains pickup. The
+// aircraft has a battery and an alternator, not mains, so neither setting is
+// aimed at anything on board (alternator ripple is at other frequencies and
+// changes with engine speed). It only matters on the bench, where the 60 Hz
+// setting suits North American mains. The setting also fixes the conversion time (see
+// RTD_CONVERSION_MS), and the wait is long enough for either.
 #define RTD_CONFIG_BASE  (MAX31865_CONFIG_3WIRE | MAX31865_CONFIG_FILT60HZ)
 
 // Config register bit 2 starts the chip's automatic fault detection cycle
