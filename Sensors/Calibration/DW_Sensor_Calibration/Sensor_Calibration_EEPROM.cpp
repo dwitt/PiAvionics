@@ -11,7 +11,9 @@ Sensor_Calibration_EEPROM::Sensor_Calibration_EEPROM(uint8_t i2c_addr, TwoWire *
 */
 /**************************************************************************/
 bool Sensor_Calibration_EEPROM::begin(uint8_t eeprom_addr) {
+  #if defined(DEBUG)
   if (Serial) Serial.println("EEPROM");
+  #endif
   ee_addr = eeprom_addr;
 
   EEPROM.begin(eeprom_i2c_address, eeprom_wire);
@@ -20,7 +22,9 @@ bool Sensor_Calibration_EEPROM::begin(uint8_t eeprom_addr) {
 }
 
 bool Sensor_Calibration_EEPROM::saveCalibration(void) {
+  #if defined(DEBUG)
   if (Serial) Serial.println("Save Cal");
+  #endif
 
   uint8_t buf[EEPROM_CAL_SIZE];
   memset(buf, 0, EEPROM_CAL_SIZE);
@@ -47,8 +51,10 @@ bool Sensor_Calibration_EEPROM::saveCalibration(void) {
   for (uint16_t i = 0; i < EEPROM_CAL_SIZE - 2; i++) {
     crc = crc16_update(crc, buf[i]);
   }
+  #if defined (DEBUG)
   if (Serial) Serial.print("CRC: ");
   if (Serial) Serial.println(crc, HEX);
+  #endif
   buf[EEPROM_CAL_SIZE - 2] = crc & 0xFF;
   buf[EEPROM_CAL_SIZE - 1] = crc >> 8;
 
@@ -69,8 +75,10 @@ bool Sensor_Calibration_EEPROM::loadCalibration(void) {
   }
 
   if (crc != 0 || buf[0] != 0x75 || buf[1] != 0x54) {
+    #if defined(DEBUG)
     if (Serial) Serial.print("CRC: ");
     if (Serial) Serial.println(crc, HEX);
+    #endif
     return false;
   }
 
@@ -104,20 +112,20 @@ bool Sensor_Calibration_EEPROM::loadCalibration(void) {
 }
 
 bool Sensor_Calibration_EEPROM::printSavedCalibration(void) {
-  Serial.println(F("------------"));
+  if (Serial) Serial.println(F("------------"));
   for (uint16_t a = ee_addr; a < ee_addr + EEPROM_CAL_SIZE; a++) {
     uint8_t c = EEPROM.read(a);
-    Serial.print("0x");
+    if (Serial) Serial.print("0x");
     if (c < 0x10)
-      Serial.print('0');
-    Serial.print(c, HEX);
-    Serial.print(", ");
+      if (Serial) Serial.print('0');
+    if (Serial) Serial.print(c, HEX);
+    if (Serial) Serial.print(", ");
     if ((a - ee_addr) % 16 == 15) {
-      Serial.println();
+      if (Serial) Serial.println();
     }
   }
-  Serial.println(F("\n------------"));
+  if (Serial) Serial.println(F("\n------------"));
   return true;
 }
 
-static Adafruit_EEPROM_I2C Sensor_Calibration_EEPROM::EEPROM;
+Adafruit_EEPROM_I2C Sensor_Calibration_EEPROM::EEPROM;

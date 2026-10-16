@@ -13,7 +13,7 @@ public:
   // Constructor
   Sensor_Calibration_EEPROM(uint8_t i2c_addr = 0x50, TwoWire *the_wire = &Wire); // 
 
-  bool begin(uint8_t eeprom_addr); // 
+  bool begin(uint8_t eeprom_addr = 60); // 
 
   bool saveCalibration(void);
   bool loadCalibration(void);

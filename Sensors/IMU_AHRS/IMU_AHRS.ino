@@ -42,10 +42,29 @@
 // ---------------------------------------------------------------------------
 #include <Adafruit_AHRS.h>
 
+//----------------------------------------------------------------------------
+// Status LED for startup diagnostics and runtime heartbeat
+// See Sensors/Libraries/StatusLED/StatusLED.md for full specification
+// ---------------------------------------------------------------------------
+#include <StatusLED.h>
+
 /*****************************************************************************
- * Defines to help with debugging     
+ * Defines to help with debugging
  *****************************************************************************/
 //#define DEBUG					Comment out for production code
+
+/*****************************************************************************
+ * Universal POST codes (see Sensors/Libraries/StatusLED/StatusLED.md)
+ *****************************************************************************/
+#define POST_ISM330DHCX   1    // Primary I2C sensor
+#define POST_LIS3MDL      2    // Secondary I2C sensor
+#define POST_EEPROM       9    // EEPROM / Calibration
+#define POST_CAN          11   // CAN bus
+
+// Config failure POST codes (amber flashes)
+#define CONFIG_FAIL_RANGE     1
+#define CONFIG_FAIL_DATARATE  2
+#define CONFIG_FAIL_MODE      3
 
 /*****************************************************************************
  * Create the objects using the libraries 
@@ -68,6 +87,12 @@ Adafruit_LIS3MDL lis3mdl;
 #define CAN_BAUDRATE (250000)
 
 Adafruit_MCP2515 can(CAN_CS_PIN);
+
+//----------------------------------------------------------------------------
+// Status LED (Feather RP2040 onboard NeoPixel)
+//----------------------------------------------------------------------------
+
+StatusLED led;
 
 // CAN Message Constants -----------------------------------------------------
 #define CAN_EULER_MSG_ID	0x48
@@ -140,285 +165,242 @@ static int16_t accelZ = 0;
 
 void setup() {
 
+	/*************************************************************************
+	 * Step 1: Status LED — solid red (power on)
+	 *************************************************************************/
+
+	led.begin();
+	led.startup();
+
+	/*************************************************************************
+	 * Step 2: Debug Serial (non-blocking, 10s timeout)
+	 *************************************************************************/
+
 	Serial.begin(115200);
-	
-	// Add a timeout for interactive features
+
 	unsigned long startMillis = millis();
 	while (!Serial && (millis() - startMillis < 10000)) {
-		// Wait up to 3 seconds for USB Serial connection
 		delay(100);
 	}
 
 	#if defined(DEBUG)
 	if (Serial) {
-		Serial.println("Debugging ISM330DHCX, LIS3MDL and MCP2515.");
+		Serial.println("IMU_AHRS starting...");
 	}
 	#endif
 
-	bool ism330dhcx_success, lis3mdl_success, can_success, eeprom_success;
+	/*************************************************************************
+	 * Step 4: Module sensors — init with LED feedback
+	 * Standard order: ISM330DHCX (POST 1), LIS3MDL (POST 2), EEPROM (POST 9)
+	 *************************************************************************/
 
 	// -----------------------------------------------------------------------
-	// Connect to the ISM330DHCX
-	// Provide the address and the I2C interface to use.
-	// When using the Earle Philhower core:
-	// Wire is I2C1 on the RP2040
-	// Wire1 is I2C0 on the RP2040
-	// Wire speed set at end of setup
+	// ISM330DHCX accel/gyro (I2C Wire, 0x6A) — POST code 1
 	// -----------------------------------------------------------------------
 
-	ism330dhcx_success = ism330dhcx.begin_I2C(ISM330DHCX_I2C_ADDRESS, &Wire);
-	#if defined(DEBUG)
-	if (!ism330dhcx_success && Serial) Serial.println("Could not find ISM330DHCX!");
-	#endif
-
-	// -----------------------------------------------------------------------
-	// Connect to the LIS3MDL
-	// Provide the address and the I2C interface to use.
-	// When using the Earle Philhower core:
-	// Wire is I2C1 on the RP2040
-	// Wire1 is I2C0 on the RP2040
-	// Wire speed set at end of setup
-	// -----------------------------------------------------------------------
-
-	lis3mdl_success = lis3mdl.begin_I2C(LIS3MDL_I2C_ADDRESS, &Wire);
-	#if defined(DEBUG)
-	if (!lis3mdl_success && Serial) Serial.println("Could not find LIS3MDL!");
-	#endif
-
-	// -----------------------------------------------------------------------
-	// Connect to the MCP2515 CAN Bus controller on the SPI bus
-	// Provide the baud rate for the CAN Bus
-	// -----------------------------------------------------------------------
-
-	can_success = can.begin(CAN_BAUDRATE);
-	#if defined(DEBUG)
-	if (!can_success && Serial) Serial.println("Could not find CAN Bus MCP2515!");
-	#endif
-
-
-	// -----------------------------------------------------------------------
-	// Make a stop or proceed decision based on whether we could connect
-	// to all of the devices
-
-	if (!(ism330dhcx_success && lis3mdl_success && can_success )) {
+	led.initBegin();
+	bool ism330dhcx_success = ism330dhcx.begin_I2C(ISM330DHCX_I2C_ADDRESS, &Wire);
+	if (ism330dhcx_success) {
+		led.initOK();
 		#if defined(DEBUG)
-		if (Serial) Serial.println("Startup failed.");
+		if (Serial) Serial.println("ISM330DHCX OK");
 		#endif
-		while(true){	// stop in while loop forever
-			delay(10);
-		}
+	} else {
+		led.initFail();
+		#if defined(DEBUG)
+		if (Serial) Serial.println("ISM330DHCX FAILED");
+		#endif
+		led.postCode(POST_ISM330DHCX);  // never returns
 	}
 
-	#if defined(DEBUG)
-	if (Serial) Serial.println("All peripherals connected.");
-	#endif
-
 	// -----------------------------------------------------------------------
-	// Connect to the EEPROM
+	// LIS3MDL magnetometer (I2C Wire, 0x1C) — POST code 2
 	// -----------------------------------------------------------------------
 
-	if (!cal.begin()) {
+	led.initBegin();
+	bool lis3mdl_success = lis3mdl.begin_I2C(LIS3MDL_I2C_ADDRESS, &Wire);
+	if (lis3mdl_success) {
+		led.initOK();
 		#if defined(DEBUG)
-		if (Serial) Serial.println("Failed to initialize the calibration helper");
+		if (Serial) Serial.println("LIS3MDL OK");
 		#endif
-		while(true) {
-			yield();
-			delay(10);
-		}
+	} else {
+		led.initFail();
+		#if defined(DEBUG)
+		if (Serial) Serial.println("LIS3MDL FAILED");
+		#endif
+		led.postCode(POST_LIS3MDL);  // never returns
+	}
+
+	// -----------------------------------------------------------------------
+	// EEPROM / Calibration (I2C Wire, 0x50) — POST code 9
+	// -----------------------------------------------------------------------
+
+	led.initBegin();
+	bool eeprom_success = cal.begin();
+	if (eeprom_success) {
+		led.initOK();
+		#if defined(DEBUG)
+		if (Serial) Serial.println("EEPROM OK");
+		#endif
+	} else {
+		led.initFail();
+		#if defined(DEBUG)
+		if (Serial) Serial.println("EEPROM FAILED");
+		#endif
+		led.postCode(POST_EEPROM);  // never returns
 	}
 
 	if (!cal.loadCalibration()) {
 		#if defined(DEBUG)
-    	if (Serial) Serial.println("**WARNING** No calibration loaded/found");
+		if (Serial) Serial.println("**WARNING** No calibration loaded/found");
 		#endif
-  	}
+	}
 
-  	cal.printSavedCalibration();
-
+	cal.printSavedCalibration();
 
 	/*************************************************************************
-	 * Configure the peripherals                          
+	 * Step 5: CAN bus — POST code 11
 	 *************************************************************************/
 
-	// -----------------------------------------------------------------------
-	// Set the Accelerometer and Gyro (ISM330DHCX) ranges and data rates
-	// Note: The library is based on LSM6DS and the constants use this for
-	//       a prefix despite the fact that we are configuring the ISM330DHCX
-	// -----------------------------------------------------------------------
-	// -----------------------------------------------------------------------
-	// Set the Magnetometer (LIS3MDL) ranges, data rates and modes
-	// -----------------------------------------------------------------------
+	led.initBegin();
+	bool can_success = can.begin(CAN_BAUDRATE);
+	if (can_success) {
+		led.initOK();
+		#if defined(DEBUG)
+		if (Serial) Serial.println("CAN bus OK");
+		#endif
+	} else {
+		led.initFail();
+		#if defined(DEBUG)
+		if (Serial) Serial.println("CAN bus FAILED");
+		#endif
+		led.postCode(POST_CAN);  // never returns
+	}
 
-	// Note: The accelerometer data range is set to 4G instead of 2G as in 
-	// the Adafruit Calibration routine. This section is effectively the 
-	// setup_sensors(void) method.
+	/*************************************************************************
+	 * Step 6: Go — solid green for 2 seconds
+	 *************************************************************************/
+
+	#if defined(DEBUG)
+	if (Serial) Serial.println("All peripherals connected — GO");
+	#endif
+
+	led.go();
+
+	/*************************************************************************
+	 * Step 7: Configure peripherals
+	 * Sensor ranges, data rates, and modes with read-back verification.
+	 * Config failures show amber POST codes.
+	 *************************************************************************/
+
+	// Note: The accelerometer data range is set to 4G instead of 2G as in
+	// the Adafruit Calibration routine.
 
 	#define ACCEL_RANGE LSM6DS_ACCEL_RANGE_4_G			// +/- 4G
 	#define GYRO_RANGE LSM6DS_GYRO_RANGE_250_DPS		// 250 degrees/sec
 	#define MAG_RANGE LIS3MDL_RANGE_4_GAUSS				// 4 Gauss
-	
+
 	#define ACCEL_DATA_RATE LSM6DS_RATE_104_HZ			// 104 Hz
 	#define GYRO_DATA_RATE LSM6DS_RATE_104_HZ			// 104 Hz
 	#define MAG_DATA_RATE LIS3MDL_DATARATE_1000_HZ		// 1000 Hz
 
 	#define MAG_POWER_MODE LIS3MDL_MEDIUMMODE			// Medium Power
 	#define MAG_OPERATION_MODE LIS3MDL_CONTINUOUSMODE	// Continuous
-	
-	// -----------------------------------------------------------------------
-	// Set the ISM330DHCX acceleraometer range
-	// -----------------------------------------------------------------------
-	lsm6ds_accel_range_t accel_range;
+
+	// --- Sensor ranges (config fail code 1) ---
 
 	ism330dhcx.setAccelRange(ACCEL_RANGE);
-	accel_range = ism330dhcx.getAccelRange();
-	if (accel_range != ACCEL_RANGE) {
+	if (ism330dhcx.getAccelRange() != ACCEL_RANGE) {
 		#if defined(DEBUG)
-		if (Serial)	Serial.println("Unable to set acceleration range in ISM330DHCX.");
+		if (Serial) Serial.println("Config FAIL: accel range");
 		#endif
-		while(true) {
-			delay(10);
-		}
+		led.configFail(CONFIG_FAIL_RANGE);  // never returns
 	}
-
-	// -----------------------------------------------------------------------
-	// Set the ISM330DHCX acceleraometer data rate
-	// -----------------------------------------------------------------------
-	lsm6ds_data_rate_t accel_data_rate;
-
-	ism330dhcx.setAccelDataRate(ACCEL_DATA_RATE);
-	accel_data_rate = ism330dhcx.getAccelDataRate();
-	if (accel_data_rate != ACCEL_DATA_RATE) {
-		#if defined(DEBUG)
-		if (Serial) Serial.println("Unable to set acceleration data rate in ISM330DHCX.");
-		#endif
-		while(true) {
-			delay(10);
-		}
-	}
-
-	// -----------------------------------------------------------------------
-	// Set the ISM330DHCX gyro range
-	// -----------------------------------------------------------------------
-	lsm6ds_gyro_range_t gyro_range;
 
 	ism330dhcx.setGyroRange(GYRO_RANGE);
-	gyro_range = ism330dhcx.getGyroRange();
-	if (gyro_range != GYRO_RANGE) {
+	if (ism330dhcx.getGyroRange() != GYRO_RANGE) {
 		#if defined(DEBUG)
-		if (Serial) Serial.println("Unable to set gyro range in ISM330DHCX.");
+		if (Serial) Serial.println("Config FAIL: gyro range");
 		#endif
-		while(true) {
-			delay(10);
-		}
+		led.configFail(CONFIG_FAIL_RANGE);  // never returns
 	}
-
-	// -----------------------------------------------------------------------
-	// Set the ISM330DHCX gyro data rate
-	// -----------------------------------------------------------------------
-	lsm6ds_data_rate_t gyro_data_rate;
-
-	ism330dhcx.setGyroDataRate(GYRO_DATA_RATE);
-	gyro_data_rate = ism330dhcx.getGyroDataRate();
-	if (gyro_data_rate != GYRO_DATA_RATE) {
-		#if defined(DEBUG)
-		if (Serial) Serial.println("Unable to set GYRO data rate in ISM330DHCX.");
-		#endif
-		while(true) {
-			delay(10);
-		}
-	}
-
-	// -----------------------------------------------------------------------
-	// Set the LIS3MDL range
-	// -----------------------------------------------------------------------
-	lis3mdl_range_t magnetometer_range;
 
 	lis3mdl.setRange(MAG_RANGE);
-	magnetometer_range = lis3mdl.getRange();
-	if (magnetometer_range != MAG_RANGE) {
+	if (lis3mdl.getRange() != MAG_RANGE) {
 		#if defined(DEBUG)
-		if (Serial) Serial.println("Unable to set Magnetometer data range in LIS3MDL.");
+		if (Serial) Serial.println("Config FAIL: mag range");
 		#endif
-		while(true) {
-			delay(10);
-		}
+		led.configFail(CONFIG_FAIL_RANGE);  // never returns
 	}
 
-	// -----------------------------------------------------------------------
-	// Set the LIS3MDL data rate
-	// -----------------------------------------------------------------------
-	lis3mdl_dataRate_t magnetometer_data_rate;
+	// --- Sensor data rates (config fail code 2) ---
+
+	ism330dhcx.setAccelDataRate(ACCEL_DATA_RATE);
+	if (ism330dhcx.getAccelDataRate() != ACCEL_DATA_RATE) {
+		#if defined(DEBUG)
+		if (Serial) Serial.println("Config FAIL: accel data rate");
+		#endif
+		led.configFail(CONFIG_FAIL_DATARATE);  // never returns
+	}
+
+	ism330dhcx.setGyroDataRate(GYRO_DATA_RATE);
+	if (ism330dhcx.getGyroDataRate() != GYRO_DATA_RATE) {
+		#if defined(DEBUG)
+		if (Serial) Serial.println("Config FAIL: gyro data rate");
+		#endif
+		led.configFail(CONFIG_FAIL_DATARATE);  // never returns
+	}
 
 	lis3mdl.setDataRate(MAG_DATA_RATE);
-	magnetometer_data_rate = lis3mdl.getDataRate();
-	if (magnetometer_data_rate != MAG_DATA_RATE) {
+	if (lis3mdl.getDataRate() != MAG_DATA_RATE) {
 		#if defined(DEBUG)
-		if (Serial) Serial.println("Unable to set Magnetometer data rate in LIS3MDL.");
+		if (Serial) Serial.println("Config FAIL: mag data rate");
 		#endif
-		while(true) {
-			delay(10);
-		}
+		led.configFail(CONFIG_FAIL_DATARATE);  // never returns
 	}
 
-	// -----------------------------------------------------------------------
-	// Set the LIS3MDL power/performance mode
-	// -----------------------------------------------------------------------
-	lis3mdl_performancemode_t magnetometer_performance_mode;
+	// --- Sensor modes (config fail code 3) ---
 
 	lis3mdl.setPerformanceMode(MAG_POWER_MODE);
-	magnetometer_performance_mode = lis3mdl.getPerformanceMode();
-	if (magnetometer_performance_mode != MAG_POWER_MODE) {
+	if (lis3mdl.getPerformanceMode() != MAG_POWER_MODE) {
 		#if defined(DEBUG)
-		if (Serial) Serial.println("Unable to set Magnetometer power mode in LIS3MDL.");
+		if (Serial) Serial.println("Config FAIL: mag power mode");
 		#endif
-		while(true) {
-			delay(10);
-		}
-	}	
-
-	// -----------------------------------------------------------------------
-	// Set the LIS3MDL operation mode
-	// -----------------------------------------------------------------------
-	lis3mdl_operationmode_t magnetometer_operation_mode;
+		led.configFail(CONFIG_FAIL_MODE);  // never returns
+	}
 
 	lis3mdl.setOperationMode(MAG_OPERATION_MODE);
-	magnetometer_operation_mode = lis3mdl.getOperationMode();
-	if (magnetometer_operation_mode != MAG_OPERATION_MODE) {
+	if (lis3mdl.getOperationMode() != MAG_OPERATION_MODE) {
 		#if defined(DEBUG)
-		if (Serial) Serial.println("Unable to set Magnetometer operation mode in LIS3MDL.");
+		if (Serial) Serial.println("Config FAIL: mag operation mode");
 		#endif
-		while(true) {
-			delay(10);
-		}
+		led.configFail(CONFIG_FAIL_MODE);  // never returns
 	}
 
 	/*************************************************************************
-	 * Setup Sensors                       
+	 * Setup Sensors
 	 *************************************************************************/
-	// The following 3 lines are equivalent to the init_sensors(void) function 
+
 	accelerometer = ism330dhcx.getAccelerometerSensor();
 	gyroscope = ism330dhcx.getGyroSensor();
 	magnetometer = &lis3mdl;
 
-	// -----------------------------------------------------------------------
-	// Print the sensor details if debugging
-	// May block if serial port not connected.
-	// -----------------------------------------------------------------------
 	#if defined(DEBUG)
 	accelerometer->printSensorDetails();
 	gyroscope->printSensorDetails();
-	magnetometer->printSensorDetails();	
+	magnetometer->printSensorDetails();
 	#endif
 
 	/*************************************************************************
 	 * Setup the SensorFusion filter
 	 *************************************************************************/
-	 filter.begin(FILTER_UPDATE_RATE_HZ);
 
-	 timestamp = millis();
+	filter.begin(FILTER_UPDATE_RATE_HZ);
+	timestamp = millis();
 
 	/*************************************************************************
-	 * Set the I2C speed
+	 * Step 8: Finalize — set I2C speed
 	 *************************************************************************/
 
 	Wire.setClock(400000);		// 400 kHz
@@ -450,6 +432,11 @@ void loop() {
 	float gx, gy, gz;
 
 	static uint8_t counter = 0;
+
+	// ------------------------------------------------------------------------
+	// Runtime heartbeat — brief green flash every ~2 seconds
+	// ------------------------------------------------------------------------
+	led.heartbeat();
 
 	// ------------------------------------------------------------------------
 	// --- Send CAN data
