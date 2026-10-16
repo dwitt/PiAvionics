@@ -15,8 +15,11 @@
 #include <Adafruit_MCP2515.h>    // for CAN Bus FeatherWing
 #include <Adafruit_NeoPixel.h>   // for NeoPixel LED
 #include "XYZgeomag.hpp"         // WMM2025 magnetic declination (nhz2/XYZgeomag)
+#include <ModuleInfo.h>        // USB product name, startup log and '?' report
 
-#define VERSION "1.0.1"
+#define VERSION "1.0.2"
+
+ModuleInfo moduleInfo("GPS_Module", VERSION, __DATE__, __TIME__);
 
 /*****************************************************************************
  * Defines to help with debugging
@@ -250,18 +253,9 @@ void setup() {
   pixel.setPixelColor(0, pixel.Color(255, 0, 0));
   pixel.show();
 
-  Serial.begin(115200);
-
-  unsigned long startMillis = millis();
-  while (!Serial && (millis() - startMillis) < 10000) {
-    delay(100);
-  }
-
-  #if defined(DEBUG)
-  if (Serial) {
-    Serial.println("GPS Module starting...");
-  }
-  #endif
+  // USB serial never waits for a host. Startup results are stored with
+  // moduleInfo.log() and printed from loop() when a host connects, or on '?'.
+  moduleInfo.begin();
 
   bool gps_success, can_success;
 
@@ -272,6 +266,7 @@ void setup() {
 
   gps_success = gpsInit(GPS_INIT_ATTEMPTS);
   lastValidNmea = millis();
+  moduleInfo.log(gps_success ? "GPS OK (NMEA at 115200)" : "GPS not responding (loop() keeps retrying)");
 
   // --------------------------------------------------------------------------
   // Connect to the CAN Bus
@@ -286,12 +281,7 @@ void setup() {
   can_success = can.begin(CAN_BAUDRATE);
   #endif
 
-  #if defined(DEBUG)
-  if (Serial) {
-    if (!can_success) Serial.println("CAN bus init failed!");
-    Serial.println("GPS Module setup complete.");
-  }
-  #endif
+  moduleInfo.log(can_success ? "CAN bus OK" : "CAN bus init FAILED");
 
   // --------------------------------------------------------------------------
   // Go / No-Go decision
@@ -304,7 +294,9 @@ void setup() {
     pixel.show();
   } else {
     // Flash red LED to indicate failure
+    moduleInfo.fatal("Startup failed");
     while (1) {
+      moduleInfo.service();   // still answer a host that connects later
       pixel.setPixelColor(0, pixel.Color(255, 0, 0));
       pixel.show();
       delay(500);
@@ -326,6 +318,8 @@ void setup() {
  *****************************************************************************/
 
 void loop() {
+
+  moduleInfo.service();   // report on USB connect or '?'
 
   // --------------------------------------------------------------------------
   // Define variables
