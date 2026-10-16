@@ -121,6 +121,27 @@ Status: **Open**, **Monitoring** (fix applied, watching), **Fixed**.
 
 ## Fixed
 
+### 11. AIR module: 75 ms RTD read held the whole sensor loop to about 11 Hz
+- Found 2026-10-16. The Adafruit MAX31865 library's `rtd.temperature()` waits with
+  `delay(10)` (bias settling) and `delay(65)` (conversion) inside `readRTD()`. Measured on
+  the module: 75.2 ms per call (`readFault()` 1.07 ms). The AIR sketch called it on every
+  pass of the sensor block, which is meant to run every 10 ms, so the block ran about 34
+  times in 3 s (11 Hz) instead of 100 Hz.
+- Effects: CAN rates below the protocol (0x28 at 5.7 Hz instead of 10 Hz, 0x29/0x2A/0x2B
+  at 3.9 Hz); the pressure, airspeed and altitude calculations got a new sample about every
+  88 ms. The low-pass filters (`LowPassFilter(0.01)` static, `(0.04)` pitot) are per-sample,
+  so they ran about 9 times slower than designed. OAT was also unfiltered and truncated
+  instead of rounded (std dev 0.14 C, 0.5 C peak to peak).
+- Fix (AIR_Module v1.0.5): `rtdUpdate()` is a non-blocking state machine (bias on, settle,
+  convert, read, fault check) called every `loop()`; the OAT is sampled every 250 ms,
+  smoothed with a 1.4 s low-pass and rounded. A sample with a fault is dropped and the last
+  good value kept; 0x2A is not sent until the first good sample.
+- Result: 0x28 9.8 Hz, 0x29/0x2A/0x2B 4.9 Hz; OAT std dev 0.035 C, range 0.1 C over 30 s.
+- Watch: the pressure filters now really run at 100 Hz, so airspeed and altitude will react
+  faster than before. Check them with real pressure applied (pitot and static) and retune
+  the filter constants if needed. Not yet done.
+
+
 ### 7. GPS module needed an RP2040 reset to pick up a fix after a full repower
 - Old firmware set the GPS baud once at boot (9600 -> 115200), sent config commands
   once with no check, and hard-coded `gps_success = true`. After a full repower the

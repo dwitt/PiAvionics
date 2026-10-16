@@ -29,7 +29,7 @@
 /*****************************************************************************
  * Firmware version - increment the patch number on every change
  *****************************************************************************/
-#define VERSION "1.0.4"
+#define VERSION "1.0.5"
 
 // Set to 0 to run without the AOA sensor (Wire1, GPIO8/9). With 0, Wire1 is not
 // touched at all and a missing AOA sensor does not stop startup.
@@ -105,6 +105,19 @@ Adafruit_MCP2515 can(CAN_CS_PIN);
 #define RTD_REF_RESISTOR 430.0  // Adafruit breakout reference resistor
 Adafruit_MAX31865 rtd(RTD_CS_PIN);
 
+// How the RTD is read (see the "RTD (OAT) reader" section before setup()).
+// The OAT is sampled every RTD_SAMPLE_PERIOD_MS. Each sample is a short state
+// machine that never waits: bias on, settle, convert, read, check faults.
+#define RTD_SAMPLE_PERIOD_MS 250  // time between the start of two samples
+#define RTD_BIAS_SETTLE_MS   11   // wait after bias on (chip needs about 10.5 ms)
+#define RTD_CONVERSION_MS    65   // one-shot conversion (52 ms at 60 Hz, 62.5 ms at 50 Hz)
+#define RTD_FAULT_CYCLE_MS   2    // automatic fault detection takes about 1 ms
+
+// Smooths the OAT. Samples arrive every 250 ms, so alpha = 0.15 gives a time
+// constant of about 1.4 s. Outside air temperature changes much more slowly
+// than that, so this removes sensor noise without making the reading lag.
+LowPassFilter oatLowPassFilter(0.15);
+
 // CAN Message Constants ------------------------------------------------------
 #define CAN_AIR_MSG_ID    0x28
 #define CAN_AOA_MSG_ID    0x29
@@ -146,6 +159,8 @@ static int32_t staticPressure = 0;  // CANbus Data: hPa * 10
 static int16_t staticTemp = 0;      // CANbus Data: degrees C * 10
 static int16_t oatTemp = 0;         // CANbus Data: degrees C * 10 (from MAX31865 RTD)
 static bool rtdAvailable = false;   // tracks whether RTD init succeeded
+static bool oatValid = false;       // true once a good OAT sample has been taken
+                                    // (so 0.0 C is never sent before the first sample)
 static int16_t pitotTemp = 0;       // CANbus Data: degrees C * 10
 static int16_t pitotPressure = 0;   // CANbus Data: 
 
@@ -172,6 +187,161 @@ static float staticPressureLowPassFiltered = 0;
 #define SEA_LEVEL_DENSITY_ISA 1.225   // kg/m^3
 #define V_M_S_TO_KNOTS 1.9438444924406
 
+
+/*****************************************************************************
+ * RTD (OAT) reader - non-blocking MAX31865
+ *
+ * Why this exists: the Adafruit library's rtd.temperature() takes about 75 ms
+ * because it waits with delay() for the bias to settle (10 ms) and for the
+ * conversion to finish (65 ms). Measured on this module: 75.2 ms per call. The
+ * sensor loop calls it every pass, so the whole loop (pressures, airspeed,
+ * altitude, CAN) ran at about 11 Hz instead of the intended 100 Hz.
+ *
+ * What this does instead: the same steps the library performs, as a state
+ * machine that rtdUpdate() advances a little each time loop() runs. Between
+ * steps it returns immediately, so the loop keeps running at full speed.
+ *
+ *   RTD_WAIT      wait for the next sample time (RTD_SAMPLE_PERIOD_MS)
+ *       | switch the bias on and clear old faults
+ *   RTD_BIAS      wait RTD_BIAS_SETTLE_MS for the RTD input filter to settle
+ *       | start a one-shot conversion
+ *   RTD_CONVERT   wait RTD_CONVERSION_MS for the conversion to finish
+ *       | read the result, start the chip's automatic fault detection
+ *   RTD_FAULTS    wait RTD_FAULT_CYCLE_MS, read the fault status, bias off
+ *       | accept the sample if there is no fault
+ *   RTD_WAIT
+ *
+ * The bias is only on for about 80 ms of each 250 ms to limit self-heating of
+ * the RTD, as the library does. The library's own register access is private,
+ * so the few registers needed are read and written here over SPI. The
+ * MAX31865 uses SPI mode 1; CAN (mode 0) is on the same bus, and each
+ * transaction sets its own mode, so they do not interfere.
+ *
+ * The reading is converted to degrees with the library's calculateTemperature()
+ * (Callendar-Van Dusen), smoothed with a low-pass filter, and rounded to
+ * 0.1 C. A sample with a fault is dropped and the last good value is kept.
+ *****************************************************************************/
+
+// Base configuration: 3-wire RTD, 60 Hz mains filter, bias off, no conversion
+// running. Every write to the config register starts from this and adds bits.
+// (Change MAX31865_CONFIG_FILT60HZ to FILT50HZ if the aircraft supply is 50 Hz.)
+#define RTD_CONFIG_BASE  (MAX31865_CONFIG_3WIRE | MAX31865_CONFIG_FILT60HZ)
+
+// Config register bit 2 starts the chip's automatic fault detection cycle
+// (open RTD, shorted RTD, bad reference). The chip clears it when done.
+#define RTD_CONFIG_FAULT_AUTO  0x04
+
+enum RtdStep { RTD_WAIT, RTD_BIAS, RTD_CONVERT, RTD_FAULTS };
+
+static RtdStep rtdStep = RTD_WAIT;
+static unsigned long rtdStepStart = 0;   // millis() when the current step began
+static uint16_t rtdRaw = 0;              // raw reading saved between CONVERT and FAULTS
+static uint32_t rtdFaultCount = 0;       // samples dropped because of a fault
+static bool rtdFaultLogged = false;      // only the first fault is written to the log
+
+// Write one register of the MAX31865. The write flag is bit 7 of the address.
+static void rtdWrite8(uint8_t reg, uint8_t value) {
+  SPI.beginTransaction(SPISettings(1000000, MSBFIRST, SPI_MODE1));
+  digitalWrite(RTD_CS_PIN, LOW);
+  SPI.transfer(reg | 0x80);
+  SPI.transfer(value);
+  digitalWrite(RTD_CS_PIN, HIGH);
+  SPI.endTransaction();
+}
+
+// Read one register of the MAX31865
+static uint8_t rtdRead8(uint8_t reg) {
+  SPI.beginTransaction(SPISettings(1000000, MSBFIRST, SPI_MODE1));
+  digitalWrite(RTD_CS_PIN, LOW);
+  SPI.transfer(reg & 0x7F);
+  uint8_t value = SPI.transfer(0x00);
+  digitalWrite(RTD_CS_PIN, HIGH);
+  SPI.endTransaction();
+  return value;
+}
+
+// Read the 16-bit RTD result (MSB register, then LSB). Bit 0 is the chip's
+// fault flag; bits 15..1 are the 15-bit ADC value.
+static uint16_t rtdRead16(uint8_t reg) {
+  SPI.beginTransaction(SPISettings(1000000, MSBFIRST, SPI_MODE1));
+  digitalWrite(RTD_CS_PIN, LOW);
+  SPI.transfer(reg & 0x7F);
+  uint16_t value = SPI.transfer(0x00);
+  value = (value << 8) | SPI.transfer(0x00);
+  digitalWrite(RTD_CS_PIN, HIGH);
+  SPI.endTransaction();
+  return value;
+}
+
+// Advance the RTD state machine. Call on every pass of loop(). Never waits.
+static void rtdUpdate() {
+  if (!rtdAvailable) return;
+
+  unsigned long now = millis();
+
+  switch (rtdStep) {
+
+    case RTD_WAIT:
+      if (now - rtdStepStart >= RTD_SAMPLE_PERIOD_MS) {
+        // Bias on, and clear any fault left from before
+        rtdWrite8(MAX31865_CONFIG_REG,
+                  RTD_CONFIG_BASE | MAX31865_CONFIG_BIAS | MAX31865_CONFIG_FAULTSTAT);
+        rtdStep = RTD_BIAS;
+        rtdStepStart = now;
+      }
+      break;
+
+    case RTD_BIAS:
+      if (now - rtdStepStart >= RTD_BIAS_SETTLE_MS) {
+        // Bias has settled: start one conversion
+        rtdWrite8(MAX31865_CONFIG_REG,
+                  RTD_CONFIG_BASE | MAX31865_CONFIG_BIAS | MAX31865_CONFIG_1SHOT);
+        rtdStep = RTD_CONVERT;
+        rtdStepStart = now;
+      }
+      break;
+
+    case RTD_CONVERT:
+      if (now - rtdStepStart >= RTD_CONVERSION_MS) {
+        // Conversion is done: take the result, then start the fault detection
+        rtdRaw = rtdRead16(MAX31865_RTDMSB_REG);
+        rtdWrite8(MAX31865_CONFIG_REG,
+                  RTD_CONFIG_BASE | MAX31865_CONFIG_BIAS | RTD_CONFIG_FAULT_AUTO);
+        rtdStep = RTD_FAULTS;
+        rtdStepStart = now;
+      }
+      break;
+
+    case RTD_FAULTS:
+      if (now - rtdStepStart >= RTD_FAULT_CYCLE_MS) {
+        uint8_t fault = rtdRead8(MAX31865_FAULTSTAT_REG);
+
+        // Bias off again until the next sample (limits self-heating)
+        rtdWrite8(MAX31865_CONFIG_REG, RTD_CONFIG_BASE);
+        rtdStep = RTD_WAIT;
+        rtdStepStart = now;
+
+        if (fault == 0 && (rtdRaw & 1) == 0) {
+          // Good sample. Drop the fault flag in bit 0, convert to degrees C,
+          // smooth it, and keep it as degrees C x 10, rounded (not truncated).
+          float oatC = rtd.calculateTemperature(rtdRaw >> 1, RTD_NOMINAL, RTD_REF_RESISTOR);
+          oatTemp = (int16_t)lroundf(oatLowPassFilter.update(oatC) * 10.0f);
+          oatValid = true;
+        } else {
+          // Faulty sample: keep the last good value. Only the first fault is
+          // logged so a bad connection does not fill the startup log.
+          rtdFaultCount++;
+          if (!rtdFaultLogged) {
+            char msg[48];
+            snprintf(msg, sizeof(msg), "RTD fault 0x%02X (first)", fault);
+            moduleInfo.log(msg);
+            rtdFaultLogged = true;
+          }
+        }
+      }
+      break;
+  }
+}
 
 /*****************************************************************************
  * Switch off the MCP2515 interrupt output
@@ -317,6 +487,7 @@ void setup() {
 
   rtdAvailable = rtd.begin(MAX31865_3WIRE);
   moduleInfo.log(rtdAvailable ? "MAX31865 RTD OK" : "MAX31865 RTD NOT FOUND");
+  rtdStepStart = millis() - RTD_SAMPLE_PERIOD_MS;   // take the first sample immediately
 
   // --------------------------------------------------------------------------
   // Make a stop or proceed decision based on whether we could connect
@@ -406,6 +577,7 @@ void setup() {
 
 void loop() {
   moduleInfo.service();   // report on USB connect or '?'
+  rtdUpdate();            // advance the non-blocking OAT reader (never waits)
 
   // --------------------------------------------------------------------------
   // Define variables
@@ -491,7 +663,7 @@ void loop() {
   // Send the OAT (Outside Air Temperature) data from the MAX31865 RTD
   // --------------------------------------------------------------------------
 
-  if (rtdAvailable && millis() - canTempTimeStamp > CAN_TEMP_PERIOD + random(50)) {
+  if (rtdAvailable && oatValid && millis() - canTempTimeStamp > CAN_TEMP_PERIOD + random(50)) {
     canData.integers[0] = oatTemp;    // °C × 10 (int16, bytes 0-1)
     canData.bytes[2] = 0;             // Humidity % (not available)
     canData.bytes[3] = 0;
@@ -560,17 +732,9 @@ void loop() {
 
     sensorStaticTemp = ssc_temp_event.temperature;
 
-    // Read MAX31865 RTD temperature (OAT)
-    // Must call temperature() first (triggers conversion), then check fault after
-    if (rtdAvailable) {
-      float oatC = rtd.temperature(RTD_NOMINAL, RTD_REF_RESISTOR);
-      uint8_t fault = rtd.readFault();
-      if (fault == 0) {
-        oatTemp = (int16_t)(oatC * 10);  // °C × 10
-      } else {
-        rtd.clearFault();
-      }
-    }
+    // The MAX31865 RTD (OAT) is NOT read here. rtd.temperature() blocks for
+    // 75 ms, which would hold this whole block to about 11 Hz. It is read
+    // without waiting by rtdUpdate(), called at the top of loop().
 
     // ------------------------------------------------------------------------
     // Calculate the airspeed
