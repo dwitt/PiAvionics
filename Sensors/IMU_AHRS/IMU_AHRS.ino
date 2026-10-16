@@ -12,6 +12,7 @@
  * Adafruit 24LC32 I2C EEPROM
  *****************************************************************************/
 
+#include <USB.h>					// arduino-pico USB object, used to set the USB product name
 #include <Adafruit_ISM330DHCX.h>	// Only for ISM330DHCX
 #include <Adafruit_LSM6DS.h>		// I2C Driver base for Adafruit LSM6DSxx sensors
 
@@ -51,7 +52,12 @@
 /*****************************************************************************
  * Firmware version - increment the patch number on every change
  *****************************************************************************/
-#define VERSION "1.0.0"
+#define VERSION "1.0.1"
+
+// Shown as the USB product name, so the version can be read from the host
+// (ioreg, System Information, arduino-cli board list) without opening the port.
+// USB.setProduct() keeps the pointer, so this must stay static.
+static const char USB_PRODUCT_NAME[] = "IMU_AHRS v" VERSION;
 
 /*****************************************************************************
  * Defines to help with debugging
@@ -181,6 +187,7 @@ void setup() {
 	 * Step 2: Debug Serial (non-blocking, 10s timeout)
 	 *************************************************************************/
 
+	USB.setProduct(USB_PRODUCT_NAME);	// Must be before Serial.begin() connects USB
 	Serial.begin(115200);
 
 	unsigned long startMillis = millis();
@@ -417,6 +424,24 @@ void setup() {
  *****************************************************************************/
 
 void loop() {
+
+	// ------------------------------------------------------------------------
+	// Identity query: send '?' over USB serial to get the module name, version
+	// and build time. Never waits - Serial.available() is just a flag check.
+	// ------------------------------------------------------------------------
+	while (Serial && Serial.available()) {
+		if (Serial.read() == '?') {
+			Serial.print("IMU_AHRS v");
+			Serial.print(VERSION);
+			Serial.print(" built ");
+			Serial.print(__DATE__);
+			Serial.print(" ");
+			Serial.print(__TIME__);
+			Serial.print(" uptime ");
+			Serial.print(millis() / 1000);
+			Serial.println(" s");
+		}
+	}
 
 	// ------------------------------------------------------------------------
 	// Define variables
