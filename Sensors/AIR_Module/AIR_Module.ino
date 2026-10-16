@@ -29,7 +29,7 @@
 /*****************************************************************************
  * Firmware version - increment the patch number on every change
  *****************************************************************************/
-#define VERSION "1.0.7"
+#define VERSION "1.0.8"
 
 // Set to 0 to run without the AOA sensor (Wire1, GPIO8/9). With 0, Wire1 is not
 // touched at all and a missing AOA sensor does not stop startup.
@@ -113,10 +113,14 @@ Adafruit_MAX31865 rtd(RTD_CS_PIN);
 #define RTD_CONVERSION_MS    65   // one-shot conversion (52 ms at 60 Hz, 62.5 ms at 50 Hz)
 #define RTD_FAULT_CYCLE_MS   2    // automatic fault detection takes about 1 ms
 
-// Smooths the OAT. Samples arrive every 250 ms, so alpha = 0.15 gives a time
-// constant of about 1.4 s. Outside air temperature changes much more slowly
-// than that, so this removes sensor noise without making the reading lag.
-LowPassFilter oatLowPassFilter(0.15);
+// Smooths the OAT. Samples arrive every 250 ms. The filter time constant is
+// -250 ms / ln(1 - alpha): alpha 0.15 = 1.5 s, 0.30 = 0.7 s, 0.50 = 0.36 s.
+// Noise on the reading falls by sqrt(alpha / (2 - alpha)): about 0.29 at 0.15,
+// 0.42 at 0.30 and 0.58 at 0.50. The raw reading has about 0.14 C of noise.
+// Most of the lag in the reading is the probe itself (about 5 s in still air,
+// measured), so a lighter filter helps only a little. 0.15 was too slow to
+// feel; 0.50 was chosen on 2026-10-16.
+LowPassFilter oatLowPassFilter(0.5);
 
 // CAN Message Constants ------------------------------------------------------
 #define CAN_AIR_MSG_ID    0x28
