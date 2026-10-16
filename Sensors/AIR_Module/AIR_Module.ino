@@ -29,7 +29,11 @@
 /*****************************************************************************
  * Firmware version - increment the patch number on every change
  *****************************************************************************/
-#define VERSION "1.0.0"
+#define VERSION "1.0.4"
+
+// Set to 0 to run without the AOA sensor (Wire1, GPIO8/9). With 0, Wire1 is not
+// touched at all and a missing AOA sensor does not stop startup.
+#define AOA_ENABLED 1
 
 ModuleInfo moduleInfo("AIR_Module", VERSION, __DATE__, __TIME__);
 
@@ -170,6 +174,79 @@ static float staticPressureLowPassFiltered = 0;
 
 
 /*****************************************************************************
+ * Switch off the MCP2515 interrupt output
+ *
+ * The CAN FeatherWing INT output is wired to GPIO8, the same pin as Wire1 SDA
+ * (AOA sensor). INT stays asserted (low) across a software reset until the chip
+ * is reset, which held SDA low and made the AOA sensor "not found". Clearing the
+ * interrupt enable register (CANINTE) stops the chip driving INT at all. The
+ * CAN library polls the flag register over SPI and does not use the INT pin,
+ * so receiving is not affected. This is the software equivalent of cutting the
+ * INT trace on the wing.
+ *****************************************************************************/
+
+#define MCP2515_CMD_WRITE 0x02
+#define MCP2515_REG_CANINTE 0x2B
+
+static void canDisableInterruptOutput() {
+  SPI.beginTransaction(SPISettings(1000000, MSBFIRST, SPI_MODE0));
+  digitalWrite(CAN_CS_PIN, LOW);
+  SPI.transfer(MCP2515_CMD_WRITE);
+  SPI.transfer(MCP2515_REG_CANINTE);
+  SPI.transfer(0x00);
+  digitalWrite(CAN_CS_PIN, HIGH);
+  SPI.endTransaction();
+}
+
+/*****************************************************************************
+ * Wire1 bus check and recovery
+ *
+ * After a software reset the AOA sensor can be left in the middle of an I2C
+ * transfer holding SDA low, or something else on GPIO8 can hold it low (the CAN
+ * FeatherWing interrupt line shares GPIO8 with Wire1 SDA). The line levels are
+ * logged, and if SDA is low SCL is clocked up to 9 times to let the sensor
+ * finish, followed by a STOP condition.
+ *****************************************************************************/
+
+#define WIRE1_SDA_PIN 8
+#define WIRE1_SCL_PIN 9
+
+static void wire1CheckAndRecover() {
+  char msg[64];
+
+  pinMode(WIRE1_SDA_PIN, INPUT_PULLUP);
+  pinMode(WIRE1_SCL_PIN, INPUT_PULLUP);
+  delay(2);
+  bool sdaHigh = digitalRead(WIRE1_SDA_PIN);
+  bool sclHigh = digitalRead(WIRE1_SCL_PIN);
+  snprintf(msg, sizeof(msg), "Wire1 before start: SDA=%d SCL=%d", sdaHigh, sclHigh);
+  moduleInfo.log(msg);
+
+  if (sdaHigh) return;
+
+  int pulses = 0;
+  while (!digitalRead(WIRE1_SDA_PIN) && pulses < 9) {
+    pinMode(WIRE1_SCL_PIN, OUTPUT);
+    digitalWrite(WIRE1_SCL_PIN, LOW);
+    delayMicroseconds(10);
+    pinMode(WIRE1_SCL_PIN, INPUT_PULLUP);
+    delayMicroseconds(10);
+    pulses++;
+  }
+
+  // STOP condition: SDA low to high while SCL is high
+  pinMode(WIRE1_SDA_PIN, OUTPUT);
+  digitalWrite(WIRE1_SDA_PIN, LOW);
+  delayMicroseconds(10);
+  pinMode(WIRE1_SDA_PIN, INPUT_PULLUP);
+  delayMicroseconds(10);
+
+  snprintf(msg, sizeof(msg), "Wire1 SDA was low: %d clock pulses, SDA now %d",
+           pulses, digitalRead(WIRE1_SDA_PIN));
+  moduleInfo.log(msg);
+}
+
+/*****************************************************************************
  * Setup Code
  * 
  * Connect to all the Peripherals
@@ -186,7 +263,18 @@ void setup() {
   // moduleInfo.log() and printed from loop() when a host connects, or on '?'.
   moduleInfo.begin();
 
-  bool ms4525do_pitot_success, ms4525do_aoa_success, ssc_success, can_success;
+  // --------------------------------------------------------------------------
+  // Connect to the MCP2515 CAN Bus controller on the SPI bus - FIRST, before
+  // Wire1. can.begin() resets the chip, which releases its INT output (shared
+  // with Wire1 SDA on GPIO8); then the interrupt output is switched off.
+  // Provide the baud rate for the CAN Bus.
+  // --------------------------------------------------------------------------
+
+  bool can_success = can.begin(CAN_BAUDRATE);
+  canDisableInterruptOutput();
+  moduleInfo.log(can_success ? "CAN bus OK (INT output off)" : "CAN bus (MCP2515) NOT FOUND");
+
+  bool ms4525do_pitot_success, ms4525do_aoa_success, ssc_success;
 
   // --------------------------------------------------------------------------
   // Connect to the MS4525DO pitot static pressure sensor
@@ -203,11 +291,17 @@ void setup() {
   // nees the trace to be cut otherwise it affects the I2C communication.
   // --------------------------------------------------------------------------
 
+  #if AOA_ENABLED
+  wire1CheckAndRecover();
   Wire1.setSDA(8);  // GPIO8
   Wire1.setSCL(9);  // GPIO9
 
   ms4525do_aoa_success = ms4525do_aoa.begin(MS45X5DO_AOA_I2C_ADDRESS, &Wire1);
   moduleInfo.log(ms4525do_aoa_success ? "MS4525DO aoa OK" : "MS4525DO aoa NOT FOUND");
+  #else
+  ms4525do_aoa_success = true;   // not used, so it must not stop startup
+  moduleInfo.log("MS4525DO aoa DISABLED (AOA_ENABLED 0)");
+  #endif
 
   // --------------------------------------------------------------------------
   // Connect to the SSC sensor
@@ -216,14 +310,6 @@ void setup() {
 
   ssc_success = ssc.begin(SSC_I2C_ADDRESS, &Wire);
   moduleInfo.log(ssc_success ? "SSC static pressure OK" : "SSC static pressure NOT FOUND");
-
-	// -----------------------------------------------------------------------
-	// Connect to the MCP2515 CAN Bus controller on the SPI bus
-	// Provide the baud rate for the CAN Bus
-	// -----------------------------------------------------------------------
-
-	can_success = can.begin(CAN_BAUDRATE);
-	moduleInfo.log(can_success ? "CAN bus OK" : "CAN bus (MCP2515) NOT FOUND");
 
   // --------------------------------------------------------------------------
   // Connect to the MAX31865 RTD temperature sensor (OAT)
@@ -257,11 +343,15 @@ void setup() {
    ***************************************************************************/
 
   ms4525do_pitot.setOutputType(MS4525DO::MS4525DO_Type_A);
+  #if AOA_ENABLED
   ms4525do_aoa.setOutputType(MS4525DO::MS4525DO_Type_A);
+  #endif
   ssc.setTransferFunction(SSC::SSC_TF_A);
 
   ms4525do_pitot.setPressureRange(MS4525DO::MS4525DO_001);
+  #if AOA_ENABLED
   ms4525do_aoa.setPressureRange(MS4525DO::MS4525DO_001);
+  #endif
   ssc.setPressureRange(SSC::SSC_016BA);
 
   /***************************************************************************
@@ -270,8 +360,10 @@ void setup() {
 
   pitot_pressure = ms4525do_pitot.getPressureSensor();
   pitot_temp = ms4525do_pitot.getTemperatureSensor();
+  #if AOA_ENABLED
   aoa_pressure = ms4525do_aoa.getPressureSensor();
   aoa_temp = ms4525do_aoa.getTemperatureSensor();
+  #endif
   static_pressure = ssc.getPressureSensor();
   static_temp = ssc.getTemperatureSensor();
   
@@ -283,8 +375,10 @@ void setup() {
   #if defined(DEBUG)
   pitot_pressure->printSensorDetails();
   pitot_temp->printSensorDetails();
+  #if AOA_ENABLED
   aoa_pressure->printSensorDetails();
   aoa_temp->printSensorDetails();
+  #endif
   static_pressure->printSensorDetails();
   static_temp->printSensorDetails();
   #endif
@@ -294,7 +388,9 @@ void setup() {
    ***************************************************************************/
 
   Wire.setClock(400000);
+  #if AOA_ENABLED
   Wire1.setClock(400000);
+  #endif
 
   /*************************************************************************** 
    * Configure the CAN bus filters to receive only the QNH message
@@ -431,8 +527,10 @@ void loop() {
     pitot_temp->getEvent(&pitot_temp_event); 
     pitot_pressure->getEvent(&pitot_pressure_event);
 
+    #if AOA_ENABLED
     aoa_temp->getEvent(&aoa_temp_event);
     aoa_pressure->getEvent(&aoa_pressure_event);
+    #endif
 
     static_temp->getEvent(&ssc_temp_event);
     static_pressure->getEvent(&ssc_pressure_event);
