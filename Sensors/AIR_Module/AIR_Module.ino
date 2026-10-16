@@ -24,6 +24,14 @@
 #include "RollingAverageFilter.h" // Rolling Average Filter Library
 #include "SmoothDeadband.h"      // Smooth Deadband Library
 #include "DeadbandFilter.h"      // Deadband Filter Library
+#include <ModuleInfo.h>        // USB product name, startup log and '?' report
+
+/*****************************************************************************
+ * Firmware version - increment the patch number on every change
+ *****************************************************************************/
+#define VERSION "1.0.0"
+
+ModuleInfo moduleInfo("AIR_Module", VERSION, __DATE__, __TIME__);
 
 /*****************************************************************************
  * Defines to help with debugging
@@ -174,18 +182,9 @@ void setup() {
   pixel.setPixelColor(0, pixel.Color(255, 0, 0));
   pixel.show();
 
-  Serial.begin(115200);
-  
-  unsigned long startMillis = millis();
-  while (!Serial && (millis() - startMillis) < 10000) {
-    delay(100);
-  }
-
-  #if defined(DEBUG)
-  if (Serial) {
-    Serial.println("Debugging MS4525DO and SSC.");
-  }
-  #endif
+  // USB serial never waits for a host. Startup results are stored with
+  // moduleInfo.log() and printed from loop() when a host connects, or on '?'.
+  moduleInfo.begin();
 
   bool ms4525do_pitot_success, ms4525do_aoa_success, ssc_success, can_success;
 
@@ -195,10 +194,7 @@ void setup() {
   // --------------------------------------------------------------------------
 
   ms4525do_pitot_success = ms4525do_pitot.begin(MS45X5DO_PITOT_I2C_ADDRESS, &Wire);
-  #if defined(DEBUG)
-  if (!ms4525do_pitot_success && Serial)
-    Serial.println("Could not find a valid MS4525DO pitot sensor.");
-  #endif
+  moduleInfo.log(ms4525do_pitot_success ? "MS4525DO pitot OK" : "MS4525DO pitot NOT FOUND");
   
   // --------------------------------------------------------------------------
   // Connect to the MS4525DO aoa  pressure sensor
@@ -211,10 +207,7 @@ void setup() {
   Wire1.setSCL(9);  // GPIO9
 
   ms4525do_aoa_success = ms4525do_aoa.begin(MS45X5DO_AOA_I2C_ADDRESS, &Wire1);
-  #if defined(DEBUG)
-  if (!ms4525do_aoa_success && Serial)
-    Serial.println("Could not find a valid MS4525DO aoa sensor.");
-  #endif
+  moduleInfo.log(ms4525do_aoa_success ? "MS4525DO aoa OK" : "MS4525DO aoa NOT FOUND");
 
   // --------------------------------------------------------------------------
   // Connect to the SSC sensor
@@ -222,10 +215,7 @@ void setup() {
   // --------------------------------------------------------------------------
 
   ssc_success = ssc.begin(SSC_I2C_ADDRESS, &Wire);
-  #if defined(DEBUG)
-  if (!ssc_success && Serial)
-    Serial.println("Could not find a valid SSC sensor.");
-  #endif
+  moduleInfo.log(ssc_success ? "SSC static pressure OK" : "SSC static pressure NOT FOUND");
 
 	// -----------------------------------------------------------------------
 	// Connect to the MCP2515 CAN Bus controller on the SPI bus
@@ -233,18 +223,14 @@ void setup() {
 	// -----------------------------------------------------------------------
 
 	can_success = can.begin(CAN_BAUDRATE);
-	#if defined(DEBUG)
-	if (!can_success && Serial) Serial.println("Could not find CAN Bus MCP2515!");
-	#endif
+	moduleInfo.log(can_success ? "CAN bus OK" : "CAN bus (MCP2515) NOT FOUND");
 
   // --------------------------------------------------------------------------
   // Connect to the MAX31865 RTD temperature sensor (OAT)
   // --------------------------------------------------------------------------
 
   rtdAvailable = rtd.begin(MAX31865_3WIRE);
-  #if defined(DEBUG)
-  if (!rtdAvailable && Serial) Serial.println("Could not find MAX31865 RTD sensor!");
-  #endif
+  moduleInfo.log(rtdAvailable ? "MAX31865 RTD OK" : "MAX31865 RTD NOT FOUND");
 
   // --------------------------------------------------------------------------
   // Make a stop or proceed decision based on whether we could connect
@@ -253,15 +239,14 @@ void setup() {
 
   if (!ms4525do_pitot_success || !ms4525do_aoa_success ||
      !ssc_success || !can_success || !rtdAvailable ) {
-    #if defined(DEBUG)
-    if (Serial) Serial.println("Startup failed.");
-    #endif
-    while (1) delay(100);   // wait for the user to reset the board
+    moduleInfo.fatal("Startup failed");
+    while (1) {             // wait for the user to reset the board
+      moduleInfo.service(); // but still answer a host that connects later
+      delay(100);
+    }
   }
 
-  #if defined(DEBUG)
-  if (Serial) Serial.println("All peripherals connected.");
-  #endif
+  moduleInfo.log("All peripherals connected");
 
   pixel.setPixelColor(0, pixel.Color(0, 255, 0));
   pixel.show();
@@ -324,6 +309,8 @@ void setup() {
 }
 
 void loop() {
+  moduleInfo.service();   // report on USB connect or '?'
+
   // --------------------------------------------------------------------------
   // Define variables
   // --------------------------------------------------------------------------
