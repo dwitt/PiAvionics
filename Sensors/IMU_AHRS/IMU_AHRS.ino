@@ -49,6 +49,11 @@
 #include <StatusLED.h>
 
 /*****************************************************************************
+ * Firmware version - increment the patch number on every change
+ *****************************************************************************/
+#define VERSION "1.0.0"
+
+/*****************************************************************************
  * Defines to help with debugging
  *****************************************************************************/
 //#define DEBUG					Comment out for production code
@@ -183,11 +188,11 @@ void setup() {
 		delay(100);
 	}
 
-	#if defined(DEBUG)
 	if (Serial) {
-		Serial.println("IMU_AHRS starting...");
+		Serial.print("IMU_AHRS v");
+		Serial.print(VERSION);
+		Serial.println(" starting...");
 	}
-	#endif
 
 	/*************************************************************************
 	 * Step 4: Module sensors — init with LED feedback
