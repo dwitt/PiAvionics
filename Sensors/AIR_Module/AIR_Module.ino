@@ -29,11 +29,11 @@
 /*****************************************************************************
  * Firmware version - increment the patch number on every change
  *****************************************************************************/
-#define VERSION "1.0.5"
+#define VERSION "1.0.6"
 
 // Set to 0 to run without the AOA sensor (Wire1, GPIO8/9). With 0, Wire1 is not
 // touched at all and a missing AOA sensor does not stop startup.
-#define AOA_ENABLED 1
+#define AOA_ENABLED 0   // TEMPORARILY OFF - set back to 1 to use the AOA sensor
 
 ModuleInfo moduleInfo("AIR_Module", VERSION, __DATE__, __TIME__);
 
