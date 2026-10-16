@@ -52,7 +52,7 @@
 /*****************************************************************************
  * Firmware version - increment the patch number on every change
  *****************************************************************************/
-#define VERSION "1.0.1"
+#define VERSION "1.0.2"
 
 // Shown as the USB product name, so the version can be read from the host
 // (ioreg, System Information, arduino-cli board list) without opening the port.
@@ -169,6 +169,46 @@ static int16_t accelY = 0;
 static int16_t accelZ = 0;
 
 /*****************************************************************************
+ * Startup status log
+ *
+ * Results of the startup checks are kept here so they can be read later,
+ * whenever a host connects to USB serial or sends '?'. Nothing waits for a
+ * host. Failures that halt the module (blinking POST code) are printed
+ * immediately if a host is already connected, since loop() is never reached.
+ *****************************************************************************/
+
+static char statusLog[600];
+static size_t statusLogLen = 0;
+
+static void logStatus(const char *msg) {
+	size_t n = strlen(msg);
+	if (statusLogLen + n + 1 >= sizeof(statusLog)) return;	// full, drop
+	memcpy(statusLog + statusLogLen, msg, n);
+	statusLogLen += n;
+	statusLog[statusLogLen++] = '\n';
+	statusLog[statusLogLen] = 0;
+}
+
+static void printReport() {
+	Serial.print("IMU_AHRS v");
+	Serial.print(VERSION);
+	Serial.print(" built ");
+	Serial.print(__DATE__);
+	Serial.print(" ");
+	Serial.print(__TIME__);
+	Serial.print(" uptime ");
+	Serial.print(millis() / 1000);
+	Serial.println(" s");
+	Serial.print(statusLog);
+}
+
+// A failure that halts the module: log it and show it if anyone is listening
+static void logFatal(const char *msg) {
+	logStatus(msg);
+	if (Serial) printReport();
+}
+
+/*****************************************************************************
  * Setup Code 
  *
  * Connect to all of the Peripherals
@@ -184,22 +224,13 @@ void setup() {
 	led.startup();
 
 	/*************************************************************************
-	 * Step 2: Debug Serial (non-blocking, 10s timeout)
+	 * Step 2: USB Serial - never waits for a host. Startup results are stored
+	 * with logStatus() and printed from loop() when a host connects, or when
+	 * '?' is received.
 	 *************************************************************************/
 
 	USB.setProduct(USB_PRODUCT_NAME);	// Must be before Serial.begin() connects USB
 	Serial.begin(115200);
-
-	unsigned long startMillis = millis();
-	while (!Serial && (millis() - startMillis < 10000)) {
-		delay(100);
-	}
-
-	if (Serial) {
-		Serial.print("IMU_AHRS v");
-		Serial.print(VERSION);
-		Serial.println(" starting...");
-	}
 
 	/*************************************************************************
 	 * Step 4: Module sensors — init with LED feedback
@@ -214,14 +245,10 @@ void setup() {
 	bool ism330dhcx_success = ism330dhcx.begin_I2C(ISM330DHCX_I2C_ADDRESS, &Wire);
 	if (ism330dhcx_success) {
 		led.initOK();
-		#if defined(DEBUG)
-		if (Serial) Serial.println("ISM330DHCX OK");
-		#endif
+		logStatus("ISM330DHCX OK");
 	} else {
 		led.initFail();
-		#if defined(DEBUG)
-		if (Serial) Serial.println("ISM330DHCX FAILED");
-		#endif
+		logFatal("ISM330DHCX FAILED");
 		led.postCode(POST_ISM330DHCX);  // never returns
 	}
 
@@ -233,14 +260,10 @@ void setup() {
 	bool lis3mdl_success = lis3mdl.begin_I2C(LIS3MDL_I2C_ADDRESS, &Wire);
 	if (lis3mdl_success) {
 		led.initOK();
-		#if defined(DEBUG)
-		if (Serial) Serial.println("LIS3MDL OK");
-		#endif
+		logStatus("LIS3MDL OK");
 	} else {
 		led.initFail();
-		#if defined(DEBUG)
-		if (Serial) Serial.println("LIS3MDL FAILED");
-		#endif
+		logFatal("LIS3MDL FAILED");
 		led.postCode(POST_LIS3MDL);  // never returns
 	}
 
@@ -252,21 +275,17 @@ void setup() {
 	bool eeprom_success = cal.begin();
 	if (eeprom_success) {
 		led.initOK();
-		#if defined(DEBUG)
-		if (Serial) Serial.println("EEPROM OK");
-		#endif
+		logStatus("EEPROM OK");
 	} else {
 		led.initFail();
-		#if defined(DEBUG)
-		if (Serial) Serial.println("EEPROM FAILED");
-		#endif
+		logFatal("EEPROM FAILED");
 		led.postCode(POST_EEPROM);  // never returns
 	}
 
-	if (!cal.loadCalibration()) {
-		#if defined(DEBUG)
-		if (Serial) Serial.println("**WARNING** No calibration loaded/found");
-		#endif
+	if (cal.loadCalibration()) {
+		logStatus("Calibration loaded");
+	} else {
+		logStatus("**WARNING** No calibration loaded/found");
 	}
 
 	cal.printSavedCalibration();
@@ -279,14 +298,10 @@ void setup() {
 	bool can_success = can.begin(CAN_BAUDRATE);
 	if (can_success) {
 		led.initOK();
-		#if defined(DEBUG)
-		if (Serial) Serial.println("CAN bus OK");
-		#endif
+		logStatus("CAN bus OK");
 	} else {
 		led.initFail();
-		#if defined(DEBUG)
-		if (Serial) Serial.println("CAN bus FAILED");
-		#endif
+		logFatal("CAN bus FAILED");
 		led.postCode(POST_CAN);  // never returns
 	}
 
@@ -294,9 +309,7 @@ void setup() {
 	 * Step 6: Go — solid green for 2 seconds
 	 *************************************************************************/
 
-	#if defined(DEBUG)
-	if (Serial) Serial.println("All peripherals connected — GO");
-	#endif
+	logStatus("All peripherals connected — GO");
 
 	led.go();
 
@@ -324,25 +337,19 @@ void setup() {
 
 	ism330dhcx.setAccelRange(ACCEL_RANGE);
 	if (ism330dhcx.getAccelRange() != ACCEL_RANGE) {
-		#if defined(DEBUG)
-		if (Serial) Serial.println("Config FAIL: accel range");
-		#endif
+		logFatal("Config FAIL: accel range");
 		led.configFail(CONFIG_FAIL_RANGE);  // never returns
 	}
 
 	ism330dhcx.setGyroRange(GYRO_RANGE);
 	if (ism330dhcx.getGyroRange() != GYRO_RANGE) {
-		#if defined(DEBUG)
-		if (Serial) Serial.println("Config FAIL: gyro range");
-		#endif
+		logFatal("Config FAIL: gyro range");
 		led.configFail(CONFIG_FAIL_RANGE);  // never returns
 	}
 
 	lis3mdl.setRange(MAG_RANGE);
 	if (lis3mdl.getRange() != MAG_RANGE) {
-		#if defined(DEBUG)
-		if (Serial) Serial.println("Config FAIL: mag range");
-		#endif
+		logFatal("Config FAIL: mag range");
 		led.configFail(CONFIG_FAIL_RANGE);  // never returns
 	}
 
@@ -350,25 +357,19 @@ void setup() {
 
 	ism330dhcx.setAccelDataRate(ACCEL_DATA_RATE);
 	if (ism330dhcx.getAccelDataRate() != ACCEL_DATA_RATE) {
-		#if defined(DEBUG)
-		if (Serial) Serial.println("Config FAIL: accel data rate");
-		#endif
+		logFatal("Config FAIL: accel data rate");
 		led.configFail(CONFIG_FAIL_DATARATE);  // never returns
 	}
 
 	ism330dhcx.setGyroDataRate(GYRO_DATA_RATE);
 	if (ism330dhcx.getGyroDataRate() != GYRO_DATA_RATE) {
-		#if defined(DEBUG)
-		if (Serial) Serial.println("Config FAIL: gyro data rate");
-		#endif
+		logFatal("Config FAIL: gyro data rate");
 		led.configFail(CONFIG_FAIL_DATARATE);  // never returns
 	}
 
 	lis3mdl.setDataRate(MAG_DATA_RATE);
 	if (lis3mdl.getDataRate() != MAG_DATA_RATE) {
-		#if defined(DEBUG)
-		if (Serial) Serial.println("Config FAIL: mag data rate");
-		#endif
+		logFatal("Config FAIL: mag data rate");
 		led.configFail(CONFIG_FAIL_DATARATE);  // never returns
 	}
 
@@ -376,19 +377,17 @@ void setup() {
 
 	lis3mdl.setPerformanceMode(MAG_POWER_MODE);
 	if (lis3mdl.getPerformanceMode() != MAG_POWER_MODE) {
-		#if defined(DEBUG)
-		if (Serial) Serial.println("Config FAIL: mag power mode");
-		#endif
+		logFatal("Config FAIL: mag power mode");
 		led.configFail(CONFIG_FAIL_MODE);  // never returns
 	}
 
 	lis3mdl.setOperationMode(MAG_OPERATION_MODE);
 	if (lis3mdl.getOperationMode() != MAG_OPERATION_MODE) {
-		#if defined(DEBUG)
-		if (Serial) Serial.println("Config FAIL: mag operation mode");
-		#endif
+		logFatal("Config FAIL: mag operation mode");
 		led.configFail(CONFIG_FAIL_MODE);  // never returns
 	}
+
+	logStatus("Sensor configuration OK");
 
 	/*************************************************************************
 	 * Setup Sensors
@@ -426,21 +425,15 @@ void setup() {
 void loop() {
 
 	// ------------------------------------------------------------------------
-	// Identity query: send '?' over USB serial to get the module name, version
-	// and build time. Never waits - Serial.available() is just a flag check.
+	// Host report: printed when a host connects to USB serial, and whenever '?'
+	// is received. Never waits - Serial and Serial.available() are flag checks.
 	// ------------------------------------------------------------------------
-	while (Serial && Serial.available()) {
-		if (Serial.read() == '?') {
-			Serial.print("IMU_AHRS v");
-			Serial.print(VERSION);
-			Serial.print(" built ");
-			Serial.print(__DATE__);
-			Serial.print(" ");
-			Serial.print(__TIME__);
-			Serial.print(" uptime ");
-			Serial.print(millis() / 1000);
-			Serial.println(" s");
-		}
+	static bool hostWasConnected = false;
+	bool hostConnected = Serial;
+	if (hostConnected && !hostWasConnected) printReport();
+	hostWasConnected = hostConnected;
+	while (hostConnected && Serial.available()) {
+		if (Serial.read() == '?') printReport();
 	}
 
 	// ------------------------------------------------------------------------
