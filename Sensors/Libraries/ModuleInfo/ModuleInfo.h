@@ -16,7 +16,7 @@
 
 #include <Arduino.h>
 
-#define MODULE_INFO_VERSION "1.1.0"
+#define MODULE_INFO_VERSION "1.2.0"
 
 // Heartbeat (Protocol/can_messages.yaml 0x701 to 0x703): one CAN frame per module,
 // ID = MODULE_HEARTBEAT_ID_BASE + module number, sent every MODULE_HEARTBEAT_PERIOD_MS.
@@ -66,6 +66,11 @@ public:
 	// Print version, build time, uptime and the stored log
 	void printReport();
 
+	// Optional: a function that prints extra live status lines at the end of the
+	// report (for example CAN transmit counters). It gets the Serial stream.
+	typedef void (*ReportHook)(Print &out);
+	void setReportHook(ReportHook fn) { _reportHook = fn; }
+
 	// --- CAN heartbeat ---
 	// Say which module this is. Call once in setup().
 	void setModuleNumber(uint8_t moduleNumber);
@@ -96,6 +101,7 @@ private:
 	size_t _logLen;
 	bool _hostWasConnected;
 	uint8_t _moduleNumber;
+	ReportHook _reportHook = nullptr;
 	uint8_t _state;
 	uint8_t _sensors;
 	bool _heartbeatSent;

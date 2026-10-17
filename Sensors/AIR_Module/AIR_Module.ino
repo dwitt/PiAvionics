@@ -29,12 +29,12 @@
 /*****************************************************************************
  * Firmware version - increment the patch number on every change
  *****************************************************************************/
-#define VERSION "1.0.25"
+#define VERSION "1.0.26"
 
 // Set to 0 to run without the AOA sensor (Wire1, GPIO8/9). With 0, Wire1 is not
 // touched at all and a missing AOA sensor does not stop startup.
 #define AOA_ENABLED 1
-#define CAN_INT_WORKAROUND 0   // 1 = clear MCP2515 CANINTE at start-up. Not needed with the INT trace cut (tested
+#define CAN_INT_WORKAROUND 1   // 1 = clear MCP2515 CANINTE at start-up. Not needed with the INT trace cut (tested
                                // 2026-10-17), kept as a safety net for a wing whose INT trace is not cut.
 
 ModuleInfo moduleInfo("AIR_Module", VERSION, __DATE__, __TIME__);
@@ -513,23 +513,20 @@ static void wire1CheckAndRecover() {
 #define RTD_FRESH_MS 2000
 
 static uint8_t hbStartupMask = 0;     // sensors found at start-up (bits 0-2)
-// TEMPORARY TEST (CAN cable freeze, FAILURE_DETECTION_PLAN.md): LED blue while a CAN frame is being
-// sent, green when the send returns. If the module freezes with the cable out, the LED colour shows
-// whether it is stuck inside the send. Set to 0 to compile out.
-#define CAN_SEND_MARKER 1
-static void canEndPacket() {
-#if CAN_SEND_MARKER
-  pixel.setPixelColor(0, pixel.Color(0, 0, 255));
-  pixel.show();
-#endif
-  can.endPacket();
-#if CAN_SEND_MARKER
-  pixel.setPixelColor(0, pixel.Color(0, 255, 0));
-  pixel.show();
-#endif
-}
-
 static bool canUp = false;            // heartbeat is only sent once the CAN bus is running
+
+// Live CAN transmit status for the '?' report. A send that nobody acknowledges is abandoned
+// after a few ms (patched Adafruit_MCP2515, see Libraries/Adafruit_MCP2515/PATCH_NOTES.md).
+static void canReport(Print &out) {
+  if (!canUp) { out.println("CAN not running"); return; }
+  out.print("CAN tx: ");
+  out.print(can.txDown() ? "DOWN (no acknowledge)" : "ok");
+  out.print(", timeouts "); out.print(can.txTimeouts());
+  out.print(", skipped "); out.print(can.txSuppressed());
+  out.print(", TEC "); out.print(can.txErrorCount());
+  out.print(", REC "); out.print(can.rxErrorCount());
+  out.print(", EFLG 0x"); out.println(can.errorFlags(), HEX);
+}
 static bool setupDone = false;
 static bool startupFailed = false;
 
@@ -548,7 +545,7 @@ static void sendHeartbeat() {
   moduleInfo.packHeartbeat(frame);
   can.beginPacket(moduleInfo.heartbeatId());
   can.write(frame, 8);
-  canEndPacket();
+  can.endPacket();
 }
 
 /*****************************************************************************
@@ -568,6 +565,7 @@ void setup() {
   // moduleInfo.log() and printed from loop() when a host connects, or on '?'.
   moduleInfo.begin();
   moduleInfo.setModuleNumber(MODULE_NUM_AIR);
+  moduleInfo.setReportHook(canReport);
   moduleInfo.setHealth(MODULE_STATE_STARTING, 0);
 
   // --------------------------------------------------------------------------
@@ -767,7 +765,7 @@ void loop() {
 
     can.beginPacket(CAN_AIR_MSG_ID);
     can.write(canData.bytes, 8);
-    canEndPacket();
+    can.endPacket();
     canAirTimeStamp = millis(); // update the timestamp
   }
 
@@ -780,7 +778,7 @@ void loop() {
 
     can.beginPacket(CAN_AOA_MSG_ID);
     can.write(canData.bytes, 8);
-    canEndPacket();
+    can.endPacket();
     canAoaTimeStamp = millis(); // update the timestamp
   }
 
@@ -805,7 +803,7 @@ void loop() {
 
     can.beginPacket(CAN_RAW_MSG_ID);
     can.write(canData.bytes, 8);
-    canEndPacket();
+    can.endPacket();
     canRawTimeStamp = millis(); // update the timestamp
   }
 
@@ -824,7 +822,7 @@ void loop() {
 
     can.beginPacket(CAN_TEMP_MSG_ID);
     can.write(canData.bytes, 8);
-    canEndPacket();
+    can.endPacket();
     canTempTimeStamp = millis();
   }
 

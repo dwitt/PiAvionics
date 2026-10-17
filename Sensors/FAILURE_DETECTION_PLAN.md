@@ -258,5 +258,17 @@ detect, time to recover, notes.)
 - Reconnected: it answered `?` again at once (uptime 12798 s, continuous, no reset), frames back on the bus.
 - Summary of the CAN cable tests: AIR and GPS (no termination) freeze in the send when pulled; IMU (termination fitted) does not.
   Three modules, consistent with the termination explanation.
+
+### 2026-10-17, Phase 2 step 1: bounded CAN send (AIR 1.0.26, IMU 1.0.5, GPS 1.0.4, ModuleInfo 1.2.0)
+
+- Patched copy of Adafruit_MCP2515 in `Sensors/Libraries/Adafruit_MCP2515` (notes: `PATCH_NOTES.md`): `endPacket()` gives up
+  after 10 ms, then skips sends for 500 ms between single retries; counters and TEC/REC/EFLG shown in the `?` report
+  (`moduleInfo.setReportHook`). Builds from `flash_remote.sh` pick the repo copy (`--libraries`) ahead of the Arduino one.
+- **AIR, no termination, cable out for about 3 minutes: no freeze.** All status queries answered, uptime continuous, `?` showed
+  `CAN tx: DOWN (no acknowledge), timeouts 137, skipped 1718, TEC 0, REC 135, EFLG 0x4B`. (The chip counts receive errors from
+  the floating bus but never counts transmit errors, which is why the stock library never saw TXERR.) Cable back in: traffic
+  resumed (about 0.5 s), `CAN tx: ok`, timeouts 185 total, REC back to 0. EFLG 0x40 (RX0OVR) is set even when healthy: the
+  receive buffer overflowed at some point; not investigated.
+- Removed the temporary LED marker and restored `CAN_INT_WORKAROUND 1` in the AIR sketch.
 - Needed: act on getEvent() failure, detect the all-zero accel, mark gyro invalid, re-initialise the chip (begin and
   configure) about every 2 s while it is missing, and do not let the AHRS integrate stale gyro data.

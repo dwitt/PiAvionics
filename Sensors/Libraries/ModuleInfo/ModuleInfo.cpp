@@ -52,6 +52,7 @@ void ModuleInfo::printReport() {
 	Serial.print(millis() / 1000);
 	Serial.println(" s");
 	Serial.print(_log);
+	if (_reportHook) _reportHook(Serial);
 }
 
 // ---------------------------------------------------------------------------

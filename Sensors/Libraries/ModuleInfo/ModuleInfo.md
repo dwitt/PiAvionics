@@ -71,3 +71,9 @@ static void sendHeartbeat() {
 - A failure that halts the module is only visible if the halt loop calls `service()`. `StatusLED::postCode()` and `configFail()` never return and do not call it, so a halting failure there only prints if a host was already connected.
 - `Serial.print` returns immediately when no host is connected, so nothing here can stall the module. If a host is connected but not reading, a write can block for up to 1 s (arduino-pico behavior).
 - The version in the sketch's `VERSION` define follows the usual rule: increment the patch number on every change.
+
+## Live status lines in the report (1.2.0)
+
+`moduleInfo.setReportHook(fn)` registers `void fn(Print &out)`, called at the end of every report
+(on `?` and when a host connects). Use it for live values that the startup log cannot hold, such as the
+CAN transmit state and error counters.

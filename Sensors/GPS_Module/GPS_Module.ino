@@ -17,7 +17,7 @@
 #include "XYZgeomag.hpp"         // WMM2025 magnetic declination (nhz2/XYZgeomag)
 #include <ModuleInfo.h>        // USB product name, startup log and '?' report
 
-#define VERSION "1.0.3"
+#define VERSION "1.0.4"
 
 ModuleInfo moduleInfo("GPS_Module", VERSION, __DATE__, __TIME__);
 
@@ -181,6 +181,19 @@ static unsigned long lastValidNmea = 0;
 static unsigned long lastRealNmea = 0;
 static bool realNmeaSeen = false;
 static bool canUp = false;        // heartbeat is only sent once the CAN bus is running
+
+// Live CAN transmit status for the '?' report. A send that nobody acknowledges is abandoned
+// after a few ms (patched Adafruit_MCP2515, see Libraries/Adafruit_MCP2515/PATCH_NOTES.md).
+static void canReport(Print &out) {
+  if (!canUp) { out.println("CAN not running"); return; }
+  out.print("CAN tx: ");
+  out.print(can.txDown() ? "DOWN (no acknowledge)" : "ok");
+  out.print(", timeouts "); out.print(can.txTimeouts());
+  out.print(", skipped "); out.print(can.txSuppressed());
+  out.print(", TEC "); out.print(can.txErrorCount());
+  out.print(", REC "); out.print(can.rxErrorCount());
+  out.print(", EFLG 0x"); out.println(can.errorFlags(), HEX);
+}
 static bool setupDone = false;    // state is STARTING until setup() has finished
 
 static void noteValidNmea() {
@@ -308,6 +321,7 @@ void setup() {
   bool gps_success, can_success;
 
   moduleInfo.setModuleNumber(MODULE_NUM_GPS);
+  moduleInfo.setReportHook(canReport);
   moduleInfo.setHealth(MODULE_STATE_STARTING, 0);
 
   // --------------------------------------------------------------------------

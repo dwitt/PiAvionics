@@ -52,7 +52,7 @@
 /*****************************************************************************
  * Firmware version - increment the patch number on every change
  *****************************************************************************/
-#define VERSION "1.0.4"
+#define VERSION "1.0.5"
 
 ModuleInfo moduleInfo("IMU_AHRS", VERSION, __DATE__, __TIME__);
 
@@ -109,6 +109,19 @@ Adafruit_MCP2515 can(CAN_CS_PIN);
 
 static uint8_t hbSensors = 0;
 static bool canUp = false;			// heartbeat is only sent once the CAN bus is running
+
+// Live CAN transmit status for the '?' report. A send that nobody acknowledges is abandoned
+// after a few ms (patched Adafruit_MCP2515, see Libraries/Adafruit_MCP2515/PATCH_NOTES.md).
+static void canReport(Print &out) {
+  if (!canUp) { out.println("CAN not running"); return; }
+  out.print("CAN tx: ");
+  out.print(can.txDown() ? "DOWN (no acknowledge)" : "ok");
+  out.print(", timeouts "); out.print(can.txTimeouts());
+  out.print(", skipped "); out.print(can.txSuppressed());
+  out.print(", TEC "); out.print(can.txErrorCount());
+  out.print(", REC "); out.print(can.rxErrorCount());
+  out.print(", EFLG 0x"); out.println(can.errorFlags(), HEX);
+}
 
 static void sendHeartbeat() {
 	if (!canUp || !moduleInfo.heartbeatDue()) return;
@@ -225,6 +238,7 @@ void setup() {
 	 *************************************************************************/
 
 	moduleInfo.setModuleNumber(MODULE_NUM_IMU);
+	moduleInfo.setReportHook(canReport);
 	moduleInfo.setHealth(MODULE_STATE_STARTING, 0);
 	led.setServiceCallback(imuService);		// '?' report and heartbeat during LED waits
 
