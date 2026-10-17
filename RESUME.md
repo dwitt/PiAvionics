@@ -18,7 +18,7 @@ Remaining: Phase 3 full retest against the plan tables, Phase 4 recovery tests, 
 0x7FFF invalid-data markers together with the EFIS pass (handle heartbeats in aio_server.py, backup display, EFIS heartbeat 0x700).
 Findings: no CAN termination on AIR and GPS boards (IMU has it); live re-insertion of the IMU wing reboots the module; a Pi tty with
 echo on feeds the module's own report back to it (use `stty raw -echo`; keep the port open while sending test commands).
-Open: decide FAULT_INJECT 1 or 0 for the flight build; EFLG 0x40 (RX0OVR) set even when healthy; symlink the
+Decided: FAULT_INJECT stays 1 in the flight build (no USB in the aircraft, faults are RAM only; see the plan). Open: EFLG 0x40 (RX0OVR) set even when healthy; symlink the
 ~/Documents/Arduino/libraries copies of Adafruit_LSM6DS (and MCP2515) to the repo copies (asked, unanswered); IMU/GPS/AIR hot-plug of
 a sensor into a running module not tested; stuck I2C bus (SDA held low) recovery on the AIR Wire bus not built.
 

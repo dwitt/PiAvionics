@@ -402,3 +402,10 @@ Test (David watched the LEDs, faults set with the injection commands):
   satellites; the position frame 0x63 is not sent (no stale position); the module re-probes the GPS about every 5 s (5 times in the
   run). Un-silenced: state 1, mask 03, 0x63/0x65 back about 4 s later (the probe in progress has to finish).
 - LED (David): amber while silent, green again after.
+
+### Decision: fault injection stays in the flight build (David, 2026-10-17)
+
+`FAULT_INJECT 1` stays in IMU_AHRS, AIR_Module and GPS_Module. Reasons: the cost is a few boolean tests and a byte check that
+the module already did; in the aircraft nothing is plugged into the USB ports (power comes in on the CAN DE-9 connector, with a
+switch that stops the CAN supply back-driving USB; USB is only used for firmware updates and testing on the ground); injected
+faults are held in RAM only and clear on a power cycle; and the `?` report shows any active fault in a "Test build" line.
