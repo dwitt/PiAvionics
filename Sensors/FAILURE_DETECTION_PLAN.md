@@ -157,3 +157,10 @@ detect, time to recover, notes.)
   on the bus (probably contact bounce while plugging in, passed through the OAT filter).
 - Findings: (1) stale OAT looks valid (marker will fix this later); (2) on recovery the OAT filter should be reset and
   readings outside a sane RTD range rejected, otherwise bad values go out with the OK bit set for about 12 s.
+
+**A1b, RTD+ disconnected (hot), then reconnected**
+- Unplugged: OAT went to -16.1 C then -70.0 C and stayed there, sent at 5 Hz (a false but plausible cold reading,
+  unlike RTD- which froze the old value). Heartbeat state 2, mask 07, about 2.7 s later.
+- Reconnected: heartbeat back to state 1, mask 0F about 0.6 s after the readings started coming back, but the OAT
+  was still -23 C and took about 6 s (filter slew) to reach 22 C. So the OK bit was set while the value was wrong.
+- Both tests: detection time about 2.7 to 3 s; recovery of the bit about 1 s; recovery of the value 6 to 12 s.
