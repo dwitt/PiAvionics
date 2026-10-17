@@ -29,6 +29,9 @@ MGL splits an ID into a device address (upper 7 bits) and a message type (lower 
 | `0x081` | MAG_X | 8 | 1 | ⚠️ Reserved: Host / EFIS address space, no current use |
 | `0x082` | MAG_Y | 8 | 2 | ⚠️ Reserved: Host / EFIS address space, no current use |
 | `0x083` | MAG_Z | 8 | 3 | ⚠️ Reserved: Host / EFIS address space, no current use |
+| `0x701` | IMU_HEARTBEAT | 112 | 1 | ✅ Not used by MGL |
+| `0x702` | AIR_HEARTBEAT | 112 | 2 | ✅ Not used by MGL |
+| `0x703` | GPS_HEARTBEAT | 112 | 3 | ✅ Not used by MGL |
 
 ## Findings
 
@@ -56,7 +59,7 @@ MGL splits an ID into a device address (upper 7 bits) and a message type (lower 
 | `0x440`–`0x45F` | 68–69 | External MGL autopilot |
 | `0x460`–`0x7FF` | 70–127 | **Free.** Not used by MGL |
 
-PiAvionics IDs currently in use: `0x019`, `0x023`, `0x028`, `0x029`, `0x02A`, `0x02B`, `0x02E`, `0x032`, `0x048`, `0x049`, `0x051`, `0x052`, `0x053`, `0x063`, `0x064`, `0x065`, `0x081`, `0x082`, `0x083`.
+PiAvionics IDs currently in use: `0x019`, `0x023`, `0x028`, `0x029`, `0x02A`, `0x02B`, `0x02E`, `0x032`, `0x048`, `0x049`, `0x051`, `0x052`, `0x053`, `0x063`, `0x064`, `0x065`, `0x081`, `0x082`, `0x083`, `0x701`, `0x702`, `0x703`.
 
 ## Estimated bus load
 

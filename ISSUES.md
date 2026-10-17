@@ -62,8 +62,9 @@ Status: **Open**, **Monitoring** (fix applied, watching), **Fixed**.
   where the EFIS triggers them (soft-button menu).
 - Out of scope for now: reading or updating the firmware image over CAN, which would
   need a bootloader.
-- First step when picked up: draft the protocol in `CAN Reference/Can Docs.md` for
-  review before any firmware changes.
+- Step 1 drafted 2026-10-17 in `Protocol/can_messages.yaml` (0x701 IMU, 0x702 AIR, 0x703 GPS
+  heartbeats, status planned) for review. No firmware or EFIS changes yet. Still to do after
+  review: IMU sender, then AIR and GPS, then handling in `aio_server.py`.
 
 ## Monitoring
 
