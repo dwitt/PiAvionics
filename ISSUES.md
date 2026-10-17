@@ -121,26 +121,12 @@ Status: **Open**, **Monitoring** (fix applied, watching), **Fixed**.
   smoothed with a 1.4 s low-pass and rounded. A sample with a fault is dropped and the last
   good value kept; 0x2A is not sent until the first good sample.
 - Result: 0x28 9.8 Hz, 0x29/0x2A/0x2B 4.9 Hz; OAT std dev 0.035 C, range 0.1 C over 30 s.
-- Watch: the pressure filters now really run at 100 Hz, so airspeed and altitude will react
-  faster than before. Check them with real pressure applied (pitot and static) and retune
-  the filter constants if needed. Not yet done.
-
-
-### 8. AIR module: MS4525DO zero offset was taken from a single sample
-- Found 2026-09-30. `MS4525DO::zeroPressureSensor()` was meant to average 10 readings at
-  start-up, but `pCount` was declared outside the loop, so one reading was counted 10 times.
-  The first reading after power-up is sometimes about 14 counts off, so the resting
-  differential pressure read 0 Pa on some boots and about 15 Pa (8-10 kt of airspeed with
-  nothing on the pitot) on others. The deadband filter hid the jitter when the zero was right
-  and showed it when it was wrong, which looked like pitot noise (reported 2026-10-16).
-- Fix (AIR_Module v1.0.10): discard the first 5 readings, then average 32 good readings 5 ms
-  apart (about 190 ms extra at start-up), skipping bad or stale status; gives up after 200
-  reads and keeps the old offset. Affects both MS4525DO sensors (pitot and AOA).
-- Result: 8 consecutive soft reboots all read 0.0 Pa and 0 kt at rest (before: 0 or 15 Pa).
-- Remaining limits: the zero is still taken once at power-up and assumes equal pressure on
-  both ports then (no wind, no cover with a pressure difference), and does not track
-  temperature drift. A zero command over CAN (issue 9) would address that.
-- Reference: TE MS45xx Auto-Zero application note in `Sensors/Reference/MS4525DO/`.
+- Pitot filtering re-checked 2026-10-17 with real pressure: the original constant
+  alpha 0.04 low-pass and 0.12 hPa deadband are kept. Tried and dropped: no deadband (rest
+  showed 3-4 kt from a ~2 Pa offset and 1.3 Pa noise), and a pressure-dependent filter
+  (heavy below 10 Pa) with a 5 Pa deadband (clean at rest but a 5-7 kt tail for several
+  seconds after a blow). Consequence of the kept setting: nothing is shown below about
+  9 kt, and the reading steps from 0 to about 9 kt.
 
 ### 7. GPS module needed an RP2040 reset to pick up a fix after a full repower
 - Old firmware set the GPS baud once at boot (9600 -> 115200), sent config commands
