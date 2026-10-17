@@ -254,8 +254,9 @@ detect, time to recover, notes.)
 
 **C1/C2, GPS module CAN cable unplugged (hot), then reconnected** (watched via the `?` report)
 - Unplugged: the bus went quiet and `?` went unanswered (two tries, 3 s apart): **frozen, like the AIR module**.
-  LED stayed green. (Assumed unterminated, same as AIR; not confirmed what the GPS CAN board has fitted.)
+  LED stayed green. (David confirmed the GPS CAN board has no termination resistor, same as AIR.)
 - Reconnected: it answered `?` again at once (uptime 12798 s, continuous, no reset), frames back on the bus.
-- Summary of the CAN cable tests: AIR and GPS freeze in the send when pulled; IMU (termination fitted) does not.
+- Summary of the CAN cable tests: AIR and GPS (no termination) freeze in the send when pulled; IMU (termination fitted) does not.
+  Three modules, consistent with the termination explanation.
 - Needed: act on getEvent() failure, detect the all-zero accel, mark gyro invalid, re-initialise the chip (begin and
   configure) about every 2 s while it is missing, and do not let the AHRS integrate stale gyro data.
