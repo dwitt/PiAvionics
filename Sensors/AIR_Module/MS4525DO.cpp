@@ -223,17 +223,37 @@ void MS4525DO::setOutputType(MS4525D_Output_Type type) {
 // @returns true on success, false on failure
 // ----------------------------------------------------------------------------
 
+// Takes ZERO_SAMPLES good readings, ZERO_INTERVAL_MS apart, after discarding the
+// first ZERO_DISCARD readings (the first readings after power-up can be off by
+// ~14 counts). A reading with a bad or stale status is skipped, not counted. Gives
+// up after ZERO_MAX_TRIES reads and keeps the old offset if there were no good ones.
+// The sensor must see equal pressure on both ports while this runs (ISSUES.md #8).
+#define ZERO_DISCARD      5
+#define ZERO_SAMPLES      32
+#define ZERO_INTERVAL_MS  5
+#define ZERO_MAX_TRIES    200
+
 void MS4525DO::zeroPressureSensor() {
-    int32_t pZeroCount = 0;
-    int16_t pCount = 0;
-    for(int i = 0; i < 10; i++) {
-        while (pCount == 0) {
-            pCount = readRawPressureCount();
+    int32_t pZeroSum = 0;
+    int good = 0;
+    int discarded = 0;
+
+    for (int tries = 0; tries < ZERO_MAX_TRIES && good < ZERO_SAMPLES; tries++) {
+        uint16_t pCount = readRawPressureCount();   // 0 = bad or stale status
+        if (pCount != 0) {
+            if (discarded < ZERO_DISCARD) {
+                discarded++;
+            } else {
+                pZeroSum += pCount;
+                good++;
+            }
         }
-        pZeroCount += pCount;
+        delay(ZERO_INTERVAL_MS);
     }
-    pZeroCount /= 10;
-    _pZeroCountOffset = 0x2000 - pZeroCount;
+
+    if (good > 0) {
+        _pZeroCountOffset = 0x2000 - (int16_t)(pZeroSum / good);
+    }
 }
 
 // ----------------------------------------------------------------------------

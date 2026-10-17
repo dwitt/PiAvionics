@@ -39,26 +39,6 @@ Status: **Open**, **Monitoring** (fix applied, watching), **Fixed**.
 - README fixed (commit 9800d76). Still to fix: the header comment in
   `Sensors/GPS_Module/GPS_Module.ino` and `Sensors/GPS_Module/PLAN.md`.
 
-### 8. AIR module: MS4525DO zero offset is taken from a single sample
-- `Sensors/AIR_Module/MS4525DO.cpp` `zeroPressureSensor()` (~line 226) is meant to
-  average 10 readings at start-up and store `_pZeroCountOffset = 0x2000 - average`.
-  `pCount` is declared outside the loop and never reset, so the `while (pCount == 0)`
-  read only runs on the first pass. The same first reading is added 10 times, so the
-  offset is one noisy sample, not an average.
-- Affects both MS4525DO sensors (PS1 pitot and PS2 AOA), since both use this driver.
-  One count is about 1 Pa on the 1 psi range; a few counts of error at rest is a few
-  Pa, roughly 3-4 kt of airspeed error at low speed. It will also matter for the AOA
-  pressure ratio once that is implemented.
-- Other limits: the zero is taken once at power-up and assumes equal pressure on both
-  ports at that moment (no wind on the pitot, no cover with a pressure difference),
-  and it does not track temperature drift afterwards.
-- Proposed fix: re-read every iteration (declare `pCount` inside the loop), average
-  more than 10 samples with a short delay between them, and bump the version.
-  Consider an option to re-zero on the ground.
-- Reference: TE MS45xx Auto-Zero application note in `Sensors/Reference/MS4525DO/`.
-- Logged 2026-09-30; not yet fixed. Noted while comparing with OnSpeed Gen2, which
-  stores fixed zero biases in its config instead (`PFWD_BIAS`, `P45_BIAS`).
-
 ### 9. Enhancement: module identity, version and commands over CAN
 - Idea (2026-09-30): let the EFIS read each module's firmware version and send it
   commands (reset, zero) over CAN. Nothing is designed or implemented yet.
@@ -141,6 +121,22 @@ Status: **Open**, **Monitoring** (fix applied, watching), **Fixed**.
   faster than before. Check them with real pressure applied (pitot and static) and retune
   the filter constants if needed. Not yet done.
 
+
+### 8. AIR module: MS4525DO zero offset was taken from a single sample
+- Found 2026-09-30. `MS4525DO::zeroPressureSensor()` was meant to average 10 readings at
+  start-up, but `pCount` was declared outside the loop, so one reading was counted 10 times.
+  The first reading after power-up is sometimes about 14 counts off, so the resting
+  differential pressure read 0 Pa on some boots and about 15 Pa (8-10 kt of airspeed with
+  nothing on the pitot) on others. The deadband filter hid the jitter when the zero was right
+  and showed it when it was wrong, which looked like pitot noise (reported 2026-10-16).
+- Fix (AIR_Module v1.0.10): discard the first 5 readings, then average 32 good readings 5 ms
+  apart (about 190 ms extra at start-up), skipping bad or stale status; gives up after 200
+  reads and keeps the old offset. Affects both MS4525DO sensors (pitot and AOA).
+- Result: 8 consecutive soft reboots all read 0.0 Pa and 0 kt at rest (before: 0 or 15 Pa).
+- Remaining limits: the zero is still taken once at power-up and assumes equal pressure on
+  both ports then (no wind, no cover with a pressure difference), and does not track
+  temperature drift. A zero command over CAN (issue 9) would address that.
+- Reference: TE MS45xx Auto-Zero application note in `Sensors/Reference/MS4525DO/`.
 
 ### 7. GPS module needed an RP2040 reset to pick up a fix after a full repower
 - Old firmware set the GPS baud once at boot (9600 -> 115200), sent config commands
