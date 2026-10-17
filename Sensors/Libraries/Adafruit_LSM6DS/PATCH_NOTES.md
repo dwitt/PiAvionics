@@ -38,6 +38,18 @@ The patch was kept because it is correct and harmless. (Details are in that proj
 
 Corruption of that kind has not been seen on the PiAvionics IMU module.
 
+## Upstream status (checked 2026-10-17)
+
+Not fixed in upstream: the latest release is still 4.7.4 and master still ignores the read result.
+- Issue https://github.com/adafruit/Adafruit_LSM6DS/issues/26 (2021): asks for a success flag.
+- PR https://github.com/adafruit/Adafruit_LSM6DS/pull/27 (2021, open, mergeable): the same change as
+  this patch (including the DSO32 override), without our `readFailures` counter. On 2025-03-06 the
+  maintainer said it looks good but wanted the other drivers checked and testing before merging.
+- David added a comment on PR #27 on 2026-10-17 with our test hardware and the finding that no
+  other driver overrides `_read()`.
+When #27 is merged and released, this local patch can be dropped (the `readFailures` counter
+would go with it; nothing in PiAvionics uses it).
+
 ## Why PiAvionics keeps it
 
 Failure detection (`Sensors/FAILURE_DETECTION_PLAN.md`, ISSUES.md #13). If the ISM330DHCX is
