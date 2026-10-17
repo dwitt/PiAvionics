@@ -30,7 +30,7 @@
 /*****************************************************************************
  * Firmware version - increment the patch number on every change
  *****************************************************************************/
-#define VERSION "1.0.29"
+#define VERSION "1.0.32"
 
 // Set to 0 to run without the AOA sensor (Wire1, GPIO8/9). With 0, Wire1 is not
 // touched at all and a missing AOA sensor does not stop startup.
@@ -869,7 +869,13 @@ void setup() {
 
   // Maybe consider checking if the filter is set correctly using the return
   // value of the filter function.
-  can.filter(CAN_QNH_MSG_ID, 0x7FF);
+  bool filterOk = can.filter(CAN_QNH_MSG_ID, 0x7FF);
+  moduleInfo.log(filterOk ? "CAN filter OK (QNH only)" : "**WARNING** CAN filter FAILED (all frames received)");
+  // Frames that arrived before the filter was set are still in the chip's two receive buffers, and
+  // nothing has read them. A QNH frame arriving before the loop starts reading would find a full
+  // buffer and set RX0OVR, which stays set. Read out the old frames, then clear the flag.
+  while (can.parsePacket()) {}
+  can.clearErrorFlags();
 
   timestamp = millis();     // initialize the timestamp
 

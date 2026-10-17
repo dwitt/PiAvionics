@@ -60,7 +60,7 @@
      yield();
    }
  
-@@ -206,7 +235,33 @@
+@@ -206,9 +235,37 @@
  
    modifyRegister(REG_CANINTF, FLAG_TXnIF(n), 0x00);
  
@@ -77,11 +77,13 @@
 +    _txDown = false;
 +  }
 +  return ok;
-+}
-+
+ }
+ 
 +uint8_t Adafruit_MCP2515::txErrorCount() { return readRegister(REG_TEC); }
 +uint8_t Adafruit_MCP2515::rxErrorCount() { return readRegister(REG_REC); }
 +uint8_t Adafruit_MCP2515::errorFlags() { return readRegister(REG_EFLG); }
++
++void Adafruit_MCP2515::clearErrorFlags() { writeRegister(REG_EFLG, 0x00); }
 +
 +bool Adafruit_MCP2515::txFault() {
 +  static uint32_t lastRead = 0;
@@ -92,12 +94,14 @@
 +    eflgFault = (readRegister(REG_EFLG) & 0x34) != 0;   // TXWAR 0x04, TXEP 0x10, TXBO 0x20
 +  }
 +  return eflgFault;
- }
- 
++}
++
  int Adafruit_MCP2515::parsePacket() {
+   int n;
+ 
 --- a/src/Adafruit_MCP2515.h
 +++ b/src/Adafruit_MCP2515.h
-@@ -40,6 +40,23 @@
+@@ -40,6 +40,26 @@
  
    void setClockFrequency(long clockFrequency);
  
@@ -117,11 +121,14 @@
 +  /// the chip's transmit error counter is high (EFLG TXWAR/TXEP/TXBO). A terminated module with its cable
 +  /// pulled never times out but its error counter climbs to 128. Reads EFLG at most every 200 ms.
 +  bool txFault();
++  /// LOCAL PATCH: clear the latched receive-overflow flags (RX0OVR, RX1OVR) in EFLG. The chip never clears
++  /// them itself, so without this a single overflow at start-up shows in errorFlags() for ever.
++  void clearErrorFlags();
 +
    void dumpRegisters(Stream &out);
  
  private:
-@@ -56,6 +73,13 @@
+@@ -56,6 +76,13 @@
  
    Adafruit_SPIDevice *spi_dev = NULL; ///< Pointer to SPI bus interface
    long _clockFrequency;

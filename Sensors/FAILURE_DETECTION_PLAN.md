@@ -409,3 +409,19 @@ Test (David watched the LEDs, faults set with the injection commands):
 the module already did; in the aircraft nothing is plugged into the USB ports (power comes in on the CAN DE-9 connector, with a
 switch that stops the CAN supply back-driving USB; USB is only used for firmware updates and testing on the ground); injected
 faults are held in RAM only and clear on a power cycle; and the `?` report shows any active fault in a "Test build" line.
+
+### 2026-10-17: receive-overflow flag (EFLG 0x40, RX0OVR) on the AIR module (AIR_Module 1.0.32)
+
+- Symptom: `EFLG 0x40` showed in the `?` report of every module from a few seconds after boot, on a healthy bus. 0x40 = RX0OVR, receive
+  buffer 0 overflowed. The chip never clears it itself; it stays until the sketch writes EFLG.
+- Cause on AIR: the library starts with the receive filters off, so the chip accepts every frame. `can.filter()` (QNH 0x2E only) is
+  called at the end of `setup()`, which takes several seconds, and nothing reads frames until `loop()` runs. The two receive buffers
+  fill with old frames and keep them. When the Pi's 1 Hz QNH frame arrives before the loop reads the old frame out, it finds a full
+  buffer and RX0OVR is set for good. It happened in about 1 boot in 3 to 4 (a short timing window), which is why clearing the flag at
+  the end of `setup()` alone did not always help (the QNH frame could arrive just after the clear).
+- Fix: after `can.filter()`, read out the old frames (`while (can.parsePacket()) {}`) and clear the flags with the new library function
+  `clearErrorFlags()`. Result: 10 reboots in a row, EFLG 0x0 each time at 8 s, and still 0x0 after 100 s of running. (Before: 1 of 4
+  boots left the flag set.) The sketch now also logs whether `filter()` worked ("CAN filter OK (QNH only)"; it returned OK).
+- Harmless: the overflow lost no QNH data that mattered and does not change the error counters or the transmit side.
+- IMU and GPS still show 0x40: they never filter or read frames, so their buffers are always full and the flag is permanent. That is
+  expected and harmless until they get a receive path (command messages, ISSUES #9); then give them the same filter + drain + clear.

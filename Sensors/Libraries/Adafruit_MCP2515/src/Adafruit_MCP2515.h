@@ -56,6 +56,9 @@ public:
   /// the chip's transmit error counter is high (EFLG TXWAR/TXEP/TXBO). A terminated module with its cable
   /// pulled never times out but its error counter climbs to 128. Reads EFLG at most every 200 ms.
   bool txFault();
+  /// LOCAL PATCH: clear the latched receive-overflow flags (RX0OVR, RX1OVR) in EFLG. The chip never clears
+  /// them itself, so without this a single overflow at start-up shows in errorFlags() for ever.
+  void clearErrorFlags();
 
   void dumpRegisters(Stream &out);
 

@@ -253,6 +253,8 @@ uint8_t Adafruit_MCP2515::txErrorCount() { return readRegister(REG_TEC); }
 uint8_t Adafruit_MCP2515::rxErrorCount() { return readRegister(REG_REC); }
 uint8_t Adafruit_MCP2515::errorFlags() { return readRegister(REG_EFLG); }
 
+void Adafruit_MCP2515::clearErrorFlags() { writeRegister(REG_EFLG, 0x00); }
+
 bool Adafruit_MCP2515::txFault() {
   static uint32_t lastRead = 0;
   static bool eflgFault = false;

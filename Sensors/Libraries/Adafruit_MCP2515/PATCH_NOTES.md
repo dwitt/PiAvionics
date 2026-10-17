@@ -34,7 +34,7 @@ ends up in this state.
   back in.
 - Normal behaviour is unchanged otherwise (including the library's own TXERR abort path).
 
-New public functions: `setTxTimeoutMs(ms)`, `txDown()`, `txFault()` (sends being abandoned, or the chip's transmit error warning/passive/bus-off flags set; used for the red LED), `txTimeouts()`, `txSuppressed()`, `txErrorCount()`
+New public functions: `setTxTimeoutMs(ms)`, `txDown()`, `clearErrorFlags()` (clear the latched receive-overflow flags in EFLG), `txFault()` (sends being abandoned, or the chip's transmit error warning/passive/bus-off flags set; used for the red LED), `txTimeouts()`, `txSuppressed()`, `txErrorCount()`
 (TEC register), `rxErrorCount()` (REC), `errorFlags()` (EFLG). The sketches print them in the `?` report
 through `moduleInfo.setReportHook()`, e.g. `CAN tx: DOWN (no acknowledge), timeouts 3, skipped 120, TEC 248, REC 0, EFLG 0x..`.
 
