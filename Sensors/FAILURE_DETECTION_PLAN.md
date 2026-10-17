@@ -77,44 +77,49 @@ Expected (after step 3) is what the new firmware should do; Today is filled in d
 
 | # | Action | How | Expected mask / state | Expected data | Today | Result |
 |---|--------|-----|-----------------------|---------------|-------|--------|
-| A1 | RTD probe disconnected from the MAX31865 | Hot | bit 3 clear, state 2 | 0x2A not sent (or 0x7FFF) | | |
-| A2 | MAX31865 breakout removed (SPI chip gone) | Cold, then Hot if it is on a lead | bit 3 clear, state 2 (hot) / state 3 (cold start-up) | as A1 | | |
-| A3 | Pitot sensor lost | Fault injection (soldered) | bit 0 clear, state 2 | airspeed 0x7FFF, altitude still valid | | |
-| A4 | Static sensor lost | Fault injection | bit 2 clear, state 2 | altitude and vertical speed 0x7FFF, airspeed valid | | |
-| A5 | AOA sensor lost | Fault injection | bit 1 clear, state 2 | nothing else changes (AOA is unused) | | |
-| A6 | Whole Feather-Air wing removed | Cold | state 3, bits 0 to 2 clear | no 0x28 | | |
-| A7 | Pitot tube blocked or pulled off (sensor still talks) | Hot | no change (not a sensor failure) | note only | | |
-| A8 | I2C SDA of Wire shorted or held low briefly | optional, bench | recovers | | | |
+| A1 | RTD probe disconnected from the MAX31865 | Hot | bit 3 clear, state 2 | 0x2A not sent (or 0x7FFF) | Detected in about 3 s (state 2, mask 07) but 0x2A kept going, frozen or at -70 C; after reconnect bad values for 6 to 12 s (spikes to 313 C) | PASS (1.0.27): state 2 mask 07 after about 2 s, 0x2A stops, resumes 1 to 2 s after reconnect at the right value; RTD-, RTD+ and third wire all tested |
+| A2 | MAX31865 breakout removed (SPI chip gone) | Cold, then Hot if it is on a lead | bit 3 clear, state 2 (hot) / state 3 (cold start-up) | as A1 | NOT detected: OAT sank to -242 C, heartbeat stayed state 1 mask 0F | PASS hot (1.0.27): state 2 mask 07, 0x2A stops, recovers on reinsert. Cold start without the board not tested (the RTD would read as missing; module boots state 2) |
+| A3 | Pitot sensor lost | Fault injection (soldered) | bit 0 clear, state 2 | airspeed 0x7FFF, altitude still valid | Not tested (sensor in socket; live pull judged risky) | PASS: injected (`!P`) state 2 mask 0E in 0.2 s, airspeed 0, altitude still valid; cold boot with the sensor out: state 2 mask 0E. Marker 0x7FFF not yet used (airspeed 0 for now) |
+| A4 | Static sensor lost | Fault injection | bit 2 clear, state 2 | altitude and vertical speed 0x7FFF, airspeed valid | Not tested (as A3) | PASS: injected (`!S`) state 2 mask 0B, altitude held, vertical speed 0, airspeed valid; cold boot with the sensor out: state 2 mask 0B (altitude 0, nothing to hold) |
+| A5 | AOA sensor lost | Fault injection | bit 1 clear, state 2 | nothing else changes (AOA is unused) | Not tested (as A3) | PASS: injected (`!A`) state 2 mask 0D, nothing else changes; cold boot with the sensor out: state 2 mask 0D |
+| A6 | Whole Feather-Air wing removed | Cold | state 3, bits 0 to 2 clear | no 0x28 | Not tested | NOT RUN (needs the Feather-Air wing removed cold). With all three pressure sensors missing the module would report state 3, mask bit 3 only; not tested |
+| A7 | Pitot tube blocked or pulled off (sensor still talks) | Hot | no change (not a sensor failure) | note only | Not tested | NOT RUN (note only: a blocked pitot is not a sensor failure) |
+| A8 | I2C SDA of Wire shorted or held low briefly | optional, bench | recovers | | Not tested | NOT BUILT: no bus recovery for a stuck Wire bus (the Wire1 AOA bus has one at start-up). Reads simply fail and the sensors go invalid |
 
 ### IMU module (0x701, data 0x48 / 0x49)
 
 | # | Action | How | Expected mask / state | Expected data | Today | Result |
 |---|--------|-----|-----------------------|---------------|-------|--------|
-| I1 | IMU wing (ISM330DHCX + LIS3MDL) removed | Cold | state 3, bits 0 and 1 clear | no 0x48 / 0x49 | | |
-| I2 | ISM330DHCX lost | Fault injection (same wing) | bit 0 clear, state 2 | attitude 0x7FFF | | |
-| I3 | LIS3MDL lost | Fault injection | bit 1 clear, state 2 | yaw 0x7FFF, pitch/roll valid | | |
-| I4 | EEPROM breakout lead unplugged | Cold | state 3 (halts) mask bit 2 clear | | | |
-| I5 | EEPROM unplugged while running | Hot | no change (not used) | note only | | |
-| I6 | Calibration missing (blank EEPROM) | Cold, optional | state 2, bit 2 clear | AHRS runs | | |
-| I7 | I2C lead to the IMU wing unplugged, if it is a lead | Hot | bits 0 and 1 clear, state 2 or 3 | | | |
+| I1 | IMU wing (ISM330DHCX + LIS3MDL) removed | Cold | state 3, bits 0 and 1 clear | no 0x48 / 0x49 | Not tested cold; start-up halts with state 3 (POST code 1) | PARTLY: the wing was pulled hot instead (see I7). Cold start-up without the ISM330DHCX still halts with state 3 and a POST code; without the LIS3MDL it now runs 6-axis, state 2 (changed 1.0.6) |
+| I2 | ISM330DHCX lost | Fault injection (same wing) | bit 0 clear, state 2 | attitude 0x7FFF | Not applicable (no detection) | PASS: injected (`!G`) and chip reset (`!z`): state 3 mask 06 within 0.3 to 1.6 s, attitude held (not 0x7FFF yet), chip re-initialised and recovered in about 2 s. Note: state 3, not 2 as the table expected, because without accel and gyro there is no attitude |
+| I3 | LIS3MDL lost | Fault injection | bit 1 clear, state 2 | yaw 0x7FFF, pitch/roll valid | Not applicable | PASS: injected (`!M`) and chip reset (`!x`): state 2 mask 05, 6-axis AHRS (heading follows gyro, pitch/roll correct, drift about 0.1 deg/s), recovers by itself; heading eases back in about 5 s |
+| I4 | EEPROM breakout lead unplugged | Cold | state 3 (halts) mask bit 2 clear | | Not tested (start-up halts with state 3 on a failed EEPROM) | NOT RUN. Unchanged: EEPROM failure at start-up still halts with state 3 |
+| I5 | EEPROM unplugged while running | Hot | no change (not used) | note only | PASS: no change at all | PASS (as expected, EEPROM is not used while running) |
+| I6 | Calibration missing (blank EEPROM) | Cold, optional | state 2, bit 2 clear | AHRS runs | Not tested | NOT RUN (code path: no calibration = state 2, bit 2 clear, AHRS runs; unchanged) |
+| I7 | I2C lead to the IMU wing unplugged, if it is a lead | Hot | bits 0 and 1 clear, state 2 or 3 | | NOT detected: heartbeat stayed state 1 mask 07, attitude drifted, never recovered without a reset | PASS (1.0.11): wing pulled hot, state 3 mask 04 after about 1 s, attitude held. Re-insertion rebooted the module (supply glitch), so the self-recovery was tested with `!z` / `!x` instead |
 
 ### GPS module (0x703, data 0x63 / 0x64 / 0x65)
 
 | # | Action | How | Expected mask / state | Expected data | Today | Result |
 |---|--------|-----|-----------------------|---------------|-------|--------|
-| G1 | GPS antenna unplugged (if external) | Hot | bit 1 clear, state 1 | 0x65 shows no fix | | |
-| G2 | GPS wing removed | Cold | state 2 or 3, bits 0 and 1 clear | | | |
-| G3 | GPS UART lead unplugged | Hot, if it is a lead | state 2, bits clear within 5 s | no stale position | | |
+| G1 | GPS antenna unplugged (if external) | Hot | bit 1 clear, state 1 | 0x65 shows no fix | PASS: falls back to the internal antenna, fix kept, mask unchanged, 0x65 shows fewer satellites | PASS (unchanged, nothing to fix) |
+| G2 | GPS wing removed | Cold | state 2 or 3, bits 0 and 1 clear | | Not tested (wing hard to pull) | NOT RUN. Equivalent tested with `!N` (GPS silenced), see G3 |
+| G3 | GPS UART lead unplugged | Hot, if it is a lead | state 2, bits clear within 5 s | no stale position | Not applicable (wing, no lead) | PASS with injection (1.0.7): state 2 mask 00 after about 5 s, no 0x63 position (no stale position), 0x65 shows no fix, re-probes every 5 s, recovers about 4 s after data returns; LED amber |
 
 ### All modules, CAN wing / bus
 
 | # | Action | How | Expected | Today | Result |
 |---|--------|-----|----------|-------|--------|
-| C1 | CAN cable unplugged from the module (module alone, no ACK) | Hot | module keeps running, LED red, `?` report shows the CAN fault, no hang | | |
-| C2 | Same, reconnect | Hot | heartbeat and data resume without a reset | | |
-| C3 | CAN wing removed | Cold | state 3 flash (cannot report), `?` shows it | | |
-| C4 | Other modules' reaction to a dead one | observe on candump | the dead module's heartbeat stops after 3 s; others unaffected | | |
-| C5 | Bus terminator or short | out of scope | | | |
+| C1 | CAN cable unplugged from the module (module alone, no ACK) | Hot | module keeps running, LED red, `?` report shows the CAN fault, no hang | AIR and GPS (unterminated): whole firmware froze in the CAN send; IMU (terminated): kept running | PASS (all three, 1.0.14 / 1.0.29 / 1.0.7): modules keep running, LED fast red, `?` shows `CAN tx: DOWN` (unterminated) or error flags (terminated). Cause was missing 120 ohm termination plus the unbounded library send |
+| C2 | Same, reconnect | Hot | heartbeat and data resume without a reset | Recovered by itself when the cable went back in | PASS: heartbeat and data resume within about 0.5 s without a reset, LED back to green within seconds |
+| C3 | CAN wing removed | Cold | state 3 flash (cannot report), `?` shows it | Not tested | NOT RUN (CAN wing removed cold: the module cannot report; it halts with 11 red flashes) |
+| C4 | Other modules' reaction to a dead one | observe on candump | the dead module's heartbeat stops after 3 s; others unaffected | Not tested | NOT RUN: needs the EFIS side (missing heartbeat for 3 s) |
+| C5 | Bus terminator or short | out of scope | | Out of scope | Out of scope |
+
+Legend for the Today and Result columns, filled in 2026-10-17. Today = firmware before this work (Phase 1). Result = after
+the Phase 2 build (AIR 1.0.29, IMU 1.0.14, GPS 1.0.7). "Injected" means a fault-injection command (`FAULT_INJECT`), not a real
+unplug. 0x7FFF markers are not in yet, so where the table expects a marker the data field keeps its interim behaviour (see the
+step 3 entry in the test log).
 
 ## Recovery and safety checks (after each module is done)
 
@@ -123,6 +128,15 @@ Expected (after step 3) is what the new firmware should do; Today is filled in d
   needs 5 good reads to come back).
 - Power cycle with the part missing, then plug it in while running: it should come up (recovery).
 - No test may leave the module needing a hard reset except where noted.
+
+Status 2026-10-17:
+- Reconnect: done for the RTD and MAX31865 (state 1 within about 2 s), the CAN cable (about 0.5 s), and by injection for every sensor.
+  The IMU wing could not be re-inserted live (the module rebooted), so chip re-initialisation was tested with chip resets.
+- Intermittent connection (wiggle): not tested. The trackers need 5 good samples to come back (3 for the RTD), and 20 bad to fail.
+- Power cycle with the part missing, then plug it in while running: by design an MS4525DO (pitot, AOA) that was missing at start-up
+  stays invalid until the next restart, because it is zeroed at start-up and cannot be zeroed in flight. The SSC (static) and the
+  IMU chips are re-read and should come back; not tested on hardware.
+- Nothing needed a hard reset except the IMU wing re-insertion (it rebooted itself).
 
 ## Decisions (David, 2026-10-17)
 
