@@ -172,3 +172,8 @@ each module can be rolled back by reflashing.
 - **2. Failure look (2026-10-17, implied by decision 1).** A red X, drawn with thick semi-transparent strokes, over the instrument. Where a
   value exists but is untrusted (only the gyro-only heading today) the value stays visible and dimmed under the X. Where there
   is no value at all (a marker, a lost module, a timeout) the instrument is blank under the X. To confirm with David.
+- **3. Attitude failure (2026-10-17).** The sky and ground are removed and a large red X is shown. No frozen horizon is ever drawn.
+- **4. Annunciators (2026-10-17).** Shown at top centre, just under the heading ribbon: red warnings first, amber cautions below,
+  2 to 3 short lines. A new caution or warning flashes for about 5 seconds, then stays steady.
+- **5. Module status page (2026-10-17).** A read-only page opened from the existing Menu (Menu, then Modules): IMU, AIR, GPS and the
+  EFIS with version, state, which sensors are up, uptime and last heard. Later a natural home for the CAN commands (ISSUES #9).
