@@ -7,6 +7,7 @@ public:
 
     float update(float input);
     float getValue() const;
+    void reset() { _initialized = false; }   // next update() starts from its input
 
 private:
     float _alpha;

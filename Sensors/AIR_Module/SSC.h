@@ -10,6 +10,7 @@
 #include <Adafruit_Sensor.h>
 #include <Wire.h>
 
+#define SSC_VERSION "1.1.0"
 #define SSC_ADDRESS (0x78)     // Default I2C address for SSC
 #define SSC_SENSOR_ID (0x21)  // 33 decimal
 
@@ -96,7 +97,23 @@ public:
     // Initialization
     bool begin(uint8_t addr = SSC_ADDRESS, TwoWire *theWire = &Wire);
 
-    // Core Sensor Methods
+    // Why a checked read failed (failure detection, ISSUES.md #13)
+    enum ReadStatus : uint8_t {
+        READ_OK = 0,
+        READ_I2C = 1,       // the I2C transfer failed (no acknowledge, bus error, timeout)
+        READ_STATUS = 2,    // sensor status bits say command mode or diagnostic fault
+        READ_RAIL = 3       // count is 0 or full scale: a stuck or shorted bus, not a pressure
+    };
+
+    // Read the pressure (hPa) and say whether the reading can be trusted. On failure the value
+    // is left alone. The last result is kept in lastError().
+    ReadStatus readPressureChecked(float &hPa);
+    // Read the temperature (degrees C). Returns false if the I2C transfer failed or the status
+    // bits say fault.
+    bool readTemperatureChecked(float &celsius);
+    ReadStatus lastError() const { return _lastError; }
+
+    // Core Sensor Methods (these return 0 on failure; use the checked versions to tell)
     float readPressure();
     float readTemperature();
     float readAltitude(float seaLevelPressure_hPa = 1013.25);
@@ -135,6 +152,7 @@ private:
     uint32_t readLong();
     
     // Private variables
+    ReadStatus _lastError = READ_OK;
     TwoWire *_wire;
     uint8_t _i2c_addr;
     int32_t _sensorID;

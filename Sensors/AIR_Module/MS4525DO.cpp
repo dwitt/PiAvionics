@@ -128,21 +128,59 @@ uint16_t MS4525DO::readRawPressureCount() {
 }
 
 // ----------------------------------------------------------------------------
-float MS4525DO::readPressure() {
-    uint16_t raw_data = readWord();
-    uint8_t status = (raw_data & 0xC000) >> 14;
-    int16_t pressure_count = (raw_data & 0x3FFF) + _pZeroCountOffset;
-    float pressure_value = 0;
+// @brief Read the pressure and check that the reading can be trusted
+// @param hPa receives the pressure when the result is READ_OK
+// ----------------------------------------------------------------------------
+MS4525DO::ReadStatus MS4525DO::readPressureChecked(float &hPa) {
+    uint8_t buffer[2] = {0};
 
+    if (!i2c_dev->read(buffer, 2)) {
+        return _lastError = READ_I2C;
+    }
+    uint16_t raw_data = (buffer[0] << 8) | buffer[1];
+    uint8_t status = (raw_data & 0xC000) >> 14;
     if (status != 0b00 && status != 0b10) {
-        return 0;   // Status not normal and not stale
+        return _lastError = READ_STATUS;    // command mode or diagnostic fault (stale is fine)
+    }
+    uint16_t count = raw_data & 0x3FFF;
+    if (count == 0 || count == 0x3FFF) {
+        return _lastError = READ_RAIL;      // a pulled-up or pulled-down bus, not a pressure
     }
 
-    // Status normal or stale
-    pressure_value = _pRange * ((float)(pressure_count - _pMinCount) /
+    int16_t pressure_count = count + _pZeroCountOffset;
+    hPa = _pRange * ((float)(pressure_count - _pMinCount) /
                     (float)(_pMaxCount - _pMinCount)) + _pMin;
+    return _lastError = READ_OK;
+}
 
-    return (pressure_value);
+// ----------------------------------------------------------------------------
+float MS4525DO::readPressure() {
+    float pressure_value = 0;
+    readPressureChecked(pressure_value);
+    return pressure_value;      // 0 on failure
+}
+
+// ----------------------------------------------------------------------------
+// @brief Read the temperature from the sensor
+// @returns true on success. celsius is left alone on failure.
+// ----------------------------------------------------------------------------
+
+bool MS4525DO::readTemperatureChecked(float &celsius) {
+    uint8_t buffer[4] = {0};
+
+    if (!i2c_dev->read(buffer, 4)) {
+        return false;
+    }
+    uint32_t raw_data = ((uint32_t)buffer[0] << 24) | ((uint32_t)buffer[1] << 16) |
+                        ((uint32_t)buffer[2] << 8) | buffer[3];
+    uint8_t status = (raw_data & 0xC0000000) >> 30;
+    uint16_t temperature_count = (raw_data & 0x0000FFE0) >> 5;
+
+    if (status != 0b00 && status != 0b10) {
+        return false;
+    }
+    celsius = temperature_count * 200.0 / 2048.0 - 50.0;
+    return true;
 }
 
 // ----------------------------------------------------------------------------
@@ -151,19 +189,9 @@ float MS4525DO::readPressure() {
 // ----------------------------------------------------------------------------
 
 float MS4525DO::readTemperature() {
-    uint32_t raw_data = readLong();
-    uint8_t status = (raw_data & 0xC0000000) >> 30;
-    uint16_t temperature_count = (raw_data & 0x0000FFE0) >> 5;
     float temperature_value = 0;
-
-    if (status != 0b00 && status != 0b10) {
-        return 0;   // Status not normal and not stale
-    }
-
-    // Status normal or stale
-    temperature_value = temperature_count * 200.0 / 2048.0 - 50.0;
-
-    return (temperature_value);
+    readTemperatureChecked(temperature_value);
+    return temperature_value;
 }
 
 // ----------------------------------------------------------------------------
@@ -316,8 +344,10 @@ bool MS4525DO_Temp::getEvent(sensors_event_t *event) {
     event->sensor_id = _sensorID;
     event->type = SENSOR_TYPE_AMBIENT_TEMPERATURE;
     event->timestamp = millis();
-    event->temperature = _theMS4525DO->readTemperature();
-    return true;
+    float celsius = 0;
+    bool ok = _theMS4525DO->readTemperatureChecked(celsius);
+    event->temperature = celsius;      // 0 if the read failed
+    return ok;
 }
 
 // ----------------------------------------------------------------------------
@@ -357,6 +387,8 @@ bool MS4525DO_Pressure::getEvent(sensors_event_t *event) {
     event->sensor_id = _sensorID;
     event->type = SENSOR_TYPE_PRESSURE;
     event->timestamp = millis();
-    event->pressure = _theMS4525DO->readPressure(); 
-    return true;
+    float hPa = 0;
+    bool ok = (_theMS4525DO->readPressureChecked(hPa) == MS4525DO::READ_OK);
+    event->pressure = hPa;             // 0 if the read failed
+    return ok;
 }

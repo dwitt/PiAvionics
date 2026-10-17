@@ -25,11 +25,12 @@
 #include "SmoothDeadband.h"      // Smooth Deadband Library
 #include "DeadbandFilter.h"      // Deadband Filter Library
 #include <ModuleInfo.h>        // USB product name, startup log and '?' report
+#include <SensorHealth.h>      // valid / invalid decision for each sensor
 
 /*****************************************************************************
  * Firmware version - increment the patch number on every change
  *****************************************************************************/
-#define VERSION "1.0.26"
+#define VERSION "1.0.27"
 
 // Set to 0 to run without the AOA sensor (Wire1, GPIO8/9). With 0, Wire1 is not
 // touched at all and a missing AOA sensor does not stop startup.
@@ -38,6 +39,48 @@
                                // 2026-10-17), kept as a safety net for a wing whose INT trace is not cut.
 
 ModuleInfo moduleInfo("AIR_Module", VERSION, __DATE__, __TIME__);
+
+/*****************************************************************************
+ * Sensor health objects and limits (used by the RTD reader, the sensor loop and
+ * the heartbeat; see the heartbeat section below)
+ *****************************************************************************/
+
+#define HB_PITOT   0x01
+#define HB_AOA     0x02
+#define HB_STATIC  0x04
+#define HB_OAT     0x08
+#define HB_ALL     (HB_PITOT | HB_AOA | HB_STATIC | HB_OAT)
+
+#define PRESSURE_FAIL_COUNT   20      // bad samples in a row (0.2 s at 100 Hz) before a sensor is invalid
+#define PRESSURE_GOOD_COUNT   5       // good samples in a row before it is valid again
+#define PRESSURE_STUCK_COUNT  300     // identical samples in a row (3 s) = locked up
+#define OAT_FAIL_COUNT        8       // bad RTD samples in a row (2 s at 4 Hz)
+#define OAT_GOOD_COUNT        3
+#define OAT_MIN_C             -60.0f  // an outside air temperature outside this range is not real
+#define OAT_MAX_C             80.0f
+#define PITOT_MAX_HPA         70.0f   // +-1 psi sensor: 68.9 hPa is full scale
+#define STATIC_MIN_HPA        150.0f  // about 44000 ft
+#define STATIC_MAX_HPA        1300.0f
+
+#define FAULT_INJECT 1    // test commands on USB serial, see "Fault injection" below; 0 for flight
+#if FAULT_INJECT
+static bool injectPitotFail = false, injectAoaFail = false, injectStaticFail = false, injectOatFail = false;
+#endif
+
+struct PressureChannel {
+  const char *name;
+  SensorHealth health;
+  const char *reason = "none";      // why the last bad sample was bad
+  bool usable = true;               // false: not found at start-up
+  float last[1] = {0};              // for the stuck check
+  PressureChannel(const char *n) : name(n), health(PRESSURE_FAIL_COUNT, PRESSURE_GOOD_COUNT, PRESSURE_STUCK_COUNT) {}
+};
+
+static PressureChannel pitotChan("Pitot"), aoaChan("AOA"), staticChan("Static");
+static SensorHealth oatHealth(OAT_FAIL_COUNT, OAT_GOOD_COUNT, 0);
+static const char *oatReason = "none";
+
+
 
 /*****************************************************************************
  * Defines to help with debugging
@@ -98,9 +141,14 @@ LowPassFilter StaticPressureLowPassFilter(0.01);
 #define PITOT_LP_BAND_LOW     2.0f     // below this many noise std devs: all slow
 #define PITOT_LP_BAND_HIGH    5.0f     // above this many noise std devs: all fast
 
+static float pitotFilterValue = 0.0f;
+static bool pitotFilterInitialized = false;
+static bool pitotFilterRestart = false;    // set when the pitot has just come back
+static void pitotFilterReset() { pitotFilterInitialized = false; }
+
 static float pitotPressureAdaptiveFilter(float input) {
-  static float value = 0.0f;
-  static bool initialized = false;
+  float &value = pitotFilterValue;
+  bool &initialized = pitotFilterInitialized;
   if (!initialized) {
     value = input;
     initialized = true;
@@ -201,9 +249,6 @@ static int32_t staticPressure = 0;  // CANbus Data: hPa * 10
 static int16_t staticTemp = 0;      // CANbus Data: degrees C * 10
 static int16_t oatTemp = 0;         // CANbus Data: degrees C * 10 (from MAX31865 RTD)
 static bool rtdAvailable = false;   // tracks whether RTD init succeeded
-static bool oatValid = false;       // true once a good OAT sample has been taken
-static unsigned long rtdLastGoodMs = 0;   // time of the last good RTD sample
-                                    // (so 0.0 C is never sent before the first sample)
 static int16_t pitotTemp = 0;       // CANbus Data: degrees C * 10
 static int16_t pitotPressure = 0;   // CANbus Data: 
 
@@ -397,13 +442,30 @@ static void rtdUpdate() {
         rtdStep = RTD_WAIT;
         rtdStepStart = now;
 
-        if (fault == 0 && (rtdRaw & 1) == 0) {
-          // Good sample. Drop the fault flag in bit 0, convert to degrees C,
-          // smooth it, and keep it as degrees C x 10, rounded (not truncated).
-          float oatC = rtd.calculateTemperature(rtdRaw >> 1, RTD_NOMINAL, RTD_REF_RESISTOR);
-          oatTemp = (int16_t)lroundf(oatLowPassFilter.update(oatC) * 10.0f);
-          oatValid = true;
-          rtdLastGoodMs = now;
+        // Judge the sample. The chip's fault flags catch an open or shorted RTD. A missing
+        // MAX31865 board reads back as all zeros or all ones, and a reconnected probe can
+        // give a wild first reading, so the temperature also has to be possible.
+        uint16_t adc = rtdRaw >> 1;
+        float oatC = 0;
+        bool ok = (fault == 0 && (rtdRaw & 1) == 0 && adc != 0 && adc != 0x7FFF);
+        if (ok) {
+          oatC = rtd.calculateTemperature(adc, RTD_NOMINAL, RTD_REF_RESISTOR);
+          if (!(oatC >= OAT_MIN_C && oatC <= OAT_MAX_C)) { ok = false; oatReason = "temperature out of range"; }
+        } else {
+          oatReason = (fault != 0 || (rtdRaw & 1)) ? "MAX31865 fault" : "no reading (board missing?)";
+        }
+        #if FAULT_INJECT
+        if (injectOatFail) { ok = false; oatReason = "injected fault"; }
+        #endif
+
+        if (ok && !oatHealth.valid()) oatLowPassFilter.reset();   // start smoothing again from new samples
+        oatHealth.update(ok);
+
+        if (ok) {
+          // Good sample: smooth it, and keep it as degrees C x 10, rounded (not truncated).
+          // Not published until the sensor is valid (a few good samples after a failure).
+          float smoothed = oatLowPassFilter.update(oatC);
+          if (oatHealth.valid()) oatTemp = (int16_t)lroundf(smoothed * 10.0f);
         } else {
           // Faulty sample: keep the last good value. Only the first fault is
           // logged so a bad connection does not fill the startup log.
@@ -494,30 +556,71 @@ static void wire1CheckAndRecover() {
 }
 
 /*****************************************************************************
- * CAN heartbeat (Protocol/can_messages.yaml, 0x702)
+ * Sensor health and CAN heartbeat (Protocol/can_messages.yaml, 0x702)
  *
- * Sent every second with the module version, state and a mask of the sensors
- * that are working: bit 0 pitot, bit 1 AOA, bit 2 static pressure (all from
- * start-up), bit 3 outside air temperature (RTD; has a good sample in the last
- * 2 s). State: STARTING until setup() finishes, FAILED if start-up halted (the
- * mask then shows which sensor was missing), OK with all four bits set,
- * DEGRADED otherwise. A sensor that stops answering while running is NOT
- * detected yet, except for the RTD.
+ * Every sensor has a SensorHealth object that decides, from the stream of good and
+ * bad samples, whether it is working (Sensors/FAILURE_DETECTION_PLAN.md).
+ * A pressure sample is bad if the I2C read fails, the sensor status says fault, the
+ * count is 0 or full scale (stuck bus), the pressure cannot be real, or the value
+ * has not changed in 3 s (locked up). A sensor that was not found at start-up stays
+ * invalid (an MS4525DO cannot be zeroed in flight; the SSC could recover).
+ *
+ * The heartbeat is sent every second: module version, state and a mask of the
+ * sensors that are working: bit 0 pitot, bit 1 AOA, bit 2 static pressure, bit 3
+ * outside air temperature (RTD). State: STARTING until setup() finishes, OK with
+ * all four bits set, DEGRADED when one is missing, FAILED when neither pitot nor
+ * static pressure works (or CAN did not start).
+ *
+ * What the data frames do while a sensor is invalid (until the invalid-data marker
+ * is added with the EFIS pass): airspeed 0 and differential pressure 0 when the
+ * pitot is invalid; altitude holds its last value and vertical speed is 0 when the
+ * static pressure is invalid; the OAT frame (0x2A) is not sent when the RTD is invalid.
  *****************************************************************************/
 
-#define HB_PITOT   0x01
-#define HB_AOA     0x02
-#define HB_STATIC  0x04
-#define HB_OAT     0x08
-#define HB_ALL     (HB_PITOT | HB_AOA | HB_STATIC | HB_OAT)
-#define RTD_FRESH_MS 2000
+// Classify one pressure sample. status is the driver's ReadStatus (0 = OK, 1 I2C, 2 status, 3 rail).
+static bool pressureSampleOk(PressureChannel &ch, uint8_t status, float hPa, float lo, float hi, bool injected) {
+  static const char *why[] = {"ok", "I2C read failed", "sensor status fault", "stuck bus (count 0 or full scale)"};
+  const char *r = why[status & 3];
+  bool ok = (status == 0);
+  if (ok && (hPa < lo || hPa > hi)) { ok = false; r = "out of range"; }
+  if (ok && ch.health.stuck(ch.last, &hPa, 1)) { ok = false; r = "value not changing"; }
+  if (!ch.usable) { ok = false; r = "not found at start-up"; }
+  if (injected) { ok = false; r = "injected fault"; }
+  if (!ok) ch.reason = r;
+  return ok;
+}
 
-static uint8_t hbStartupMask = 0;     // sensors found at start-up (bits 0-2)
+static uint8_t hbSensorMask() {
+  return (pitotChan.health.valid() ? HB_PITOT : 0) |
+         (aoaChan.health.valid()   ? HB_AOA   : 0) |
+         (staticChan.health.valid() ? HB_STATIC : 0) |
+         (oatHealth.valid()        ? HB_OAT   : 0);
+}
+
 static bool canUp = false;            // heartbeat is only sent once the CAN bus is running
+static bool setupDone = false;
+static bool startupFailed = false;
 
-// Live CAN transmit status for the '?' report. A send that nobody acknowledges is abandoned
-// after a few ms (patched Adafruit_MCP2515, see Libraries/Adafruit_MCP2515/PATCH_NOTES.md).
+static void printChannel(Print &out, const char *name, const SensorHealth &h, const char *reason) {
+  out.print(name); out.print(h.valid() ? " OK" : " FAILED");
+  out.print(" (lost "); out.print(h.failures);
+  out.print("x, last problem: "); out.print(reason); out.println(")");
+}
+
+// Live sensor and CAN transmit status for the '?' report. A send that nobody acknowledges is
+// abandoned after a few ms (patched Adafruit_MCP2515, see Libraries/Adafruit_MCP2515/PATCH_NOTES.md).
 static void canReport(Print &out) {
+  printChannel(out, "Pitot pressure", pitotChan.health, pitotChan.reason);
+  printChannel(out, "AOA pressure", aoaChan.health, aoaChan.reason);
+  printChannel(out, "Static pressure", staticChan.health, staticChan.reason);
+  printChannel(out, "OAT (RTD)", oatHealth, oatReason);
+  out.print("RTD samples dropped for a fault: "); out.println(rtdFaultCount);
+  #if FAULT_INJECT
+  out.print("Test build: injected faults pitot "); out.print(injectPitotFail);
+  out.print(", aoa "); out.print(injectAoaFail);
+  out.print(", static "); out.print(injectStaticFail);
+  out.print(", oat "); out.println(injectOatFail);
+  #endif
   if (!canUp) { out.println("CAN not running"); return; }
   out.print("CAN tx: ");
   out.print(can.txDown() ? "DOWN (no acknowledge)" : "ok");
@@ -527,16 +630,15 @@ static void canReport(Print &out) {
   out.print(", REC "); out.print(can.rxErrorCount());
   out.print(", EFLG 0x"); out.println(can.errorFlags(), HEX);
 }
-static bool setupDone = false;
-static bool startupFailed = false;
 
 static void sendHeartbeat() {
   if (!canUp || !moduleInfo.heartbeatDue()) return;
 
-  bool oatFresh = rtdAvailable && oatValid && (millis() - rtdLastGoodMs < RTD_FRESH_MS);
-  uint8_t mask = hbStartupMask | (oatFresh ? HB_OAT : 0);
+  uint8_t mask = hbSensorMask();
+  bool noAirData = !pitotChan.health.valid() && !staticChan.health.valid();
   uint8_t state = startupFailed ? MODULE_STATE_FAILED
                 : !setupDone    ? MODULE_STATE_STARTING
+                : noAirData     ? MODULE_STATE_FAILED
                 : (mask == HB_ALL) ? MODULE_STATE_OK
                                    : MODULE_STATE_DEGRADED;
   moduleInfo.setHealth(state, mask);
@@ -547,6 +649,32 @@ static void sendHeartbeat() {
   can.write(frame, 8);
   can.endPacket();
 }
+
+//----------------------------------------------------------------------------
+// Fault injection for tests (USB serial commands, see ModuleInfo setCommandHook).
+// Each command is "!" followed by a letter. Capital = fault on, lower case = off:
+//   !P/!p pitot   !A/!a AOA   !S/!s static pressure   !O/!o OAT (RTD)
+// While a fault is injected the sensor's samples are treated as failed reads.
+//----------------------------------------------------------------------------
+#if FAULT_INJECT
+static bool bangSeen = false;
+
+static void faultCommand(char c) {
+  if (c == '!') { bangSeen = true; return; }
+  if (!bangSeen) return;
+  bangSeen = false;
+  switch (c) {
+    case 'P': injectPitotFail = true; break;
+    case 'p': injectPitotFail = false; break;
+    case 'A': injectAoaFail = true; break;
+    case 'a': injectAoaFail = false; break;
+    case 'S': injectStaticFail = true; break;
+    case 's': injectStaticFail = false; break;
+    case 'O': injectOatFail = true; break;
+    case 'o': injectOatFail = false; break;
+  }
+}
+#endif
 
 /*****************************************************************************
  * Setup Code
@@ -566,6 +694,9 @@ void setup() {
   moduleInfo.begin();
   moduleInfo.setModuleNumber(MODULE_NUM_AIR);
   moduleInfo.setReportHook(canReport);
+  #if FAULT_INJECT
+  moduleInfo.setCommandHook(faultCommand);
+  #endif
   moduleInfo.setHealth(MODULE_STATE_STARTING, 0);
 
   // --------------------------------------------------------------------------
@@ -627,30 +758,37 @@ void setup() {
   rtdAvailable = rtd.begin(MAX31865_3WIRE);
   moduleInfo.log(rtdAvailable ? "MAX31865 RTD OK" : "MAX31865 RTD NOT FOUND");
   rtdStepStart = millis() - RTD_SAMPLE_PERIOD_MS;   // take the first sample immediately
+  oatHealth.markInvalid();    // valid after the first few good samples
 
   // --------------------------------------------------------------------------
   // Make a stop or proceed decision based on whether we could connect
   // to all the sensors.
   // --------------------------------------------------------------------------
 
-  hbStartupMask = (ms4525do_pitot_success ? HB_PITOT : 0) |
-                  (ms4525do_aoa_success   ? HB_AOA   : 0) |
-                  (ssc_success            ? HB_STATIC : 0);
+  // A sensor that is not found no longer stops the module: it is reported invalid in the
+  // heartbeat and the others keep working. An MS4525DO that was not found stays off until
+  // the next start (it is zeroed at start-up, which cannot be done in flight). Without CAN
+  // the module cannot report anything, so it still stops.
+  pitotChan.usable = ms4525do_pitot_success;
+  aoaChan.usable = ms4525do_aoa_success;
+  if (!ms4525do_pitot_success) pitotChan.health.markInvalid();
+  if (!ms4525do_aoa_success) aoaChan.health.markInvalid();
+  if (!ssc_success) staticChan.health.markInvalid();      // can recover: the SSC needs no zeroing
+  if (!rtdAvailable) moduleInfo.log("**WARNING** no OAT");
 
-  if (!ms4525do_pitot_success || !ms4525do_aoa_success ||
-     !ssc_success || !can_success || !rtdAvailable ) {
+  if (!can_success) {
     startupFailed = true;
     moduleInfo.fatal("Startup failed");
     while (1) {             // wait for the user to reset the board
       moduleInfo.service(); // but still answer a host that connects later
-      sendHeartbeat();      // and tell the EFIS which sensor is missing (state FAILED)
       delay(100);
     }
   }
 
   setupDone = true;
 
-  moduleInfo.log("All peripherals connected");
+  moduleInfo.log(hbSensorMask() == (HB_PITOT | HB_AOA | HB_STATIC) ?
+                 "All peripherals connected" : "**WARNING** running with a sensor missing");
 
   pixel.setPixelColor(0, pixel.Color(0, 255, 0));
   pixel.show();
@@ -811,7 +949,7 @@ void loop() {
   // Send the OAT (Outside Air Temperature) data from the MAX31865 RTD
   // --------------------------------------------------------------------------
 
-  if (rtdAvailable && oatValid && millis() - canTempTimeStamp > CAN_TEMP_PERIOD + random(50)) {
+  if (oatHealth.valid() && millis() - canTempTimeStamp > CAN_TEMP_PERIOD + random(50)) {
     canData.integers[0] = oatTemp;    // °C × 10 (int16, bytes 0-1)
     canData.bytes[2] = 0;             // Humidity % (not available)
     canData.bytes[3] = 0;
@@ -840,46 +978,81 @@ void loop() {
     // Read the sensor data 
     // ------------------------------------------------------------------------
 
-    sensors_event_t pitot_temp_event, pitot_pressure_event;
-    sensors_event_t aoa_temp_event, aoa_pressure_event;
-    sensors_event_t ssc_temp_event, ssc_pressure_event;
+    // Pressures are read with the checked drivers: a failed read is a bad sample, not a
+    // number. SensorHealth decides when a sensor is lost or back (see the heartbeat section).
+    sensors_event_t pitot_temp_event, aoa_temp_event, ssc_temp_event;
 
-    pitot_temp->getEvent(&pitot_temp_event); 
-    pitot_pressure->getEvent(&pitot_pressure_event);
-
+    pitot_temp->getEvent(&pitot_temp_event);
     #if AOA_ENABLED
     aoa_temp->getEvent(&aoa_temp_event);
-    aoa_pressure->getEvent(&aoa_pressure_event);
     #endif
-
     static_temp->getEvent(&ssc_temp_event);
-    static_pressure->getEvent(&ssc_pressure_event);
+
+    float pitotHpa = 0, aoaHpa = 0, staticHpa = 0;
+    uint8_t pitotStatus = ms4525do_pitot.readPressureChecked(pitotHpa);
+    #if AOA_ENABLED
+    uint8_t aoaStatus = ms4525do_aoa.readPressureChecked(aoaHpa);
+    #else
+    uint8_t aoaStatus = 0;     // not used: counts as working
+    #endif
+    uint8_t staticStatus = ssc.readPressureChecked(staticHpa);
+
+    #if FAULT_INJECT
+    bool injP = injectPitotFail, injA = injectAoaFail, injS = injectStaticFail;
+    #else
+    bool injP = false, injA = false, injS = false;
+    #endif
+    bool pitotOk = pressureSampleOk(pitotChan, pitotStatus, pitotHpa, -PITOT_MAX_HPA, PITOT_MAX_HPA, injP);
+    bool aoaOk = pressureSampleOk(aoaChan, aoaStatus, aoaHpa, -PITOT_MAX_HPA, PITOT_MAX_HPA, injA);
+    bool staticOk = pressureSampleOk(staticChan, staticStatus, staticHpa, STATIC_MIN_HPA, STATIC_MAX_HPA, injS);
+    (void)aoaOk;
+
+    bool pitotChanged = pitotChan.health.update(pitotOk);
+    aoaChan.health.update(aoaOk);
+    bool staticChanged = staticChan.health.update(staticOk);
+
+    // A sensor that has just come back restarts its filters from the new readings
+    if (pitotChanged && pitotChan.health.valid()) pitotFilterRestart = true;
+    if (staticChanged && staticChan.health.valid()) {
+      StaticPressureLowPassFilter.reset();
+      staticPressureSmoothDeadband.reset(staticHpa);
+      vsiHistoryCount = 0;
+      vsiHistoryIndex = 0;
+      vsiSmoothed = 0;
+    }
 
     // ------------------------------------------------------------------------
     // Update and filter the data
     // ------------------------------------------------------------------------
 
-    previousStaticPressure = sensorStaticPressure;
-    sensorStaticPressure = ssc_pressure_event.pressure;
-    staticPressureFiltered = StaticPressureLowPassFilter.update(sensorStaticPressure);
-    staticPressureLowPassFiltered = staticPressureFiltered;   // kept for the vertical speed
-    //staticPressureFiltered = staticPressureButterworthLowPass.process(sensorStaticPressure);
-    //staticPressureFiltered = staticPressureButterworthLowPass2.process(staticPressureFiltered);
-    //staticPressureFiltered = staticPressureKalman.update(sensorStaticPressure);
-    //staticPressureFiltered = staticPressureRollingAverage.update(sensorStaticPressure);
-    //staticPressureFiltered = staticPressureRollingAverageFilter.update(sensorStaticPressure);
-    staticPressureFiltered = staticPressureSmoothDeadband.update(staticPressureFiltered);
+    if (staticChan.health.valid()) {
+      if (staticOk) {     // (a single bad sample is skipped)
+        previousStaticPressure = sensorStaticPressure;
+        sensorStaticPressure = staticHpa;
+        staticPressureFiltered = StaticPressureLowPassFilter.update(sensorStaticPressure);
+        staticPressureLowPassFiltered = staticPressureFiltered;   // kept for the vertical speed
+        //staticPressureFiltered = staticPressureButterworthLowPass.process(sensorStaticPressure);
+        //staticPressureFiltered = staticPressureButterworthLowPass2.process(staticPressureFiltered);
+        //staticPressureFiltered = staticPressureKalman.update(sensorStaticPressure);
+        //staticPressureFiltered = staticPressureRollingAverage.update(sensorStaticPressure);
+        //staticPressureFiltered = staticPressureRollingAverageFilter.update(sensorStaticPressure);
+        staticPressureFiltered = staticPressureSmoothDeadband.update(staticPressureFiltered);
+      }
+      if (ssc_temp_event.temperature != 0) sensorStaticTemp = ssc_temp_event.temperature;
+    }
 
-
-    
-
-    previousPitotPressure = sensorPitotPressure;
-    sensorPitotPressure = pitot_pressure_event.pressure;
-    //pitotPressureFiltered = pitotPressureKalman.update(sensorPitotPressure);
-    pitotPressureFiltered = pitotPressureAdaptiveFilter(sensorPitotPressure);
-    pitotPressureFiltered = pitotPressureDeadbandFilter.update(pitotPressureFiltered);
-
-    sensorStaticTemp = ssc_temp_event.temperature;
+    if (pitotChan.health.valid()) {
+      if (pitotOk) {
+        if (pitotFilterRestart) { pitotFilterRestart = false; pitotFilterReset(); }
+        previousPitotPressure = sensorPitotPressure;
+        sensorPitotPressure = pitotHpa;
+        //pitotPressureFiltered = pitotPressureKalman.update(sensorPitotPressure);
+        pitotPressureFiltered = pitotPressureAdaptiveFilter(sensorPitotPressure);
+        pitotPressureFiltered = pitotPressureDeadbandFilter.update(pitotPressureFiltered);
+      }
+    } else {
+      pitotPressureFiltered = 0;
+    }
 
     // The MAX31865 RTD (OAT) is NOT read here. rtd.temperature() blocks for
     // 75 ms, which would hold this whole block to about 11 Hz. It is read
@@ -894,7 +1067,7 @@ void loop() {
     // * V_M_S_TO_KNOTS to convert to knots
     // ------------------------------------------------------------------------
 
-    if (pitotPressureFiltered > 0 ) {
+    if (pitotChan.health.valid() && pitotPressureFiltered > 0 ) {
       float speed = sqrt(2 * 
         abs(pitotPressureFiltered * 100.0) / SEA_LEVEL_DENSITY_ISA) * 
         V_M_S_TO_KNOTS;
@@ -907,17 +1080,21 @@ void loop() {
     // Calculate the altitude
     // ------------------------------------------------------------------------
     
-    float height = 145442.16 * (
-      pow(float(qnh) / 2992, 0.190263) - 
-      pow(staticPressureFiltered / 1013.25, 0.190263));
+    if (staticChan.health.valid()) {      // otherwise the altitude holds its last value
+      float height = 145442.16 * (
+        pow(float(qnh) / 2992, 0.190263) - 
+        pow(staticPressureFiltered / 1013.25, 0.190263));
 
-    altitude = static_cast<int32_t>(height);
+      altitude = static_cast<int32_t>(height);
+    }
 
     // ------------------------------------------------------------------------
     // Calculate the vertical speed (see the comment above vsiHistory)
     // ------------------------------------------------------------------------
 
-    if (millis() - vsiLastSampleMs >= VSI_SAMPLE_MS) {
+    if (!staticChan.health.valid()) {
+      verticalSpeed = 0;
+    } else if (millis() - vsiLastSampleMs >= VSI_SAMPLE_MS) {
       vsiLastSampleMs = millis();
 
       float pressureAltitude = 145442.16f *

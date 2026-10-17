@@ -315,3 +315,32 @@ Fault-injection results (I2, I3 equivalents):
   re-insertion.
 - (Done above:) act on getEvent() failure, detect the all-zero accel, mark gyro invalid, re-initialise the chip (begin and
   configure) about every 2 s while it is missing, and do not let the AHRS integrate stale gyro data.
+
+### 2026-10-17, Phase 2 step 3: AIR failure handling (AIR_Module 1.0.27, MS4525DO 1.1.0, SSC 1.1.0, SensorHealth 1.0.0)
+
+Built:
+- Drivers `MS4525DO` and `SSC` have checked reads (`readPressureChecked`, `readTemperatureChecked`, `lastError`): a failed I2C
+  transfer, a status of command mode or fault, or a count of 0 / full scale is a read failure. Before, a failed read gave
+  a number (pitot about -78 hPa, static about -200 hPa; the static value fed `pow()` and gave a NaN altitude). `getEvent()` now
+  returns false on failure.
+- New shared library `Sensors/Libraries/SensorHealth` (header only): invalid after N bad samples in a row, valid after M good ones,
+  stuck-value check. The IMU sketch uses it too (IMU_AHRS 1.0.12, injection regression passed).
+- AIR: pitot, AOA, static each have a health object (invalid after 20 bad samples = 0.2 s, valid after 5; bad = failed read,
+  impossible pressure, or 300 identical values). OAT (RTD): invalid after 8 bad samples (2 s at 4 Hz), valid after 3; a sample is
+  bad if the MAX31865 reports a fault, the reading is 0 or full scale (board missing), or the temperature is outside -60..80 C.
+  After a failure the OAT low-pass filter, the pitot adaptive filter, and the static filter / vertical speed history are restarted.
+- A sensor not found at start-up no longer halts the module (state 2, mask bit clear). An MS4525DO that was not found stays off
+  until restart (it is zeroed at start-up); the SSC can recover. CAN failure at start-up still halts.
+- Heartbeat mask follows the live health: bit 0 pitot, 1 AOA, 2 static, 3 OAT. State 1 all four, 2 one or more missing,
+  3 when neither pitot nor static works.
+- Data while invalid (interim, until the 0x7FFF markers): pitot invalid = airspeed 0 and differential pressure 0; static invalid =
+  altitude holds, vertical speed 0; OAT invalid = the 0x2A frame is not sent.
+- Fault injection (USB serial, `FAULT_INJECT 1`): `!P/!p` pitot, `!A/!a` AOA, `!S/!s` static, `!O/!o` OAT. The `?` report shows each
+  sensor's health, count of losses and the last problem.
+
+Fault-injection results (5 s fault each):
+- pitot: state 2 mask 0E within 0.2 s, airspeed 0, back to state 1 mask 0F about 0.3 s after clearing.
+- static: state 2 mask 0B, altitude held at 297 ft, vertical speed 0; after clearing altitude 293 then 295 (filter restarted on
+  the new reading), vertical speed 0 then 50 fpm for a moment.
+- AOA: state 2 mask 0D, back to 0F.
+- OAT: state 2 mask 07 after 2 s, no 0x2A frames during the fault, back to state 1 mask 0F and OAT frames about 1 s after clearing.
