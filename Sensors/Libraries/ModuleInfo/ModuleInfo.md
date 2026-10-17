@@ -77,3 +77,9 @@ static void sendHeartbeat() {
 `moduleInfo.setReportHook(fn)` registers `void fn(Print &out)`, called at the end of every report
 (on `?` and when a host connects). Use it for live values that the startup log cannot hold, such as the
 CAN transmit state and error counters.
+
+## Command hook (1.3.0)
+
+`moduleInfo.setCommandHook(fn)` registers `void fn(char c)`, called for every character received on USB
+serial other than `?` (and line ends). Used for fault-injection commands in test builds, for example to
+make a sensor read fail on request. Write to the tty with `printf g > /dev/serial/by-id/...`.

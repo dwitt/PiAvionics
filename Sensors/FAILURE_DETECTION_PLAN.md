@@ -276,5 +276,37 @@ detect, time to recover, notes.)
   reconnect, `CAN tx: ok, timeouts 0, skipped 0` (the terminated node still sees send errors, so the stock exit path works).
 - Step 1 done: no module can freeze on a missing CAN connection any more.
 
-- Needed: act on getEvent() failure, detect the all-zero accel, mark gyro invalid, re-initialise the chip (begin and
+### 2026-10-17, Phase 2 step 2: IMU failure handling (IMU_AHRS 1.0.11, ModuleInfo 1.3.0)
+
+Built:
+- Accel/gyro and magnetometer each have a health tracker: invalid after 20 bad samples in a row (0.2 s), valid again after 5
+  good ones. A bad sample is a failed I2C read (the patched LSM6DS reports it; the magnetometer is now read by the sketch
+  itself because the LIS3MDL library ignores a failed read), all-zero accel (a chip that lost power), or 100 identical
+  samples in a row (a locked-up chip).
+- Heartbeat follows it: accel/gyro lost = state 3, mask bit 0 clear; magnetometer lost = state 2, bit 1 clear.
+- While accel/gyro are invalid the AHRS is not updated (no more integrating stale gyro data) and the last attitude is held.
+  After more than 1 s without data the filter restarts (instant re-lock) and the turn rate skips the jump.
+- While invalid, the chip is re-initialised (begin + settings, read back) every 2 s.
+- Magnetometer missing at start-up is no longer fatal (state 2, 6-axis AHRS). With the magnetometer lost, the filter is given
+  its own predicted field (its Earth-field vector rotated by its current orientation), so roll/pitch follow gravity and heading
+  follows the gyro. A first version used a field learned from the magnetometer; its small mismatch with the filter's own made
+  the heading drift faster and faster (0.15 to 1 deg/s in 30 s). Using the filter's own vector gives a steady 0.06 to 0.1 deg/s.
+- `?` report: health, times lost, re-initialisation tries and last result, I2C read failure count, prediction error.
+- Test commands over USB serial (`FAULT_INJECT 1`, needs ModuleInfo 1.3.0 command hook): `!G`/`!g` accel/gyro reads fail
+  on/off, `!M`/`!m` magnetometer reads fail on/off, `!z` reset the ISM330DHCX chip, `!x` reset the LIS3MDL chip.
+  They need the `!` because an early version lost its state to stray characters: the Pi tty echoed the module's own report
+  back to it (echo was on until my `stty -echo`), and the report contains a "g".
+
+Fault-injection results (I2, I3 equivalents):
+- `!G` (accel/gyro reads fail) 3 s: state 3, mask 06 within 0.3 s, attitude held, state 1 mask 07 about 0.6 s after clearing.
+- `!z` (ISM330DHCX reset, like a power loss; outputs zeros): state 3 mask 06 after about 1.6 s, attitude held, chip
+  re-initialised by itself after about 2 s, back to state 1 mask 07; attitude continues (yaw 6.4 to 5.7 on re-lock).
+- `!x` (LIS3MDL reset; stops updating): detected as stuck, state 2 mask 05 after 1.3 s, running 6-axis, re-initialised, state 1.
+- `!M` (mag reads fail) 4 times: state 2 mask 05 for the injected time, state 1 mask 07 within about 1 s after.
+- 6-axis with the magnetometer off, module moved by hand: turned 90 degrees (yaw 358 to 272), nose up 25 degrees (pitch 27),
+  and back; roll/pitch correct, yaw drift about 0.1 deg/s afterwards; when the magnetometer came back heading eased to the
+  correct value over about 5 s without a jump.
+
+- Remaining for step 2: the real wing-pull test (I7) with this firmware.
+- (Done above:) act on getEvent() failure, detect the all-zero accel, mark gyro invalid, re-initialise the chip (begin and
   configure) about every 2 s while it is missing, and do not let the AHRS integrate stale gyro data.

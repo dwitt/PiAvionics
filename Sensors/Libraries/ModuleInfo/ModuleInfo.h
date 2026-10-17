@@ -16,7 +16,7 @@
 
 #include <Arduino.h>
 
-#define MODULE_INFO_VERSION "1.2.0"
+#define MODULE_INFO_VERSION "1.3.0"
 
 // Heartbeat (Protocol/can_messages.yaml 0x701 to 0x703): one CAN frame per module,
 // ID = MODULE_HEARTBEAT_ID_BASE + module number, sent every MODULE_HEARTBEAT_PERIOD_MS.
@@ -71,6 +71,11 @@ public:
 	typedef void (*ReportHook)(Print &out);
 	void setReportHook(ReportHook fn) { _reportHook = fn; }
 
+	// Optional: a function that gets every character received on USB serial other than
+	// '?'. Used for fault-injection commands in test builds.
+	typedef void (*CommandHook)(char c);
+	void setCommandHook(CommandHook fn) { _commandHook = fn; }
+
 	// --- CAN heartbeat ---
 	// Say which module this is. Call once in setup().
 	void setModuleNumber(uint8_t moduleNumber);
@@ -102,6 +107,7 @@ private:
 	bool _hostWasConnected;
 	uint8_t _moduleNumber;
 	ReportHook _reportHook = nullptr;
+	CommandHook _commandHook = nullptr;
 	uint8_t _state;
 	uint8_t _sensors;
 	bool _heartbeatSent;

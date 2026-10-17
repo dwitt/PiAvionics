@@ -36,7 +36,9 @@ void ModuleInfo::service() {
 	if (connected && !_hostWasConnected) printReport();
 	_hostWasConnected = connected;
 	while (connected && Serial.available()) {
-		if (Serial.read() == '?') printReport();
+		char c = Serial.read();
+		if (c == '?') printReport();
+		else if (_commandHook && c != '\n' && c != '\r') _commandHook(c);
 	}
 }
 

@@ -52,7 +52,7 @@
 /*****************************************************************************
  * Firmware version - increment the patch number on every change
  *****************************************************************************/
-#define VERSION "1.0.5"
+#define VERSION "1.0.11"
 
 ModuleInfo moduleInfo("IMU_AHRS", VERSION, __DATE__, __TIME__);
 
@@ -101,6 +101,8 @@ Adafruit_MCP2515 can(CAN_CS_PIN);
 // module version, state and a mask of the sensors that are working.
 // Sensors mask: bit 0 ISM330DHCX, bit 1 LIS3MDL, bit 2 calibration loaded.
 // All three set = OK; calibration missing = degraded (the AHRS runs uncalibrated).
+// While running, bits 0 and 1 follow the health of the sensors (see SensorHealth):
+// accel/gyro lost = state 3 (no attitude), magnetometer lost = state 2 (6-axis AHRS).
 //----------------------------------------------------------------------------
 #define HB_ISM330DHCX   0x01
 #define HB_LIS3MDL      0x02
@@ -110,9 +112,97 @@ Adafruit_MCP2515 can(CAN_CS_PIN);
 static uint8_t hbSensors = 0;
 static bool canUp = false;			// heartbeat is only sent once the CAN bus is running
 
-// Live CAN transmit status for the '?' report. A send that nobody acknowledges is abandoned
-// after a few ms (patched Adafruit_MCP2515, see Libraries/Adafruit_MCP2515/PATCH_NOTES.md).
+//----------------------------------------------------------------------------
+// Sensor health. A sensor goes invalid after SENSOR_FAIL_COUNT bad samples in a
+// row (0.2 s at 100 Hz) and valid again after SENSOR_GOOD_COUNT good ones. While
+// invalid it is re-initialised every SENSOR_RETRY_MS: a chip that lost power
+// (wing pulled and replaced) has lost its configuration and answers with zeros.
+//----------------------------------------------------------------------------
+#define SENSOR_FAIL_COUNT	20
+#define SENSOR_GOOD_COUNT	5
+#define SENSOR_RETRY_MS		2000
+#define SENSOR_STUCK_COUNT	100		// identical samples in a row = chip locked up
+#define LONG_OUTAGE_MS		1000	// after this long without data the AHRS starts over
+
+struct SensorHealth {
+	bool     valid = true;
+	uint16_t bad = 0;				// bad samples in a row
+	uint16_t good = 0;				// good samples in a row
+	uint16_t stuck = 0;				// identical samples in a row
+	uint32_t failures = 0;			// times the sensor went invalid
+	uint32_t attempts = 0;			// re-initialisation attempts
+	uint32_t recoveries = 0;		// successful re-initialisations
+	const char *lastAttempt = "none";	// how the last attempt ended
+	uint32_t invalidSince = 0;		// millis() when it went invalid
+	uint32_t lastRetry = 0;			// millis() of the last re-initialisation attempt
+};
+
+#define FAULT_INJECT 1		// test commands on USB serial, see "Fault injection" below; 0 for flight
+#if FAULT_INJECT
+static bool injectIsmFail = false, injectMagFail = false;
+static char strayChars[8] = "";		// the last characters received that were not a command
+static bool bangSeen = false;
+#endif
+
+static SensorHealth ismHealth, magHealth;
+static bool calibrationLoaded = false;
+static uint32_t ismOutageMs = 0;	// length of the last accel/gyro outage
+static float magSynthErr = 0;		// average difference real - predicted field, uT (shown in '?')
+
+// Count a sample. Returns true when this sample changed the sensor between valid and invalid.
+static bool trackHealth(SensorHealth &h, bool ok) {
+	if (ok) {
+		h.bad = 0;
+		if (h.good < 0xFFFF) h.good++;
+		if (!h.valid && h.good >= SENSOR_GOOD_COUNT) {
+			h.valid = true;
+			return true;
+		}
+	} else {
+		h.good = 0;
+		if (h.bad < 0xFFFF) h.bad++;
+		if (h.valid && h.bad >= SENSOR_FAIL_COUNT) {
+			h.valid = false;
+			h.failures++;
+			h.invalidSince = millis();
+			h.lastRetry = millis();
+			return true;
+		}
+	}
+	return false;
+}
+
+// Publish the sensor health in the heartbeat.
+static void publishHealth() {
+	uint8_t mask = 0;
+	if (ismHealth.valid) mask |= HB_ISM330DHCX;
+	if (magHealth.valid) mask |= HB_LIS3MDL;
+	if (calibrationLoaded) mask |= HB_CALIBRATION;
+	uint8_t state = MODULE_STATE_OK;
+	if (!ismHealth.valid) state = MODULE_STATE_FAILED;
+	else if (mask != HB_ALL) state = MODULE_STATE_DEGRADED;
+	hbSensors = mask;
+	moduleInfo.setHealth(state, mask);
+}
+
+// Live sensor and CAN transmit status for the '?' report. A send that nobody acknowledges is
+// abandoned after a few ms (patched Adafruit_MCP2515, see Libraries/Adafruit_MCP2515/PATCH_NOTES.md).
+static void printHealth(Print &out, const char *name, const SensorHealth &h) {
+  out.print(name); out.print(h.valid ? " OK" : " FAILED");
+  out.print(" (lost "); out.print(h.failures);
+  out.print("x, re-initialised "); out.print(h.recoveries); out.print("x of "); out.print(h.attempts);
+  out.print(" tries, last: "); out.print(h.lastAttempt); out.println(")");
+}
+
 static void canReport(Print &out) {
+  printHealth(out, "ISM330DHCX accel/gyro", ismHealth);
+  printHealth(out, "LIS3MDL magnetometer", magHealth);
+  out.print("I2C read failures: "); out.println(Adafruit_LSM6DS::readFailures);
+  #if FAULT_INJECT
+  out.print("Test build: injected ISM fail "); out.print(injectIsmFail); out.print(", mag fail "); out.print(injectMagFail);
+  out.print(", stray USB bytes '"); out.print(strayChars); out.println("'");
+  #endif
+  out.print("Mag prediction error (uT): "); out.println(magSynthErr, 1);
   if (!canUp) { out.println("CAN not running"); return; }
   out.print("CAN tx: ");
   out.print(can.txDown() ? "DOWN (no acknowledge)" : "ok");
@@ -169,7 +259,7 @@ Sensor_Calibration_EEPROM cal(EEPROM_I2C_ADDRESS, &Wire);	// Wire speed set at e
 //----------------------------------------------------------------------------
 // Create Adafruit Sensor object pointers
 //----------------------------------------------------------------------------
-Adafruit_Sensor *accelerometer, *gyroscope, *magnetometer;
+Adafruit_Sensor *accelerometer, *gyroscope;
 
 //----------------------------------------------------------------------------
 // Set the frequency to update the SensorFusion filter and to print results
@@ -208,6 +298,171 @@ static int16_t accelX = 0;
 static int16_t accelY = 0;
 static int16_t accelZ = 0;
 
+static float previousYaw = 0;			// for the turn rate
+static unsigned long previousTime = 0;
+static bool resyncTurnRate = false;		// the AHRS was restarted: skip the jump in yaw
+
+
+//----------------------------------------------------------------------------
+// Sensor settings
+// Note: The accelerometer data range is set to 4G instead of 2G as in
+// the Adafruit Calibration routine.
+//----------------------------------------------------------------------------
+#define ACCEL_RANGE LSM6DS_ACCEL_RANGE_4_G			// +/- 4G
+#define GYRO_RANGE LSM6DS_GYRO_RANGE_250_DPS		// 250 degrees/sec
+#define MAG_RANGE LIS3MDL_RANGE_4_GAUSS				// 4 Gauss
+#define MAG_LSB_PER_GAUSS 6842.0f					// at +/- 4 Gauss
+
+#define ACCEL_DATA_RATE LSM6DS_RATE_104_HZ			// 104 Hz
+#define GYRO_DATA_RATE LSM6DS_RATE_104_HZ			// 104 Hz
+#define MAG_DATA_RATE LIS3MDL_DATARATE_1000_HZ		// 1000 Hz
+
+#define MAG_POWER_MODE LIS3MDL_MEDIUMMODE			// Medium Power
+#define MAG_OPERATION_MODE LIS3MDL_CONTINUOUSMODE	// Continuous
+
+#define LIS3MDL_REG_OUT_X_L_INC	(0x28 | 0x80)		// data registers, address auto-increment
+
+// What failed in the last ismConfigure() / magConfigure(), for the startup log
+static const char *configWhy = "";
+
+// Set the sensor ranges and data rates and read every setting back.
+// Returns 0 if all is well, otherwise the CONFIG_FAIL_ code (amber flashes).
+static uint8_t ismConfigure() {
+	ism330dhcx.setAccelRange(ACCEL_RANGE);
+	if (ism330dhcx.getAccelRange() != ACCEL_RANGE) { configWhy = "accel range"; return CONFIG_FAIL_RANGE; }
+	ism330dhcx.setGyroRange(GYRO_RANGE);
+	if (ism330dhcx.getGyroRange() != GYRO_RANGE) { configWhy = "gyro range"; return CONFIG_FAIL_RANGE; }
+	ism330dhcx.setAccelDataRate(ACCEL_DATA_RATE);
+	if (ism330dhcx.getAccelDataRate() != ACCEL_DATA_RATE) { configWhy = "accel data rate"; return CONFIG_FAIL_DATARATE; }
+	ism330dhcx.setGyroDataRate(GYRO_DATA_RATE);
+	if (ism330dhcx.getGyroDataRate() != GYRO_DATA_RATE) { configWhy = "gyro data rate"; return CONFIG_FAIL_DATARATE; }
+	return 0;
+}
+
+static uint8_t magConfigure() {
+	lis3mdl.setRange(MAG_RANGE);
+	if (lis3mdl.getRange() != MAG_RANGE) { configWhy = "mag range"; return CONFIG_FAIL_RANGE; }
+	lis3mdl.setDataRate(MAG_DATA_RATE);
+	if (lis3mdl.getDataRate() != MAG_DATA_RATE) { configWhy = "mag data rate"; return CONFIG_FAIL_DATARATE; }
+	lis3mdl.setPerformanceMode(MAG_POWER_MODE);
+	if (lis3mdl.getPerformanceMode() != MAG_POWER_MODE) { configWhy = "mag power mode"; return CONFIG_FAIL_MODE; }
+	lis3mdl.setOperationMode(MAG_OPERATION_MODE);
+	if (lis3mdl.getOperationMode() != MAG_OPERATION_MODE) { configWhy = "mag operation mode"; return CONFIG_FAIL_MODE; }
+	return 0;
+}
+
+// Start the ISM330DHCX from scratch (chip reset, then our settings). Used at start-up and to
+// recover a chip that lost power. begin_I2C() replaces the sensor objects, so the pointers
+// are fetched again.
+static bool ismStart() {
+	if (!ism330dhcx.begin_I2C(ISM330DHCX_I2C_ADDRESS, &Wire)) return false;
+	accelerometer = ism330dhcx.getAccelerometerSensor();
+	gyroscope = ism330dhcx.getGyroSensor();
+	return true;
+}
+
+static bool magStart() {
+	return lis3mdl.begin_I2C(LIS3MDL_I2C_ADDRESS, &Wire);
+}
+
+// The LIS3MDL library ignores a failed read and converts whatever is in its buffer, so the
+// magnetometer is read here instead. Returns false if the read fails. Output in uT.
+static bool magRead(float &x, float &y, float &z, int16_t raw[3]) {
+	Wire.beginTransmission(LIS3MDL_I2C_ADDRESS);
+	Wire.write(LIS3MDL_REG_OUT_X_L_INC);
+	if (Wire.endTransmission(false) != 0) return false;
+	if (Wire.requestFrom((uint8_t)LIS3MDL_I2C_ADDRESS, (uint8_t)6) != 6) return false;
+	uint8_t b[6];
+	for (int i = 0; i < 6; i++) b[i] = Wire.read();
+	for (int i = 0; i < 3; i++) raw[i] = (int16_t)(b[2 * i] | (b[2 * i + 1] << 8));
+	x = raw[0] / MAG_LSB_PER_GAUSS * 100.0f;	// gauss to uT
+	y = raw[1] / MAG_LSB_PER_GAUSS * 100.0f;
+	z = raw[2] / MAG_LSB_PER_GAUSS * 100.0f;
+	return true;
+}
+
+// True if the six or three values are identical to the previous call, SENSOR_STUCK_COUNT times in a
+// row. Real sensors always have some noise; a locked-up chip repeats one sample.
+static bool sampleStuck(SensorHealth &h, float *last, const float *now, int n) {
+	bool same = true;
+	for (int i = 0; i < n; i++) {
+		if (now[i] != last[i]) same = false;
+		last[i] = now[i];
+	}
+	if (!same) h.stuck = 0;
+	else if (h.stuck < 0xFFFF) h.stuck++;
+	return h.stuck >= SENSOR_STUCK_COUNT;
+}
+
+//----------------------------------------------------------------------------
+// Running without the magnetometer (6-axis). The fusion filter needs a magnetic
+// field, so while the real one is missing it is given the field the filter itself
+// predicts: its own Earth field vector rotated by its current orientation. That
+// field never disagrees with the filter, so roll and pitch still follow gravity and
+// the heading follows the gyro alone.
+// With R the rotation matrix of the filter quaternion, sensor field = R-transposed *
+// Earth field (bench test 2026-10-17: the transposed form missed the real field by
+// 1 to 4 uT while the module was rotated, the other by 6 to 13 uT). The first version
+// used an Earth field learned from the magnetometer instead of the filter's own, and
+// the small difference between the two made the heading drift faster and faster.
+// magSynthErr in the '?' report shows how well the prediction matches the real field
+// while the magnetometer works.
+//----------------------------------------------------------------------------
+static void quatMatrix(float R[3][3]) {
+	float w, x, y, z;
+	filter.getQuaternion(&w, &x, &y, &z);
+	R[0][0] = 1 - 2 * (y * y + z * z); R[0][1] = 2 * (x * y - z * w);     R[0][2] = 2 * (x * z + y * w);
+	R[1][0] = 2 * (x * y + z * w);     R[1][1] = 1 - 2 * (x * x + z * z); R[1][2] = 2 * (y * z - x * w);
+	R[2][0] = 2 * (x * z - y * w);     R[2][1] = 2 * (y * z + x * w);     R[2][2] = 1 - 2 * (x * x + y * y);
+}
+
+// The field the filter expects in the sensor frame: R-transposed * Earth field
+static void magPredicted(float *m) {
+	float R[3][3], e[3];
+	quatMatrix(R);
+	filter.getGeomagneticVector(&e[0], &e[1], &e[2]);
+	for (int i = 0; i < 3; i++) m[i] = R[0][i] * e[0] + R[1][i] * e[1] + R[2][i] * e[2];
+}
+
+// Magnetometer is working: track how well the prediction matches it.
+static void magCheck(const float *m) {
+	float pred[3];
+	magPredicted(pred);
+	float dx = m[0] - pred[0], dy = m[1] - pred[1], dz = m[2] - pred[2];
+	magSynthErr += 0.05f * (sqrtf(dx * dx + dy * dy + dz * dz) - magSynthErr);
+}
+
+//----------------------------------------------------------------------------
+// Fault injection for tests (USB serial commands, see ModuleInfo setCommandHook).
+// Each command is "!" followed by a letter (a stray byte on the USB port must not trigger one):
+//   !G  accel/gyro reads fail (like an unplugged chip) until !g is sent
+//   !M  magnetometer reads fail until !m is sent
+//   !z  reset the ISM330DHCX chip (like a power loss: it then returns zeros)
+//   !x  reset the LIS3MDL chip (it then stops updating its data)
+// While a read failure is injected the sensor is not re-initialised either.
+//----------------------------------------------------------------------------
+#if FAULT_INJECT
+
+static void faultCommand(char c) {
+	if (c == '!') { bangSeen = true; return; }
+	if (!bangSeen) {
+		size_t n = strlen(strayChars);
+		if (n >= sizeof(strayChars) - 1) { memmove(strayChars, strayChars + 1, n - 1); n--; }
+		strayChars[n] = c; strayChars[n + 1] = 0;
+		return;
+	}
+	bangSeen = false;
+	switch (c) {
+		case 'G': injectIsmFail = true; break;
+		case 'g': injectIsmFail = false; break;
+		case 'M': injectMagFail = true; break;
+		case 'm': injectMagFail = false; break;
+		case 'z': ism330dhcx.reset(); break;
+		case 'x': lis3mdl.reset(); break;
+	}
+}
+#endif
+
 /*****************************************************************************
  * Setup Code 
  *
@@ -239,6 +494,9 @@ void setup() {
 
 	moduleInfo.setModuleNumber(MODULE_NUM_IMU);
 	moduleInfo.setReportHook(canReport);
+	#if FAULT_INJECT
+	moduleInfo.setCommandHook(faultCommand);
+	#endif
 	moduleInfo.setHealth(MODULE_STATE_STARTING, 0);
 	led.setServiceCallback(imuService);		// '?' report and heartbeat during LED waits
 
@@ -266,7 +524,7 @@ void setup() {
 	// -----------------------------------------------------------------------
 
 	led.initBegin();
-	bool ism330dhcx_success = ism330dhcx.begin_I2C(ISM330DHCX_I2C_ADDRESS, &Wire);
+	bool ism330dhcx_success = ismStart();
 	if (ism330dhcx_success) {
 		led.initOK();
 		moduleInfo.log("ISM330DHCX OK");
@@ -280,19 +538,23 @@ void setup() {
 
 	// -----------------------------------------------------------------------
 	// LIS3MDL magnetometer (I2C Wire, 0x1C) — POST code 2
+	// Not fatal: without it the AHRS runs on accelerometer and gyro only and the
+	// module reports degraded. It is tried again every few seconds while running.
 	// -----------------------------------------------------------------------
 
 	led.initBegin();
-	bool lis3mdl_success = lis3mdl.begin_I2C(LIS3MDL_I2C_ADDRESS, &Wire);
+	bool lis3mdl_success = magStart();
 	if (lis3mdl_success) {
 		led.initOK();
 		moduleInfo.log("LIS3MDL OK");
 		hbSensors |= HB_LIS3MDL;
 	} else {
 		led.initFail();
-		moduleInfo.fatal("LIS3MDL FAILED");
-		moduleInfo.setHealth(MODULE_STATE_FAILED, hbSensors);
-		led.postCode(POST_LIS3MDL);  // never returns
+		moduleInfo.log("**WARNING** LIS3MDL FAILED - running without the magnetometer");
+		magHealth.valid = false;
+		magHealth.failures++;
+		magHealth.invalidSince = millis();
+		magHealth.lastRetry = millis();
 	}
 
 	// -----------------------------------------------------------------------
@@ -314,6 +576,7 @@ void setup() {
 	if (cal.loadCalibration()) {
 		moduleInfo.log("Calibration loaded");
 		hbSensors |= HB_CALIBRATION;
+		calibrationLoaded = true;
 	} else {
 		moduleInfo.log("**WARNING** No calibration loaded/found");
 	}
@@ -334,97 +597,39 @@ void setup() {
 	 * Config failures show amber POST codes.
 	 *************************************************************************/
 
-	// Note: The accelerometer data range is set to 4G instead of 2G as in
-	// the Adafruit Calibration routine.
+	static char cfgMsg[100];
 
-	#define ACCEL_RANGE LSM6DS_ACCEL_RANGE_4_G			// +/- 4G
-	#define GYRO_RANGE LSM6DS_GYRO_RANGE_250_DPS		// 250 degrees/sec
-	#define MAG_RANGE LIS3MDL_RANGE_4_GAUSS				// 4 Gauss
-
-	#define ACCEL_DATA_RATE LSM6DS_RATE_104_HZ			// 104 Hz
-	#define GYRO_DATA_RATE LSM6DS_RATE_104_HZ			// 104 Hz
-	#define MAG_DATA_RATE LIS3MDL_DATARATE_1000_HZ		// 1000 Hz
-
-	#define MAG_POWER_MODE LIS3MDL_MEDIUMMODE			// Medium Power
-	#define MAG_OPERATION_MODE LIS3MDL_CONTINUOUSMODE	// Continuous
-
-	// --- Sensor ranges (config fail code 1) ---
-
-	ism330dhcx.setAccelRange(ACCEL_RANGE);
-	if (ism330dhcx.getAccelRange() != ACCEL_RANGE) {
-		moduleInfo.fatal("Config FAIL: accel range");
+	uint8_t cfgFail = ismConfigure();
+	if (cfgFail) {
+		snprintf(cfgMsg, sizeof(cfgMsg), "Config FAIL: %s", configWhy);
+		moduleInfo.fatal(cfgMsg);
 		moduleInfo.setHealth(MODULE_STATE_FAILED, hbSensors);
-		led.configFail(CONFIG_FAIL_RANGE);  // never returns
+		led.configFail(cfgFail);  // never returns
 	}
 
-	ism330dhcx.setGyroRange(GYRO_RANGE);
-	if (ism330dhcx.getGyroRange() != GYRO_RANGE) {
-		moduleInfo.fatal("Config FAIL: gyro range");
-		moduleInfo.setHealth(MODULE_STATE_FAILED, hbSensors);
-		led.configFail(CONFIG_FAIL_RANGE);  // never returns
-	}
-
-	lis3mdl.setRange(MAG_RANGE);
-	if (lis3mdl.getRange() != MAG_RANGE) {
-		moduleInfo.fatal("Config FAIL: mag range");
-		moduleInfo.setHealth(MODULE_STATE_FAILED, hbSensors);
-		led.configFail(CONFIG_FAIL_RANGE);  // never returns
-	}
-
-	// --- Sensor data rates (config fail code 2) ---
-
-	ism330dhcx.setAccelDataRate(ACCEL_DATA_RATE);
-	if (ism330dhcx.getAccelDataRate() != ACCEL_DATA_RATE) {
-		moduleInfo.fatal("Config FAIL: accel data rate");
-		moduleInfo.setHealth(MODULE_STATE_FAILED, hbSensors);
-		led.configFail(CONFIG_FAIL_DATARATE);  // never returns
-	}
-
-	ism330dhcx.setGyroDataRate(GYRO_DATA_RATE);
-	if (ism330dhcx.getGyroDataRate() != GYRO_DATA_RATE) {
-		moduleInfo.fatal("Config FAIL: gyro data rate");
-		moduleInfo.setHealth(MODULE_STATE_FAILED, hbSensors);
-		led.configFail(CONFIG_FAIL_DATARATE);  // never returns
-	}
-
-	lis3mdl.setDataRate(MAG_DATA_RATE);
-	if (lis3mdl.getDataRate() != MAG_DATA_RATE) {
-		moduleInfo.fatal("Config FAIL: mag data rate");
-		moduleInfo.setHealth(MODULE_STATE_FAILED, hbSensors);
-		led.configFail(CONFIG_FAIL_DATARATE);  // never returns
-	}
-
-	// --- Sensor modes (config fail code 3) ---
-
-	lis3mdl.setPerformanceMode(MAG_POWER_MODE);
-	if (lis3mdl.getPerformanceMode() != MAG_POWER_MODE) {
-		moduleInfo.fatal("Config FAIL: mag power mode");
-		moduleInfo.setHealth(MODULE_STATE_FAILED, hbSensors);
-		led.configFail(CONFIG_FAIL_MODE);  // never returns
-	}
-
-	lis3mdl.setOperationMode(MAG_OPERATION_MODE);
-	if (lis3mdl.getOperationMode() != MAG_OPERATION_MODE) {
-		moduleInfo.fatal("Config FAIL: mag operation mode");
-		moduleInfo.setHealth(MODULE_STATE_FAILED, hbSensors);
-		led.configFail(CONFIG_FAIL_MODE);  // never returns
+	if (magHealth.valid) {
+		cfgFail = magConfigure();
+		if (cfgFail) {
+			snprintf(cfgMsg, sizeof(cfgMsg), "**WARNING** Config FAIL: %s - running without the magnetometer", configWhy);
+			moduleInfo.log(cfgMsg);
+			magHealth.valid = false;
+			magHealth.failures++;
+			magHealth.invalidSince = millis();
+			magHealth.lastRetry = millis();
+		}
 	}
 
 	moduleInfo.log("Sensor configuration OK");
-	moduleInfo.setHealth((hbSensors & HB_ALL) == HB_ALL ? MODULE_STATE_OK : MODULE_STATE_DEGRADED, hbSensors);
+	publishHealth();
 
 	/*************************************************************************
 	 * Setup Sensors
 	 *************************************************************************/
 
-	accelerometer = ism330dhcx.getAccelerometerSensor();
-	gyroscope = ism330dhcx.getGyroSensor();
-	magnetometer = &lis3mdl;
-
 	#if defined(DEBUG)
 	accelerometer->printSensorDetails();
 	gyroscope->printSensorDetails();
-	magnetometer->printSensorDetails();
+	lis3mdl.printSensorDetails();
 	#endif
 
 	/*************************************************************************
@@ -533,12 +738,79 @@ void loop() {
 	// Read the motion sensors
 	// ------------------------------------------------------------------------
 	sensors_event_t accel, gyro, mag;	// declare variables to store the data
-	
+
 										// UNITS
-	accelerometer->getEvent(&accel);	// m/s^2
-	gyroscope->getEvent(&gyro);			// rads/s
-	magnetometer->getEvent(&mag);		// uT
-	
+	bool ismOk = accelerometer->getEvent(&accel) && gyroscope->getEvent(&gyro);	// m/s^2, rads/s
+	#if FAULT_INJECT
+	if (injectIsmFail) ismOk = false;
+	#endif
+	if (ismOk) {
+		// A chip that lost power answers with zeros and a locked-up one repeats a sample;
+		// a working accelerometer always reads about 1 g and has noise.
+		static float lastIsm[6];
+		const float nowIsm[6] = {accel.acceleration.x, accel.acceleration.y, accel.acceleration.z,
+								 gyro.gyro.x, gyro.gyro.y, gyro.gyro.z};
+		bool allZero = nowIsm[0] == 0 && nowIsm[1] == 0 && nowIsm[2] == 0;
+		bool stuck = sampleStuck(ismHealth, lastIsm, nowIsm, 6);
+		ismOk = !allZero && !stuck;
+	}
+
+	memset(&mag, 0, sizeof(mag));
+	mag.type = SENSOR_TYPE_MAGNETIC_FIELD;	// tells cal.calibrate() what this is
+	int16_t magRaw[3];
+	bool magOk = magRead(mag.magnetic.x, mag.magnetic.y, mag.magnetic.z, magRaw);	// uT
+	#if FAULT_INJECT
+	if (injectMagFail) magOk = false;
+	#endif
+	if (magOk) {
+		static float lastMag[3];
+		const float nowMag[3] = {(float)magRaw[0], (float)magRaw[1], (float)magRaw[2]};
+		bool allZero = magRaw[0] == 0 && magRaw[1] == 0 && magRaw[2] == 0;
+		bool stuck = sampleStuck(magHealth, lastMag, nowMag, 3);
+		magOk = !allZero && !stuck;
+	}
+
+	// ------------------------------------------------------------------------
+	// Sensor health: valid / invalid, heartbeat, and re-initialising a sensor
+	// that went away (a wing that was replaced has lost its settings)
+	// ------------------------------------------------------------------------
+	bool ismChanged = trackHealth(ismHealth, ismOk);
+	bool magChanged = trackHealth(magHealth, magOk);
+
+	if (ismChanged && ismHealth.valid) {
+		ismOutageMs = millis() - ismHealth.invalidSince;
+		if (ismOutageMs > LONG_OUTAGE_MS) {
+			filter.begin(FILTER_UPDATE_RATE_HZ);	// the old attitude is not to be trusted
+			resyncTurnRate = true;
+		}
+	}
+	if (ismChanged || magChanged) publishHealth();
+
+	bool retryIsm = !ismHealth.valid && millis() - ismHealth.lastRetry >= SENSOR_RETRY_MS;
+	bool retryMag = !magHealth.valid && millis() - magHealth.lastRetry >= SENSOR_RETRY_MS;
+	#if FAULT_INJECT
+	retryIsm = retryIsm && !injectIsmFail;
+	retryMag = retryMag && !injectMagFail;
+	#endif
+	if (retryIsm) {
+		ismHealth.lastRetry = millis();
+		ismHealth.attempts++;
+		if (!ismStart()) ismHealth.lastAttempt = "no answer";
+		else if (ismConfigure() != 0) ismHealth.lastAttempt = configWhy;
+		else { ismHealth.lastAttempt = "ok"; ismHealth.recoveries++; }
+	}
+	if (retryMag) {
+		magHealth.lastRetry = millis();
+		magHealth.attempts++;
+		if (!magStart()) magHealth.lastAttempt = "no answer";
+		else if (magConfigure() != 0) magHealth.lastAttempt = configWhy;
+		else { magHealth.lastAttempt = "ok"; magHealth.recoveries++; }
+	}
+
+	// Without accelerometer and gyro there is no attitude: keep the last values and do not let
+	// the filter integrate stale data. (One bad sample is skipped the same way.)
+	if (!ismOk || !ismHealth.valid) return;
+
 	#if defined(AHRS_DEBUG_OUTPUT)
 	if (Serial) Serial.print("I2C took "); Serial.print(millis()-timestamp); Serial.println(" ms");
 	#endif
@@ -546,9 +818,23 @@ void loop() {
 	// ------------------------------------------------------------------------
 	// Apply the calibration to each of the sensors
 	// ------------------------------------------------------------------------
-	cal.calibrate(mag);
+	static float magField[3];			// the field given to the filter, uT
+	static bool haveMag = false;
+	if (magOk) {
+		cal.calibrate(mag);
+		magField[0] = mag.magnetic.x;
+		magField[1] = mag.magnetic.y;
+		magField[2] = mag.magnetic.z;
+		haveMag = true;
+	}
 	cal.calibrate(accel);
 	cal.calibrate(gyro);
+
+	if (magHealth.valid && haveMag) {
+		if (magOk) magCheck(magField);		// otherwise this cycle's sample was bad: use the last one
+	} else {
+		magPredicted(magField);				// 6-axis: the field the filter expects
+	}
 
 	// ------------------------------------------------------------------------
 	// NO sensor frame conversion - let filter work in native sensor frame
@@ -577,7 +863,7 @@ void loop() {
 	// ------------------------------------------------------------------------
 	filter.update(gx, gy, gz, 
 				  accel.acceleration.x, accel.acceleration.y, accel.acceleration.z, 
-				  mag.magnetic.x, mag.magnetic.y, mag.magnetic.z);
+				  magField[0], magField[1], magField[2]);
 
 	#if defined(AHRS_DEBUG_OUTPUT)
 	if (Serial) Serial.print("Update took "); Serial.print(millis()-timestamp); Serial.println(" ms");
@@ -600,14 +886,16 @@ void loop() {
 	// Using the AHRS-filtered yaw avoids raw gyro noise and bias drift,
 	// since the filter corrects gyro errors using the magnetometer.
 	// ------------------------------------------------------------------------
-	static float previousYaw = 0;
-	static unsigned long previousTime = 0;
-
 	float currentYaw = 360.0 - filter.getYaw();       // NED yaw in degrees
 	unsigned long currentTime = millis();
 	float dt = (currentTime - previousTime) / 1000.0;  // seconds
 
-	if (dt > 0.05) {	// Calculate over 50ms window to balance noise vs responsiveness
+	if (resyncTurnRate) {			// AHRS restarted: yaw jumped, so no turn rate for this one
+		resyncTurnRate = false;
+		turnRateScaled = 0;
+		previousYaw = currentYaw;
+		previousTime = currentTime;
+	} else if (dt > 0.05) {	// Calculate over 50ms window to balance noise vs responsiveness
 		float turnRate = currentYaw - previousYaw;
 
 		// Handle 360° wraparound
