@@ -52,7 +52,7 @@
 /*****************************************************************************
  * Firmware version - increment the patch number on every change
  *****************************************************************************/
-#define VERSION "1.0.3"
+#define VERSION "1.0.4"
 
 ModuleInfo moduleInfo("IMU_AHRS", VERSION, __DATE__, __TIME__);
 
@@ -95,6 +95,36 @@ Adafruit_LIS3MDL lis3mdl;
 #define CAN_BAUDRATE (250000)
 
 Adafruit_MCP2515 can(CAN_CS_PIN);
+
+//----------------------------------------------------------------------------
+// CAN heartbeat (Protocol/can_messages.yaml, 0x701). Sent every second with the
+// module version, state and a mask of the sensors that are working.
+// Sensors mask: bit 0 ISM330DHCX, bit 1 LIS3MDL, bit 2 calibration loaded.
+// All three set = OK; calibration missing = degraded (the AHRS runs uncalibrated).
+//----------------------------------------------------------------------------
+#define HB_ISM330DHCX   0x01
+#define HB_LIS3MDL      0x02
+#define HB_CALIBRATION  0x04
+#define HB_ALL          (HB_ISM330DHCX | HB_LIS3MDL | HB_CALIBRATION)
+
+static uint8_t hbSensors = 0;
+static bool canUp = false;			// heartbeat is only sent once the CAN bus is running
+
+static void sendHeartbeat() {
+	if (!canUp || !moduleInfo.heartbeatDue()) return;
+	uint8_t frame[8];
+	moduleInfo.packHeartbeat(frame);
+	can.beginPacket(moduleInfo.heartbeatId());
+	can.write(frame, 8);
+	can.endPacket();
+}
+
+// Called from loop() and, through the StatusLED callback, while the LED code waits
+// or blinks a failure code, so the heartbeat and the '?' report keep working.
+static void imuService() {
+	moduleInfo.service();
+	sendHeartbeat();
+}
 
 //----------------------------------------------------------------------------
 // Status LED (Feather RP2040 onboard NeoPixel)
@@ -189,6 +219,30 @@ void setup() {
 	moduleInfo.begin();
 
 	/*************************************************************************
+	 * Step 3: CAN bus — POST code 11
+	 * Started before the sensors so a module that halts on a failed sensor can
+	 * still send its heartbeat (state 3) and say which sensor failed.
+	 *************************************************************************/
+
+	moduleInfo.setModuleNumber(MODULE_NUM_IMU);
+	moduleInfo.setHealth(MODULE_STATE_STARTING, 0);
+	led.setServiceCallback(imuService);		// '?' report and heartbeat during LED waits
+
+	led.initBegin();
+	bool can_success = can.begin(CAN_BAUDRATE);
+	if (can_success) {
+		led.initOK();
+		moduleInfo.log("CAN bus OK");
+		canUp = true;
+	} else {
+		led.initFail();
+		moduleInfo.fatal("CAN bus FAILED");
+		moduleInfo.setHealth(MODULE_STATE_FAILED, hbSensors);
+		led.postCode(POST_CAN);  // never returns
+	}
+
+
+	/*************************************************************************
 	 * Step 4: Module sensors — init with LED feedback
 	 * Standard order: ISM330DHCX (POST 1), LIS3MDL (POST 2), EEPROM (POST 9)
 	 *************************************************************************/
@@ -202,9 +256,11 @@ void setup() {
 	if (ism330dhcx_success) {
 		led.initOK();
 		moduleInfo.log("ISM330DHCX OK");
+		hbSensors |= HB_ISM330DHCX;
 	} else {
 		led.initFail();
 		moduleInfo.fatal("ISM330DHCX FAILED");
+		moduleInfo.setHealth(MODULE_STATE_FAILED, hbSensors);
 		led.postCode(POST_ISM330DHCX);  // never returns
 	}
 
@@ -217,9 +273,11 @@ void setup() {
 	if (lis3mdl_success) {
 		led.initOK();
 		moduleInfo.log("LIS3MDL OK");
+		hbSensors |= HB_LIS3MDL;
 	} else {
 		led.initFail();
 		moduleInfo.fatal("LIS3MDL FAILED");
+		moduleInfo.setHealth(MODULE_STATE_FAILED, hbSensors);
 		led.postCode(POST_LIS3MDL);  // never returns
 	}
 
@@ -235,31 +293,18 @@ void setup() {
 	} else {
 		led.initFail();
 		moduleInfo.fatal("EEPROM FAILED");
+		moduleInfo.setHealth(MODULE_STATE_FAILED, hbSensors);
 		led.postCode(POST_EEPROM);  // never returns
 	}
 
 	if (cal.loadCalibration()) {
 		moduleInfo.log("Calibration loaded");
+		hbSensors |= HB_CALIBRATION;
 	} else {
 		moduleInfo.log("**WARNING** No calibration loaded/found");
 	}
 
 	cal.printSavedCalibration();
-
-	/*************************************************************************
-	 * Step 5: CAN bus — POST code 11
-	 *************************************************************************/
-
-	led.initBegin();
-	bool can_success = can.begin(CAN_BAUDRATE);
-	if (can_success) {
-		led.initOK();
-		moduleInfo.log("CAN bus OK");
-	} else {
-		led.initFail();
-		moduleInfo.fatal("CAN bus FAILED");
-		led.postCode(POST_CAN);  // never returns
-	}
 
 	/*************************************************************************
 	 * Step 6: Go — solid green for 2 seconds
@@ -294,18 +339,21 @@ void setup() {
 	ism330dhcx.setAccelRange(ACCEL_RANGE);
 	if (ism330dhcx.getAccelRange() != ACCEL_RANGE) {
 		moduleInfo.fatal("Config FAIL: accel range");
+		moduleInfo.setHealth(MODULE_STATE_FAILED, hbSensors);
 		led.configFail(CONFIG_FAIL_RANGE);  // never returns
 	}
 
 	ism330dhcx.setGyroRange(GYRO_RANGE);
 	if (ism330dhcx.getGyroRange() != GYRO_RANGE) {
 		moduleInfo.fatal("Config FAIL: gyro range");
+		moduleInfo.setHealth(MODULE_STATE_FAILED, hbSensors);
 		led.configFail(CONFIG_FAIL_RANGE);  // never returns
 	}
 
 	lis3mdl.setRange(MAG_RANGE);
 	if (lis3mdl.getRange() != MAG_RANGE) {
 		moduleInfo.fatal("Config FAIL: mag range");
+		moduleInfo.setHealth(MODULE_STATE_FAILED, hbSensors);
 		led.configFail(CONFIG_FAIL_RANGE);  // never returns
 	}
 
@@ -314,18 +362,21 @@ void setup() {
 	ism330dhcx.setAccelDataRate(ACCEL_DATA_RATE);
 	if (ism330dhcx.getAccelDataRate() != ACCEL_DATA_RATE) {
 		moduleInfo.fatal("Config FAIL: accel data rate");
+		moduleInfo.setHealth(MODULE_STATE_FAILED, hbSensors);
 		led.configFail(CONFIG_FAIL_DATARATE);  // never returns
 	}
 
 	ism330dhcx.setGyroDataRate(GYRO_DATA_RATE);
 	if (ism330dhcx.getGyroDataRate() != GYRO_DATA_RATE) {
 		moduleInfo.fatal("Config FAIL: gyro data rate");
+		moduleInfo.setHealth(MODULE_STATE_FAILED, hbSensors);
 		led.configFail(CONFIG_FAIL_DATARATE);  // never returns
 	}
 
 	lis3mdl.setDataRate(MAG_DATA_RATE);
 	if (lis3mdl.getDataRate() != MAG_DATA_RATE) {
 		moduleInfo.fatal("Config FAIL: mag data rate");
+		moduleInfo.setHealth(MODULE_STATE_FAILED, hbSensors);
 		led.configFail(CONFIG_FAIL_DATARATE);  // never returns
 	}
 
@@ -334,16 +385,19 @@ void setup() {
 	lis3mdl.setPerformanceMode(MAG_POWER_MODE);
 	if (lis3mdl.getPerformanceMode() != MAG_POWER_MODE) {
 		moduleInfo.fatal("Config FAIL: mag power mode");
+		moduleInfo.setHealth(MODULE_STATE_FAILED, hbSensors);
 		led.configFail(CONFIG_FAIL_MODE);  // never returns
 	}
 
 	lis3mdl.setOperationMode(MAG_OPERATION_MODE);
 	if (lis3mdl.getOperationMode() != MAG_OPERATION_MODE) {
 		moduleInfo.fatal("Config FAIL: mag operation mode");
+		moduleInfo.setHealth(MODULE_STATE_FAILED, hbSensors);
 		led.configFail(CONFIG_FAIL_MODE);  // never returns
 	}
 
 	moduleInfo.log("Sensor configuration OK");
+	moduleInfo.setHealth((hbSensors & HB_ALL) == HB_ALL ? MODULE_STATE_OK : MODULE_STATE_DEGRADED, hbSensors);
 
 	/*************************************************************************
 	 * Setup Sensors
@@ -384,7 +438,7 @@ void loop() {
 	// Host report: printed when a host connects to USB serial, and whenever '?'
 	// is received. Never waits - Serial and Serial.available() are flag checks.
 	// ------------------------------------------------------------------------
-	moduleInfo.service();
+	imuService();
 
 	// ------------------------------------------------------------------------
 	// Define variables

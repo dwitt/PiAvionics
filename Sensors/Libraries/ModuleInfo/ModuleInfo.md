@@ -42,6 +42,28 @@ void loop() {
 }
 ```
 
+## CAN heartbeat
+
+Every module sends one heartbeat frame per second (`Protocol/can_messages.yaml`, 0x701 IMU, 0x702 AIR, 0x703 GPS): module number, version, state, a sensors mask and uptime. ModuleInfo builds the frame; the sketch sends it with its own CAN object.
+
+```cpp
+moduleInfo.setModuleNumber(MODULE_NUM_AIR);          // in setup(), once
+moduleInfo.setHealth(MODULE_STATE_STARTING, 0);       // update as sensors come up or fail
+...
+static void sendHeartbeat() {
+	if (!moduleInfo.heartbeatDue()) return;           // true once a second
+	uint8_t frame[8];
+	moduleInfo.packHeartbeat(frame);
+	can.beginPacket(moduleInfo.heartbeatId());
+	can.write(frame, 8);
+	can.endPacket();
+}
+```
+
+- States: `MODULE_STATE_STARTING`, `OK`, `DEGRADED` (running, a sensor missing or invalid), `FAILED` (halted).
+- Call `setHealth(MODULE_STATE_FAILED, mask)` before any halt, and call `sendHeartbeat()` from the halt loop (or from the StatusLED service callback, below), so the EFIS can see which sensor failed.
+- `StatusLED::setServiceCallback(fn)` (StatusLED 1.1.0) calls `fn` about every millisecond while the LED code waits, including inside `postCode()` and `configFail()`. Use it to keep the heartbeat and the '?' report going during startup and while a failure code blinks. Set it only after the CAN bus is up, or guard the heartbeat with a flag.
+
 ## Notes
 
 - `__DATE__` and `__TIME__` are passed in from the sketch so they are the sketch's build time. The Arduino build cache reuses an unchanged sketch, so the time shows when the sketch last changed, not when it was flashed.

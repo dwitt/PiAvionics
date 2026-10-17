@@ -10,8 +10,21 @@ StatusLED::StatusLED(uint8_t pin, uint8_t brightness)
   : _pixel(1, pin, NEO_GRB + NEO_KHZ800),
     _brightness(brightness),
     _health(STATUS_LED_HEALTHY),
-    _lastHeartbeat(0)
+    _lastHeartbeat(0),
+    _service(nullptr)
 {
+}
+
+void StatusLED::setServiceCallback(StatusLEDServiceFn fn) {
+  _service = fn;
+}
+
+void StatusLED::_wait(unsigned long ms) {
+  unsigned long start = millis();
+  do {
+    if (_service) _service();
+    delay(1);
+  } while (millis() - start < ms);
 }
 
 void StatusLED::begin() {
@@ -30,22 +43,22 @@ void StatusLED::startup() {
 
 void StatusLED::initBegin() {
   _flash(0, 0, 255, STATUS_LED_INIT_BLUE_MS);  // blue
-  delay(STATUS_LED_INIT_GAP_MS);
+  _wait(STATUS_LED_INIT_GAP_MS);
 }
 
 void StatusLED::initOK() {
   _flash(0, 255, 0, STATUS_LED_INIT_RESULT_MS);  // green
-  delay(STATUS_LED_INIT_GAP_MS);
+  _wait(STATUS_LED_INIT_GAP_MS);
 }
 
 void StatusLED::initFail() {
   _flash(255, 0, 0, STATUS_LED_INIT_RESULT_MS);  // red
-  delay(STATUS_LED_INIT_GAP_MS);
+  _wait(STATUS_LED_INIT_GAP_MS);
 }
 
 void StatusLED::go() {
   _setColor(0, 255, 0);  // solid green
-  delay(STATUS_LED_GO_MS);
+  _wait(STATUS_LED_GO_MS);
   _off();
 }
 
@@ -99,18 +112,18 @@ void StatusLED::_off() {
 
 void StatusLED::_flash(uint8_t r, uint8_t g, uint8_t b, uint16_t onMs) {
   _setColor(r, g, b);
-  delay(onMs);
+  _wait(onMs);
   _off();
 }
 
 void StatusLED::_flashLoop(uint8_t n, uint8_t r, uint8_t g, uint8_t b) {
   for (uint8_t i = 0; i < n; i++) {
     _setColor(r, g, b);
-    delay(STATUS_LED_POST_FLASH_ON_MS);
+    _wait(STATUS_LED_POST_FLASH_ON_MS);
     _off();
-    delay(STATUS_LED_POST_FLASH_OFF_MS);
+    _wait(STATUS_LED_POST_FLASH_OFF_MS);
   }
-  delay(STATUS_LED_POST_PAUSE_MS);
+  _wait(STATUS_LED_POST_PAUSE_MS);
 }
 
 uint32_t StatusLED::_healthColor() {

@@ -12,7 +12,7 @@
 #include <Adafruit_NeoPixel.h>
 
 // Version
-#define STATUS_LED_VERSION "1.0.0"
+#define STATUS_LED_VERSION "1.1.0"
 
 // Default hardware config (Feather RP2040 onboard NeoPixel)
 #define STATUS_LED_DEFAULT_PIN        16
@@ -39,12 +39,18 @@ enum StatusLEDHealth {
   STATUS_LED_GPS_3D_FIX     // green heartbeat (same as healthy)
 };
 
+// Optional function called about every millisecond while the LED code waits
+// (including inside postCode() and configFail(), which never return). A sketch
+// uses it to keep sending its CAN heartbeat and answering '?' while it blinks.
+typedef void (*StatusLEDServiceFn)();
+
 class StatusLED {
 public:
   StatusLED(uint8_t pin = STATUS_LED_DEFAULT_PIN,
             uint8_t brightness = STATUS_LED_DEFAULT_BRIGHTNESS);
 
   void begin();
+  void setServiceCallback(StatusLEDServiceFn fn);   // pass NULL to remove
 
   // --- Startup phase ---
   void startup();           // solid red — call at power on
@@ -65,6 +71,9 @@ private:
   uint8_t _brightness;
   StatusLEDHealth _health;
   unsigned long _lastHeartbeat;
+  StatusLEDServiceFn _service;
+
+  void _wait(unsigned long ms);   // delay() that keeps calling the service callback
 
   void _setColor(uint8_t r, uint8_t g, uint8_t b);
   void _off();
