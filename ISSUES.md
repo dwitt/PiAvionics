@@ -164,6 +164,22 @@ Status: **Open**, **Monitoring** (fix applied, watching), **Fixed**.
 - Limit: about 3 s lag and about +-40 ft/min resolution at rest. A faster VSI would need
   a quieter pressure source or an accelerometer (the IMU) blended in.
 
+### 8. AIR module: MS4525DO zero offset was taken from a single sample
+- Found 2026-09-30. `MS4525DO::zeroPressureSensor()` was meant to average 10 readings at
+  start-up, but `pCount` was declared outside the loop, so one reading was counted 10 times.
+  The first reading after power-up is sometimes about 14 counts off, so the resting
+  differential pressure read 0 Pa on some boots and about 15 Pa (8-10 kt of airspeed with
+  nothing on the pitot) on others. The deadband filter hid the jitter when the zero was right
+  and showed it when it was wrong, which looked like pitot noise (reported 2026-10-16).
+- Fix (AIR_Module v1.0.10): discard the first 5 readings, then average 32 good readings 5 ms
+  apart (about 190 ms extra at start-up), skipping bad or stale status; gives up after 200
+  reads and keeps the old offset. Affects both MS4525DO sensors (pitot and AOA).
+- Result: 8 consecutive soft reboots all read 0.0 Pa and 0 kt at rest (before: 0 or 15 Pa).
+- Remaining limits: the zero is still taken once at power-up and assumes equal pressure on
+  both ports then (no wind, no cover with a pressure difference), and does not track
+  temperature drift. A zero command over CAN (issue 9) would address that.
+- Reference: TE MS45xx Auto-Zero application note in `Sensors/Reference/MS4525DO/`.
+
 ### 7. GPS module needed an RP2040 reset to pick up a fix after a full repower
 - Old firmware set the GPS baud once at boot (9600 -> 115200), sent config commands
   once with no check, and hard-coded `gps_success = true`. After a full repower the
