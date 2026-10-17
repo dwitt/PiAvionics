@@ -13,6 +13,7 @@
  *****************************************************************************/
 
 #include <ModuleInfo.h>		// USB product name, startup log and '?' report
+#include <SensorHealth.h>	// valid / invalid decision for each sensor
 #include <Adafruit_ISM330DHCX.h>	// Only for ISM330DHCX
 #include <Adafruit_LSM6DS.h>		// I2C Driver base for Adafruit LSM6DSxx sensors
 
@@ -52,7 +53,7 @@
 /*****************************************************************************
  * Firmware version - increment the patch number on every change
  *****************************************************************************/
-#define VERSION "1.0.11"
+#define VERSION "1.0.12"
 
 ModuleInfo moduleInfo("IMU_AHRS", VERSION, __DATE__, __TIME__);
 
@@ -113,29 +114,16 @@ static uint8_t hbSensors = 0;
 static bool canUp = false;			// heartbeat is only sent once the CAN bus is running
 
 //----------------------------------------------------------------------------
-// Sensor health. A sensor goes invalid after SENSOR_FAIL_COUNT bad samples in a
-// row (0.2 s at 100 Hz) and valid again after SENSOR_GOOD_COUNT good ones. While
-// invalid it is re-initialised every SENSOR_RETRY_MS: a chip that lost power
-// (wing pulled and replaced) has lost its configuration and answers with zeros.
+// Sensor health (SensorHealth library). A sensor goes invalid after SENSOR_FAIL_COUNT
+// bad samples in a row (0.2 s at 100 Hz) and valid again after SENSOR_GOOD_COUNT good
+// ones. While invalid it is re-initialised every SENSOR_RETRY_MS: a chip that lost
+// power (wing pulled and replaced) has lost its configuration and answers with zeros.
 //----------------------------------------------------------------------------
 #define SENSOR_FAIL_COUNT	20
 #define SENSOR_GOOD_COUNT	5
 #define SENSOR_RETRY_MS		2000
 #define SENSOR_STUCK_COUNT	100		// identical samples in a row = chip locked up
 #define LONG_OUTAGE_MS		1000	// after this long without data the AHRS starts over
-
-struct SensorHealth {
-	bool     valid = true;
-	uint16_t bad = 0;				// bad samples in a row
-	uint16_t good = 0;				// good samples in a row
-	uint16_t stuck = 0;				// identical samples in a row
-	uint32_t failures = 0;			// times the sensor went invalid
-	uint32_t attempts = 0;			// re-initialisation attempts
-	uint32_t recoveries = 0;		// successful re-initialisations
-	const char *lastAttempt = "none";	// how the last attempt ended
-	uint32_t invalidSince = 0;		// millis() when it went invalid
-	uint32_t lastRetry = 0;			// millis() of the last re-initialisation attempt
-};
 
 #define FAULT_INJECT 1		// test commands on USB serial, see "Fault injection" below; 0 for flight
 #if FAULT_INJECT
@@ -144,42 +132,20 @@ static char strayChars[8] = "";		// the last characters received that were not a
 static bool bangSeen = false;
 #endif
 
-static SensorHealth ismHealth, magHealth;
+static SensorHealth ismHealth(SENSOR_FAIL_COUNT, SENSOR_GOOD_COUNT, SENSOR_STUCK_COUNT);
+static SensorHealth magHealth(SENSOR_FAIL_COUNT, SENSOR_GOOD_COUNT, SENSOR_STUCK_COUNT);
 static bool calibrationLoaded = false;
 static uint32_t ismOutageMs = 0;	// length of the last accel/gyro outage
 static float magSynthErr = 0;		// average difference real - predicted field, uT (shown in '?')
 
-// Count a sample. Returns true when this sample changed the sensor between valid and invalid.
-static bool trackHealth(SensorHealth &h, bool ok) {
-	if (ok) {
-		h.bad = 0;
-		if (h.good < 0xFFFF) h.good++;
-		if (!h.valid && h.good >= SENSOR_GOOD_COUNT) {
-			h.valid = true;
-			return true;
-		}
-	} else {
-		h.good = 0;
-		if (h.bad < 0xFFFF) h.bad++;
-		if (h.valid && h.bad >= SENSOR_FAIL_COUNT) {
-			h.valid = false;
-			h.failures++;
-			h.invalidSince = millis();
-			h.lastRetry = millis();
-			return true;
-		}
-	}
-	return false;
-}
-
 // Publish the sensor health in the heartbeat.
 static void publishHealth() {
 	uint8_t mask = 0;
-	if (ismHealth.valid) mask |= HB_ISM330DHCX;
-	if (magHealth.valid) mask |= HB_LIS3MDL;
+	if (ismHealth.valid()) mask |= HB_ISM330DHCX;
+	if (magHealth.valid()) mask |= HB_LIS3MDL;
 	if (calibrationLoaded) mask |= HB_CALIBRATION;
 	uint8_t state = MODULE_STATE_OK;
-	if (!ismHealth.valid) state = MODULE_STATE_FAILED;
+	if (!ismHealth.valid()) state = MODULE_STATE_FAILED;
 	else if (mask != HB_ALL) state = MODULE_STATE_DEGRADED;
 	hbSensors = mask;
 	moduleInfo.setHealth(state, mask);
@@ -188,7 +154,7 @@ static void publishHealth() {
 // Live sensor and CAN transmit status for the '?' report. A send that nobody acknowledges is
 // abandoned after a few ms (patched Adafruit_MCP2515, see Libraries/Adafruit_MCP2515/PATCH_NOTES.md).
 static void printHealth(Print &out, const char *name, const SensorHealth &h) {
-  out.print(name); out.print(h.valid ? " OK" : " FAILED");
+  out.print(name); out.print(h.valid() ? " OK" : " FAILED");
   out.print(" (lost "); out.print(h.failures);
   out.print("x, re-initialised "); out.print(h.recoveries); out.print("x of "); out.print(h.attempts);
   out.print(" tries, last: "); out.print(h.lastAttempt); out.println(")");
@@ -381,19 +347,6 @@ static bool magRead(float &x, float &y, float &z, int16_t raw[3]) {
 	return true;
 }
 
-// True if the six or three values are identical to the previous call, SENSOR_STUCK_COUNT times in a
-// row. Real sensors always have some noise; a locked-up chip repeats one sample.
-static bool sampleStuck(SensorHealth &h, float *last, const float *now, int n) {
-	bool same = true;
-	for (int i = 0; i < n; i++) {
-		if (now[i] != last[i]) same = false;
-		last[i] = now[i];
-	}
-	if (!same) h.stuck = 0;
-	else if (h.stuck < 0xFFFF) h.stuck++;
-	return h.stuck >= SENSOR_STUCK_COUNT;
-}
-
 //----------------------------------------------------------------------------
 // Running without the magnetometer (6-axis). The fusion filter needs a magnetic
 // field, so while the real one is missing it is given the field the filter itself
@@ -551,10 +504,7 @@ void setup() {
 	} else {
 		led.initFail();
 		moduleInfo.log("**WARNING** LIS3MDL FAILED - running without the magnetometer");
-		magHealth.valid = false;
-		magHealth.failures++;
-		magHealth.invalidSince = millis();
-		magHealth.lastRetry = millis();
+		magHealth.markInvalid();
 	}
 
 	// -----------------------------------------------------------------------
@@ -607,15 +557,12 @@ void setup() {
 		led.configFail(cfgFail);  // never returns
 	}
 
-	if (magHealth.valid) {
+	if (magHealth.valid()) {
 		cfgFail = magConfigure();
 		if (cfgFail) {
 			snprintf(cfgMsg, sizeof(cfgMsg), "**WARNING** Config FAIL: %s - running without the magnetometer", configWhy);
 			moduleInfo.log(cfgMsg);
-			magHealth.valid = false;
-			magHealth.failures++;
-			magHealth.invalidSince = millis();
-			magHealth.lastRetry = millis();
+			magHealth.markInvalid();
 		}
 	}
 
@@ -751,7 +698,7 @@ void loop() {
 		const float nowIsm[6] = {accel.acceleration.x, accel.acceleration.y, accel.acceleration.z,
 								 gyro.gyro.x, gyro.gyro.y, gyro.gyro.z};
 		bool allZero = nowIsm[0] == 0 && nowIsm[1] == 0 && nowIsm[2] == 0;
-		bool stuck = sampleStuck(ismHealth, lastIsm, nowIsm, 6);
+		bool stuck = ismHealth.stuck(lastIsm, nowIsm, 6);
 		ismOk = !allZero && !stuck;
 	}
 
@@ -766,7 +713,7 @@ void loop() {
 		static float lastMag[3];
 		const float nowMag[3] = {(float)magRaw[0], (float)magRaw[1], (float)magRaw[2]};
 		bool allZero = magRaw[0] == 0 && magRaw[1] == 0 && magRaw[2] == 0;
-		bool stuck = sampleStuck(magHealth, lastMag, nowMag, 3);
+		bool stuck = magHealth.stuck(lastMag, nowMag, 3);
 		magOk = !allZero && !stuck;
 	}
 
@@ -774,11 +721,11 @@ void loop() {
 	// Sensor health: valid / invalid, heartbeat, and re-initialising a sensor
 	// that went away (a wing that was replaced has lost its settings)
 	// ------------------------------------------------------------------------
-	bool ismChanged = trackHealth(ismHealth, ismOk);
-	bool magChanged = trackHealth(magHealth, magOk);
+	bool ismChanged = ismHealth.update(ismOk);
+	bool magChanged = magHealth.update(magOk);
 
-	if (ismChanged && ismHealth.valid) {
-		ismOutageMs = millis() - ismHealth.invalidSince;
+	if (ismChanged && ismHealth.valid()) {
+		ismOutageMs = ismHealth.outageMs();
 		if (ismOutageMs > LONG_OUTAGE_MS) {
 			filter.begin(FILTER_UPDATE_RATE_HZ);	// the old attitude is not to be trusted
 			resyncTurnRate = true;
@@ -786,8 +733,8 @@ void loop() {
 	}
 	if (ismChanged || magChanged) publishHealth();
 
-	bool retryIsm = !ismHealth.valid && millis() - ismHealth.lastRetry >= SENSOR_RETRY_MS;
-	bool retryMag = !magHealth.valid && millis() - magHealth.lastRetry >= SENSOR_RETRY_MS;
+	bool retryIsm = ismHealth.retryDue(SENSOR_RETRY_MS);
+	bool retryMag = magHealth.retryDue(SENSOR_RETRY_MS);
 	#if FAULT_INJECT
 	retryIsm = retryIsm && !injectIsmFail;
 	retryMag = retryMag && !injectMagFail;
@@ -809,7 +756,7 @@ void loop() {
 
 	// Without accelerometer and gyro there is no attitude: keep the last values and do not let
 	// the filter integrate stale data. (One bad sample is skipped the same way.)
-	if (!ismOk || !ismHealth.valid) return;
+	if (!ismOk || !ismHealth.valid()) return;
 
 	#if defined(AHRS_DEBUG_OUTPUT)
 	if (Serial) Serial.print("I2C took "); Serial.print(millis()-timestamp); Serial.println(" ms");
@@ -830,7 +777,7 @@ void loop() {
 	cal.calibrate(accel);
 	cal.calibrate(gyro);
 
-	if (magHealth.valid && haveMag) {
+	if (magHealth.valid() && haveMag) {
 		if (magOk) magCheck(magField);		// otherwise this cycle's sample was bad: use the last one
 	} else {
 		magPredicted(magField);				// 6-axis: the field the filter expects
