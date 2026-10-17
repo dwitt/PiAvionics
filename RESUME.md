@@ -14,6 +14,7 @@ Phase 2 build steps 1 to 5 are DONE and tested: bounded CAN send; IMU health/re-
 tolerant start-up, OAT range check; status LED (green OK, amber degraded, red failed or CAN fault); GPS no-data path.
 Fault injection over USB serial (`FAULT_INJECT 1` in each sketch, commands start with `!`): IMU `!G/!g` accel-gyro, `!M/!m` mag,
 `!z` `!x` chip resets; AIR `!P/!p` pitot, `!A/!a` AOA, `!S/!s` static, `!O/!o` OAT; GPS `!N/!n` silence.
+EFIS/backup-display work is planned in `EFIS/docs/MODULE_STATUS_PLAN.md` (waiting for David's decisions listed at its end).
 Remaining: Phase 3 full retest against the plan tables, Phase 4 recovery tests, Phase 5 any leftover fault injection; then the
 0x7FFF invalid-data markers together with the EFIS pass (handle heartbeats in aio_server.py, backup display, EFIS heartbeat 0x700).
 Findings: no CAN termination on AIR and GPS boards (IMU has it); live re-insertion of the IMU wing reboots the module; a Pi tty with
