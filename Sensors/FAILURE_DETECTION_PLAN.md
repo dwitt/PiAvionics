@@ -227,5 +227,12 @@ detect, time to recover, notes.)
 **AIR freeze with the INT workaround off** (test build 1.0.25: `CAN_INT_WORKAROUND 0`, INT trace cut)
 - Cable pulled: LED stuck blue again, cable back in: green at once. Same behaviour, so the cut INT trace / CANINTE
   workaround is not involved. The library polls the TX status register and never uses the INT pin.
+
+**IMU CAN cable pulled 3 more times (poller + capture)**
+- Bus gaps 4.7 s, 4.4 s and 1.6 s (shorter pulls); the `?` query was answered every 2 s throughout (21 of 21), uptime
+  continuous, no reset. **The IMU never froze (4 pulls out of 4 including the first).** The AIR module froze every time (4 of 4).
+- So the modules really differ. Same send code and library, so the cause is something in setup or hardware (CAN chip
+  state, wing, termination?). Plan: when the bounded send is built, also log the MCP2515 error flags and counters
+  (EFLG, TEC) on timeout in the `?` report on each module and compare. Not needed to proceed.
 - Needed: act on getEvent() failure, detect the all-zero accel, mark gyro invalid, re-initialise the chip (begin and
   configure) about every 2 s while it is missing, and do not let the AHRS integrate stale gyro data.
