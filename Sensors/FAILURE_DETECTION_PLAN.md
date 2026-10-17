@@ -352,3 +352,10 @@ Fault-injection results (5 s fault each):
   spikes (previously the filter passed a wild reading; the range check and the filter restart handle it).
 - The pulls were shorter than asked (2 to 6 s). The `?` report afterwards: OAT lost 6x (start-up 1, earlier injection 1, these 4),
   last problem "no reading (board missing?)", 71 samples dropped.
+
+**A3, A4, A5 (cold) on AIR_Module 1.0.27: one pressure sensor removed from its socket with the module unpowered, then booted**
+- AOA removed: boots, state 2 mask 0D, `?` says "AOA pressure FAILED (not found at start-up)"; pitot, static, OAT and all data frames
+  normal. (Before: the module halted with state 3.)
+- Pitot removed: state 2 mask 0E, airspeed 0, altitude and vertical speed normal.
+- Static removed: state 2 mask 0B, "I2C read failed"; altitude 0 and vertical speed 0 (nothing to hold at boot), airspeed normal.
+- Not tested: plugging a sensor into a running module (shared I2C bus risk). Injection covers the running case.
