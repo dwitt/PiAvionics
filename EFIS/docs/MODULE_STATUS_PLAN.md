@@ -1,8 +1,8 @@
 # Plan: show module failures on the EFIS and the backup display
 
 Written 2026-10-17. Follows `Sensors/FAILURE_DETECTION_PLAN.md` (the modules now detect their own failures and say so in
-a CAN heartbeat and the LED). This plan makes the **EFIS** and the **backup display** act on that. Nothing here is built
-yet; it needs David's decisions (end of this file) before coding.
+a CAN heartbeat and the LED). This plan makes the **EFIS** and the **backup display** act on that. **All ten decisions are
+made (see "Decisions recorded" at the end); nothing is built yet. Start at step 1 of "Order of work".**
 
 ## What exists today (checked in the code)
 
@@ -56,10 +56,10 @@ yet; it needs David's decisions (end of this file) before coding.
 |---|---|---|
 | Pitot lost | 0x28, 0x2B | airspeed; differential pressure |
 | Static lost | 0x28, 0x2B | altitude (int32), vertical speed; static pressure |
-| OAT lost | 0x2A | OAT |
+| OAT lost | 0x2A | OAT (the frame keeps being sent, decision 6) |
 | Accel/gyro lost | 0x48, 0x49 | yaw, pitch, roll, turn rate; all three accelerations |
-| Magnetometer lost | 0x48 | yaw only if David decides heading is invalid (see decision 1) |
-| GPS silent / no fix | 0x63, 0x64 | position, speed, altitude, track (today the frames simply stop) |
+| Magnetometer lost | none | heading is still sent (gyro-only); the EFIS handles it from the heartbeat mask (decision 1) |
+| GPS silent / no fix | 0x63, 0x64 | none: the frames stop (decision 7), the EFIS times them out after 3.5 s; 0x65 and the heartbeat say why |
 
 - EFIS heartbeat **0x700**, once a second, same layout as the module heartbeats (module 0 = EFIS, version, state, sensors
   mask, uptime). Mask bits = which modules the EFIS currently sees healthy (bit 0 AIR, bit 1 IMU, bit 2 GPS) and bit 3 =
@@ -78,7 +78,7 @@ yet; it needs David's decisions (end of this file) before coding.
 | Message | Rate | Invalid after |
 |---|---|---|
 | 0x28 airspeed / altitude / VSI | 10 Hz | 0.5 s |
-| 0x48, 0x49 attitude, acceleration | 10 Hz | 0.5 s (was 0.2 s; to confirm with David, 0.2 s is only 2 missed frames) |
+| 0x48, 0x49 attitude, acceleration | 10 Hz | 0.5 s (was 0.2 s; decision 8) |
 | 0x2A OAT | 5 Hz | 1.5 s |
 | 0x63 to 0x65 GPS | 1 Hz | 3.5 s |
 | 0x701 to 0x703 heartbeats | 1 Hz | 3 s (module missing) |
@@ -114,12 +114,12 @@ yet; it needs David's decisions (end of this file) before coding.
 
 ### 5. Modules: replace interim behaviour with markers (IMU_AHRS, AIR_Module, GPS_Module)
 - Only after the server and backup display understand markers (see order below), because an old EFIS would draw 32767.
-- AIR: pitot lost, airspeed 0 becomes marker; static lost, altitude held becomes marker; OAT lost, frame stops becomes marker
-  (or keep stopping, decision 6). IMU: accel/gyro lost sends markers. GPS: see decision 7.
+- AIR: pitot lost, airspeed 0 becomes the marker; static lost, altitude held becomes the marker; OAT lost, the frame stops
+  becomes the marker (decision 6). IMU: accel/gyro lost sends markers. GPS: unchanged, frames stop (decision 7).
 
 ## Order of work (each step testable on its own)
 
-0. **Decisions** below, and the display layout sketched on paper or as a mock-up.
+0. **Decisions**: done (below). Still to do: sketch the annunciator and red-X look as a mock-up before coding the display.
 1. **Protocol** (YAML + docs): markers, 0x700. No code.
 2. **Server step A**: heartbeat handlers, module table, timeouts for every message, validity flags, annunciation list in the
    JSON, sleep fix. Markers not used yet. Test: unplug each module's CAN cable and use the modules' fault commands; read the
@@ -137,7 +137,7 @@ Deploy server and display files with `EFIS/copytopiefis.sh` and `sudo systemctl 
 available (git) so a bad deploy can be rolled back in a minute. Step 6 is the only step that changes the aircraft's data, and
 each module can be rolled back by reflashing.
 
-## Decisions needed from David
+## Decisions that were needed (answered, see "Decisions recorded" at the end)
 
 1. **Heading with the magnetometer lost.** The IMU keeps a gyro-only heading (drift about 0.1 deg/s). Show it with an amber
    `HDG GYRO` caution (suggested), or mark heading failed?
@@ -177,3 +177,14 @@ each module can be rolled back by reflashing.
   2 to 3 short lines. A new caution or warning flashes for about 5 seconds, then stays steady.
 - **5. Module status page (2026-10-17).** A read-only page opened from the existing Menu (Menu, then Modules): IMU, AIR, GPS and the
   EFIS with version, state, which sensors are up, uptime and last heard. Later a natural home for the CAN commands (ISSUES #9).
+- **6. OAT when lost (2026-10-17).** The AIR module keeps sending 0x2A with the 0x7FFF marker, so the EFIS can tell "OAT sensor failed"
+  (show --- and an OAT caution) from "AIR module silent" (timeout).
+- **7. GPS when silent or no fix (2026-10-17).** The position frames (0x63, 0x64) stay stopped as today; the EFIS times them out
+  after 3.5 s. 0x65 and the GPS heartbeat say why (no NMEA, no fix, satellites). No markers on the GPS messages.
+- **8. Timeouts (2026-10-17).** 0.5 s for attitude (0x48, 0x49), airspeed/altitude/VSI (0x28); 1.5 s for OAT (0x2A); 3.5 s for GPS
+  (0x63 to 0x65); 3 s for a module heartbeat (module missing). Attitude changes from 0.2 s to 0.5 s.
+- **9. Restart caution (2026-10-17).** Yes: a `MODULE RESTARTED` caution for a few seconds when a module's uptime goes backwards
+  (it will also appear after a deliberate firmware flash on the ground).
+- **10. EFIS heartbeat 0x700 (2026-10-17).** Same layout as the module heartbeats (module 0), with the mask bits: 0 AIR, 1 IMU, 2 GPS seen
+  healthy by the EFIS, 3 a display client connected. State 1 all modules OK, 2 a module degraded or missing, 3 the EFIS cannot
+  produce a display.

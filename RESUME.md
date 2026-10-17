@@ -27,13 +27,15 @@ Plan, decisions, every test result and the filled-in test tables: `Sensors/FAILU
 - While a sensor is invalid the data frames use an interim form (airspeed 0, altitude held, VSI 0, attitude held, OAT frame
   stops, GPS position frames stop). The 0x7FFF markers wait for the EFIS side.
 
-## NEXT: EFIS and backup display (waiting on David)
-`EFIS/docs/MODULE_STATUS_PLAN.md` (committed) is the plan: handle the heartbeats and markers in `aio_server.py`, timeouts for
-every message, a validity flag per instrument, red X failure flags and an annunciator strip on the display, a module status
-page (versions, states, uptime), the EFIS heartbeat 0x700, the backup display (CAN_Display) reading markers and heartbeats,
-then switching the modules to the markers. **David has not yet answered the 10 decisions at the end of that document.**
-Start the next session by going through them with him, then follow the order of work in the plan (protocol docs first, no
-code until the decisions are made). Server and display first, modules last, so nothing ever draws 32767.
+## NEXT: EFIS and backup display (decisions made, ready to build)
+`EFIS/docs/MODULE_STATUS_PLAN.md` (committed) is the plan, and **David has made all ten decisions** (recorded at its end):
+gyro-only heading stays under a red X for 5 minutes then blanks; red X look; attitude failure removes sky/ground with a red X;
+annunciators at top centre under the heading ribbon (flash 5 s on first appearance); module status page from the Menu; OAT sends
+the 0x7FFF marker; GPS frames stay stopped (EFIS timeout); timeouts 0.5 s / 1.5 s / 3.5 s; MODULE RESTARTED caution; EFIS
+heartbeat 0x700 with a mask of healthy modules plus display connected.
+Start with step 1 of its "Order of work": the protocol (YAML + generated docs), no code; then the server step A, display step A,
+server step B, backup display, and last the module marker changes (server and display first so nothing draws 32767).
+Also first: sketch the annunciator and red-X look as a mock-up for David before coding the display.
 Other open items: AOA value on 0x29 is still always 0; command messages over CAN (ISSUES #9 steps 2 to 4); ISSUES #2
 (`monitor_timeout` busy loop) is fixed by the plan.
 
