@@ -1,41 +1,50 @@
-# Resume here (written 2026-10-17)
+# Resume here (last saved 2026-10-17, end of day)
 
 Tell Claude: "Read RESUME.md and carry on."
 
-## Where we are (updated 2026-10-17, end of build phase)
-Firmware on the boards: IMU_AHRS 1.0.15, AIR_Module 1.0.33, GPS_Module 1.0.8, ModuleInfo 1.3.0, StatusLED 1.2.0,
-SensorHealth 1.0.0 (new shared library), MS4525DO 1.1.0 and SSC 1.1.0 (checked reads).
-Shared libraries are in `Sensors/Libraries/` and reach each sketch through relative symlinks in `<Sketch>/src/` (see `Sensors/Libraries/README.md`; third-party versions in `LIBRARIES.md`); the Arduino IDE 2.3.5 builds them without setup (verified by David with IMU_AHRS). Libraries in the repo with local patches: `Sensors/Libraries/Adafruit_LSM6DS` (failed read returns false) and
-`Sensors/Libraries/Adafruit_MCP2515` (bounded send, txFault()); each has `PATCH_NOTES.md`. `flash_remote.sh` builds with them.
+## State of the sensor modules: finished and committed
+Firmware on the boards (all flashed, healthy, committed): IMU_AHRS 1.0.15, AIR_Module 1.0.34, GPS_Module 1.0.8.
+Libraries: ModuleInfo 1.3.0, StatusLED 1.2.0, SensorHealth 1.0.0, MS4525DO 1.1.1, SSC 1.1.1, plus two locally patched
+Adafruit libraries (`Adafruit_LSM6DS`: a failed read returns false; `Adafruit_MCP2515`: bounded send, `txFault()`,
+`clearErrorFlags()`), each with `PATCH_NOTES.md`.
+Libraries live once in `Sensors/Libraries/` and reach each sketch through relative symlinks in `<Sketch>/src/` with quoted
+includes; the Arduino IDE 2.3.5 builds all three with no setup (David verified IMU and AIR). Do NOT symlink these into
+`~/Documents/Arduino/libraries`: a Library Manager upgrade of a symlinked library that is in the public index deletes the
+folder the link points to (tested). See `Sensors/Libraries/README.md` and `LIBRARIES.md` (third-party versions).
 
-## Current task: module failure detection (ISSUES.md #13)
-Plan, decisions and the full test log: `Sensors/FAILURE_DETECTION_PLAN.md`.
-Phase 2 build steps 1 to 5 are DONE and tested: bounded CAN send; IMU health/re-init/6-axis; AIR checked pressure reads, health,
-tolerant start-up, OAT range check; status LED (green OK, amber degraded, red failed or CAN fault); GPS no-data path.
-Fault injection over USB serial (`FAULT_INJECT 1` in each sketch, commands start with `!`): IMU `!G/!g` accel-gyro, `!M/!m` mag,
-`!z` `!x` chip resets; AIR `!P/!p` pitot, `!A/!a` AOA, `!S/!s` static, `!O/!o` OAT; GPS `!N/!n` silence.
-EFIS/backup-display work is planned in `EFIS/docs/MODULE_STATUS_PLAN.md` (waiting for David's decisions listed at its end).
-Remaining: Phase 3 full retest against the plan tables, Phase 4 recovery tests, Phase 5 any leftover fault injection; then the
-0x7FFF invalid-data markers together with the EFIS pass (handle heartbeats in aio_server.py, backup display, EFIS heartbeat 0x700).
-Findings: no CAN termination on AIR and GPS boards (IMU has it); live re-insertion of the IMU wing reboots the module; a Pi tty with
-echo on feeds the module's own report back to it (use `stty raw -echo`; keep the port open while sending test commands).
-Decided: FAULT_INJECT stays 1 in the flight build (no USB in the aircraft, faults are RAM only; see the plan). Open: EFLG 0x40 (RX0OVR) set even when healthy; IMU/GPS/AIR hot-plug of
-a sensor into a running module not tested; stuck I2C bus (SDA held low) recovery on the AIR Wire bus not built.
+## Failure detection work (ISSUES.md #13): built, tested, logged
+Plan, decisions, every test result and the filled-in test tables: `Sensors/FAILURE_DETECTION_PLAN.md`.
+- Each module detects its own sensor failures, reports them in its heartbeat (0x701 IMU, 0x702 AIR, 0x703 GPS: state 1 OK,
+  2 degraded, 3 failed, plus a sensors mask) and on the LED (green OK, amber degraded, red failed or CAN trouble).
+- A CAN cable pull no longer freezes any module (cause was missing termination on the AIR and GPS CAN boards plus an
+  unbounded wait in the stock MCP2515 library).
+- Fault injection over USB serial is compiled in and stays in the flight build (decision: no USB in the aircraft). Commands start
+  with `!`, capital = on, lower case = off: IMU `!G/!g` `!M/!m` `!z` `!x`; AIR `!P/!p` `!A/!a` `!S/!s` `!O/!o`; GPS `!N/!n`.
+  Test scripts: `Sensors/TestTools/` (run on the Pi; see its README).
+- Not done and not needed yet: hot-plugging a sensor into a running module, stuck-I2C-bus recovery on the AIR Wire bus,
+  cold tests A6/I4/I6/G2/C3 (listed NOT RUN in the plan tables). IMU and GPS still show EFLG 0x40 (their CAN buffers are never
+  read); harmless until they get a receive path.
+- While a sensor is invalid the data frames use an interim form (airspeed 0, altitude held, VSI 0, attitude held, OAT frame
+  stops, GPS position frames stop). The 0x7FFF markers wait for the EFIS side.
+
+## NEXT: EFIS and backup display (waiting on David)
+`EFIS/docs/MODULE_STATUS_PLAN.md` (committed) is the plan: handle the heartbeats and markers in `aio_server.py`, timeouts for
+every message, a validity flag per instrument, red X failure flags and an annunciator strip on the display, a module status
+page (versions, states, uptime), the EFIS heartbeat 0x700, the backup display (CAN_Display) reading markers and heartbeats,
+then switching the modules to the markers. **David has not yet answered the 10 decisions at the end of that document.**
+Start the next session by going through them with him, then follow the order of work in the plan (protocol docs first, no
+code until the decisions are made). Server and display first, modules last, so nothing ever draws 32767.
+Other open items: AOA value on 0x29 is still always 0; command messages over CAN (ISSUES #9 steps 2 to 4); ISSUES #2
+(`monitor_timeout` busy loop) is fixed by the plan.
 
 Watch the bus from the Pi:
 `ssh david@pi-efis.local` then
 `candump -ta can0,701:7FF,702:7FF,703:7FF,48:7FF,28:7FF,2A:7FF,65:7FF`
-Status query: `stty -F <port> 115200 raw -echo hupcl`, write `?`, read.
+Status query of a module: `stty -F <port> 115200 raw -echo hupcl`, write `?`, read.
 
-Safety: stacked wings are not hot-unplugged except where David chooses to (he pulled the IMU wing live twice).
-Cables, probes and antennas are fine. AIR pressure sensors share the Wire bus: pulling them live risks a stuck bus.
-
-## Not done / later
-- EFIS side: handle heartbeats in aio_server.py, display, EFIS heartbeat 0x700, together with
-  David's backup text-only display (deliberately deferred until all sensors are done).
-- AOA value on 0x29 is still always 0. Command messages (ISSUES #9 steps 2-4).
-- AIR halts at startup if any sensor is missing (it now reports state 3 with the mask).
-- Optional: make the static pressure filter change-driven (untested idea).
+Safety: stacked wings are not hot-unplugged except where David chooses to (he pulled the IMU wing live twice, and
+re-insertion reboots the module). Cables, probes and antennas are fine. AIR pressure sensors share the Wire bus: pulling them
+live risks a stuck bus (cold pulls were done instead).
 
 ## Handy facts
 - Boards: `/dev/serial/by-id/usb-Adafruit_*`; serials AIR 38503039350B102C, GPS 38503039350B242B,
