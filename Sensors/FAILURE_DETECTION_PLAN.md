@@ -378,3 +378,13 @@ Test (David watched the LEDs, faults set with the injection commands):
   (the colour returned within a few seconds).
 - GPS in normal operation (3D fix, 16 satellites): slow green.
 - Not yet tested: GPS amber (needs the no-data path, step 5).
+
+### 2026-10-17, Phase 2 step 5: GPS no-data path (GPS_Module 1.0.7)
+
+- The GPS wing is hard to pull (G2), so a test command makes the sketch throw away everything the GPS sends: `!N` on, `!n` off
+  (`FAULT_INJECT 1`). The `?` report now has a GPS line: NMEA OK / SILENT, seconds since the last valid sentence, fix, satellites,
+  number of baud re-probes.
+- Silenced for 37 s: heartbeat state 2, mask 00 about 5 s after the last sentence (GPS_SILENCE_MS); 0x65 shows fix quality 0 and 0
+  satellites; the position frame 0x63 is not sent (no stale position); the module re-probes the GPS about every 5 s (5 times in the
+  run). Un-silenced: state 1, mask 03, 0x63/0x65 back about 4 s later (the probe in progress has to finish).
+- LED (David): amber while silent, green again after.

@@ -17,7 +17,7 @@
 #include "XYZgeomag.hpp"         // WMM2025 magnetic declination (nhz2/XYZgeomag)
 #include <ModuleInfo.h>        // USB product name, startup log and '?' report
 
-#define VERSION "1.0.6"
+#define VERSION "1.0.7"
 
 ModuleInfo moduleInfo("GPS_Module", VERSION, __DATE__, __TIME__);
 
@@ -181,11 +181,26 @@ static unsigned long lastValidNmea = 0;
 
 static unsigned long lastRealNmea = 0;
 static bool realNmeaSeen = false;
+static uint32_t gpsReprobes = 0;      // times the silence watchdog started the baud probe again
+
+#define FAULT_INJECT 1    // test commands on USB serial ("Fault injection" below); 0 for flight
+#if FAULT_INJECT
+static bool injectSilent = false;     // everything from the GPS is thrown away
+#endif
 static bool canUp = false;        // heartbeat is only sent once the CAN bus is running
 
 // Live CAN transmit status for the '?' report. A send that nobody acknowledges is abandoned
 // after a few ms (patched Adafruit_MCP2515, see Libraries/Adafruit_MCP2515/PATCH_NOTES.md).
 static void canReport(Print &out) {
+  bool nmeaOk = realNmeaSeen && (millis() - lastRealNmea < GPS_SILENCE_MS);
+  out.print("GPS: NMEA "); out.print(nmeaOk ? "OK" : "SILENT");
+  out.print(", last valid sentence "); out.print(realNmeaSeen ? (millis() - lastRealNmea) / 1000 : 0);
+  out.print(" s ago, fix "); out.print(gps.fix ? "yes" : "no");
+  out.print(", satellites "); out.print((int)gps.satellites);
+  out.print(", re-probes "); out.println(gpsReprobes);
+  #if FAULT_INJECT
+  out.print("Test build: GPS silenced "); out.println(injectSilent);
+  #endif
   if (!canUp) { out.println("CAN not running"); return; }
   out.print("CAN tx: ");
   out.print(can.txDown() ? "DOWN (no acknowledge)" : "ok");
@@ -227,6 +242,33 @@ static void gpsService() {
   sendHeartbeat();
 }
 
+//----------------------------------------------------------------------------
+// Fault injection for tests (USB serial commands, see ModuleInfo setCommandHook).
+//   !N  the GPS goes silent: everything it sends is thrown away, until !n is sent
+// The GPS wing is hard to unplug, so this is how the "no data from the GPS" path is tested.
+//----------------------------------------------------------------------------
+#if FAULT_INJECT
+static bool bangSeen = false;
+
+static void faultCommand(char c) {
+  if (c == '!') { bangSeen = true; return; }
+  if (!bangSeen) return;
+  bangSeen = false;
+  if (c == 'N') injectSilent = true;
+  if (c == 'n') injectSilent = false;
+}
+#endif
+
+// Feed everything the GPS has sent to the NMEA parser
+static void gpsDrain() {
+  while (Serial1.available()) {
+    #if FAULT_INJECT
+    if (injectSilent) { Serial1.read(); continue; }
+    #endif
+    gps.read();
+  }
+}
+
 // True if the sentence starts with '$' and its *XX checksum is correct
 static bool gpsNmeaValid(const char *nmea) {
   if (!nmea || nmea[0] != '$') return false;
@@ -245,7 +287,7 @@ static bool gpsWaitForNMEA(uint32_t timeoutMs) {
   uint32_t start = millis();
   while (millis() - start < timeoutMs) {
     gpsService();
-    while (Serial1.available()) gps.read();
+    gpsDrain();
     if (gps.newNMEAreceived()) {
       const char *nmea = gps.lastNMEA();
       bool ok = gpsNmeaValid(nmea);
@@ -321,6 +363,9 @@ void setup() {
 
   moduleInfo.setModuleNumber(MODULE_NUM_GPS);
   moduleInfo.setReportHook(canReport);
+  #if FAULT_INJECT
+  moduleInfo.setCommandHook(faultCommand);
+  #endif
   moduleInfo.setHealth(MODULE_STATE_STARTING, 0);
   led.setServiceCallback(gpsService);   // '?' report and heartbeat during LED waits
 
@@ -427,9 +472,7 @@ void loop() {
   // gps.read() processes one character at a time; without this loop the
   // buffer overflows when the rest of the loop is slow (e.g. WMM math).
 
-  while (Serial1.available()) {
-    gps.read();
-  }
+  gpsDrain();
 
   if (gps.newNMEAreceived()) {
     #if defined(DEBUG)
@@ -475,6 +518,7 @@ void loop() {
     gps.HDOP = 0;
     gps.VDOP = 0;
 
+    gpsReprobes++;
     gpsInit(1);
     lastValidNmea = millis();
   }
