@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>EFIS failure display mock-up</title>
+<!--
+  Mock-up of the failure display described in EFIS/docs/MODULE_STATUS_PLAN.md:
+  red X over a failed instrument, annunciator strip under the heading ribbon,
+  gyro-only heading under a dimmed red X. Plain canvas, no libraries, nothing is
+  connected to the EFIS. The instruments are simplified drawings in the same
+  places as efis-display.js puts them (primary canvas 720 x 640, Pi Touch Display 2).
+  Open the file in a browser. VERSION 1.0.0
+-->
+<style>
+  :root { --bg:#16181c; --panel:#20242a; --text:#e8eaed; --muted:#9aa0a8; --accent:#4da3ff; }
+  @media (prefers-color-scheme: light) { :root { --bg:#eceff3; --panel:#ffffff; --text:#1c2128; --muted:#5d6670; --accent:#0b63ce; } }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:15px/1.4 system-ui, sans-serif; }
+  .wrap { max-width:1180px; margin:0 auto; padding:16px; display:grid; grid-template-columns: 720px 1fr; gap:20px; align-items:start; }
+  @media (max-width: 1000px) { .wrap { grid-template-columns: 1fr; } }
+  canvas { width:100%; max-width:720px; height:auto; background:#000; border-radius:6px; display:block; }
+  h1 { font-size:18px; margin:0 0 4px; }
+  h2 { font-size:14px; margin:16px 0 6px; color:var(--muted); text-transform:uppercase; letter-spacing:.06em; }
+  .panel { background:var(--panel); border-radius:8px; padding:12px 14px; }
+  label.row { display:flex; gap:8px; align-items:flex-start; padding:3px 0; cursor:pointer; }
+  label.row small { color:var(--muted); display:block; }
+  button { font:inherit; padding:6px 10px; border-radius:6px; border:1px solid var(--muted); background:transparent; color:var(--text); cursor:pointer; margin:2px 4px 2px 0; }
+  button:hover { border-color:var(--accent); }
+  input[type=range] { width:160px; vertical-align:middle; }
+  .note { color:var(--muted); font-size:13px; }
+  #state { font-family: ui-monospace, Menlo, monospace; font-size:13px; white-space:pre-wrap; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div>
+    <canvas id="c" width="720" height="640"></canvas>
+    <p class="note">Primary EFIS canvas, 720 x 640 (top half of the portrait Pi Touch Display 2). Drawn simplified; positions follow efis-display.js.</p>
+  </div>
+
+  <div>
+    <h1>Failure display mock-up</h1>
+    <p class="note">Tick faults to see what the pilot would see. Nothing here is connected to the aircraft.</p>
+
+    <div class="panel">
+      <h2 style="margin-top:0">Faults</h2>
+      <label class="row"><input type="checkbox" id="pitot"><span>Pitot lost<small>airspeed has no value</small></span></label>
+      <label class="row"><input type="checkbox" id="static"><span>Static lost<small>altitude and vertical speed have no value</small></span></label>
+      <label class="row"><input type="checkbox" id="oat"><span>OAT lost<small>temperature readout shows ---</small></span></label>
+      <label class="row"><input type="checkbox" id="att"><span>Accel/gyro lost<small>attitude, heading and turn rate have no value</small></span></label>
+      <label class="row"><input type="checkbox" id="mag"><span>Magnetometer lost<small>gyro-only heading under a dimmed red X for 5 minutes</small></span></label>
+      <label class="row"><input type="checkbox" id="gps"><span>GPS no data<small>ground speed shows ---</small></span></label>
+      <label class="row"><input type="checkbox" id="airmod"><span>AIR module missing<small>no heartbeat, no data</small></span></label>
+      <label class="row"><input type="checkbox" id="imumod"><span>IMU module missing<small>no heartbeat, no data</small></span></label>
+      <div style="margin-top:8px">
+        <button id="restart">Module restarted</button>
+        <button id="clear">Clear all</button>
+        <button id="combo">Several at once</button>
+      </div>
+    </div>
+
+    <div class="panel" style="margin-top:12px">
+      <h2 style="margin-top:0">Gyro-only heading timer</h2>
+      <div>Time since the magnetometer was lost: <b id="magTime">0:00</b> of 5:00</div>
+      <button id="skip">Jump to 4:55</button> <button id="resetMag">Restart timer</button>
+      <div class="note">After 5:00 the heading number is blanked and only the red X remains.</div>
+    </div>
+
+    <div class="panel" style="margin-top:12px">
+      <h2 style="margin-top:0">Look</h2>
+      <div>X thickness <input type="range" id="xw" min="2" max="16" value="7"> <span id="xwv">7</span> px</div>
+      <div>X opacity <input type="range" id="xo" min="30" max="100" value="80"> <span id="xov">80</span> %</div>
+      <div>Annunciator text size <input type="range" id="fs" min="16" max="34" value="24"> <span id="fsv">24</span> px</div>
+      <div style="margin-top:6px">Heading X:
+        <label><input type="radio" name="hx" value="box" checked> compact (centre)</label>
+        <label><input type="radio" name="hx" value="full"> full width</label>
+      </div>
+      <div>Failed instrument labels: <label><input type="checkbox" id="labels" checked> show</label></div>
+    </div>
+
+    <div class="panel" style="margin-top:12px">
+      <h2 style="margin-top:0">What the server would send</h2>
+      <div id="state"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+'use strict';
+const W = 720, H = 640;
+const cv = document.getElementById('c');
+const g = cv.getContext('2d');
+const FONT = 'Tahoma, Verdana, system-ui, sans-serif';
+
+const faults = {pitot:false, static:false, oat:false, att:false, mag:false, gps:false, airmod:false, imumod:false};
+const look = {xw:7, xo:0.8, fs:24, hx:'box', labels:true};
+let magSince = null;            // time (ms) the magnetometer fault was switched on
+let magOffset = 0;              // seconds added by the "jump" button
+let restartUntil = 0;           // MODULE RESTARTED shown until this time
+const firstSeen = {};           // annunciator text -> time first shown (for the 5 s flash)
+
+// ---- the rules the EFIS server would apply (see MODULE_STATUS_PLAN.md) -------------
+function evaluate(now) {
+  const f = faults;
+  const air = !f.airmod, imu = !f.imumod;
+  const magAge = (f.mag && magSince !== null) ? (now - magSince) / 1000 + magOffset : 0;
+  const v = {
+    airspeed: air && !f.pitot,
+    altitude: air && !f.static,
+    vsi:      air && !f.static,
+    oat:      air && !f.oat,
+    attitude: imu && !f.att,
+    turn:     imu && !f.att,
+    gps:      !f.gps,
+  };
+  // heading: valid unless accel/gyro lost or IMU missing. Magnetometer lost = gyro-only (suspect)
+  v.heading = imu && !f.att;
+  const headingSuspect = v.heading && f.mag;                   // data present but untrusted
+  const headingBlank = headingSuspect && magAge >= 300;        // after 5 minutes: number removed
+  const warn = [], caut = [];
+  if (!air) warn.push('NO AIR DATA');
+  else {
+    if (f.pitot) warn.push('PITOT');
+    if (f.static) warn.push('STATIC');
+    if (f.oat) caut.push('OAT');
+  }
+  if (!imu) warn.push('NO IMU');
+  else if (f.att) warn.push('ATT FAIL');
+  else if (f.mag) caut.push('HDG GYRO');
+  if (f.gps) caut.push('GPS NO DATA');
+  if (now < restartUntil) caut.push('MODULE RESTARTED');
+  return {v, headingSuspect, headingBlank, magAge, warn, caut};
+}
+
+// ---- drawing helpers -------------------------------------------------------------
+function rr(x, y, w, h, r) { g.beginPath(); g.roundRect(x, y, w, h, r); }
+function txt(s, x, y, size, color, align='center', weight='bold') {
+  g.font = `${weight} ${size}px ${FONT}`; g.fillStyle = color; g.textAlign = align; g.textBaseline = 'middle'; g.fillText(s, x, y);
+}
+function redX(x, y, w, h, label) {
+  g.save();
+  g.globalAlpha = look.xo;
+  g.strokeStyle = '#ff2a1f'; g.lineWidth = look.xw; g.lineCap = 'round';
+  g.beginPath(); g.moveTo(x + 4, y + 4); g.lineTo(x + w - 4, y + h - 4);
+  g.moveTo(x + w - 4, y + 4); g.lineTo(x + 4, y + h - 4); g.stroke();
+  g.restore();
+  if (label && look.labels) {
+    const cx = x + w / 2, cy = y + h / 2, lw = 18 + label.length * 13;
+    g.fillStyle = 'rgba(0,0,0,0.75)'; rr(cx - lw / 2, cy - 14, lw, 28, 5); g.fill();
+    g.strokeStyle = '#ff2a1f'; g.lineWidth = 2; g.stroke();
+    txt(label, cx, cy + 1, 20, '#ff4a3f');
+  }
+}
+
+function drawAttitude(ok) {
+  if (!ok) {                         // sky and ground removed
+    g.fillStyle = '#26282c'; g.fillRect(0, 0, W, H);
+    return;
+  }
+  const horizon = 300, pitchPx = 4;   // simple level picture with a little pitch ladder
+  g.fillStyle = '#2a73c4'; g.fillRect(0, 0, W, horizon);
+  g.fillStyle = '#7b4a20'; g.fillRect(0, horizon, W, H - horizon);
+  g.strokeStyle = '#fff'; g.lineWidth = 3; g.beginPath(); g.moveTo(0, horizon); g.lineTo(W, horizon); g.stroke();
+  for (let p = -20; p <= 20; p += 5) {
+    if (p === 0) continue;
+    const y = horizon - p * pitchPx * 3, w = (p % 10 === 0) ? 90 : 50;
+    g.lineWidth = 2; g.beginPath(); g.moveTo(W / 2 - w / 2, y); g.lineTo(W / 2 + w / 2, y); g.stroke();
+    if (p % 10 === 0) { txt(String(Math.abs(p)), W / 2 - w / 2 - 20, y, 16, '#fff'); txt(String(Math.abs(p)), W / 2 + w / 2 + 20, y, 16, '#fff'); }
+  }
+  // aircraft symbol
+  g.strokeStyle = '#ffd400'; g.lineWidth = 6; g.beginPath();
+  g.moveTo(W / 2 - 90, 310); g.lineTo(W / 2 - 30, 310); g.lineTo(W / 2 - 30, 326);
+  g.moveTo(W / 2 + 90, 310); g.lineTo(W / 2 + 30, 310); g.lineTo(W / 2 + 30, 326); g.stroke();
+  g.fillStyle = '#ffd400'; g.fillRect(W / 2 - 4, 306, 8, 8);
+}
+
+function tape(x, y, w, h, left, ok, value, step) {
+  g.fillStyle = 'rgba(20,22,26,0.88)'; g.fillRect(x, y, w, h);
+  g.globalAlpha = ok ? 1 : 0;
+  g.strokeStyle = '#fff'; g.lineWidth = 2;
+  const cy = y + h / 2, ppu = h / (step * 8);
+  for (let i = -5; i <= 5; i++) {
+    const val = Math.round(value / step) * step + i * step;
+    const yy = cy - (val - value) * ppu;
+    if (yy < y + 10 || yy > y + h - 10) continue;
+    const x0 = left ? x + w : x;
+    g.beginPath(); g.moveTo(x0, yy); g.lineTo(x0 + (left ? -16 : 16), yy); g.stroke();
+    txt(String(val), left ? x + w - 24 : x + 24, yy, 18, '#fff', left ? 'right' : 'left', 'normal');
+  }
+  g.globalAlpha = 1;
+}
+
+function readoutBox(x, y, w, h, label, value, ok, color) {
+  g.fillStyle = '#0d0f12'; rr(x, y, w, h, 6); g.fill();
+  g.strokeStyle = '#6b7380'; g.lineWidth = 1.5; g.stroke();
+  txt(label, x + 8, y + h / 2, 13, '#9aa3ad', 'left', 'normal');
+  txt(ok ? value : '---', x + w - 8, y + h / 2, 17, ok ? (color || '#fff') : '#ffb000', 'right');
+}
+
+function drawHeading(r) {
+  const y0 = 0, h = 40;
+  g.fillStyle = 'rgba(20,22,26,0.9)'; g.fillRect(0, y0, W, h);
+  const showNumbers = r.v.heading && !(r.headingBlank);
+  g.save();
+  if (r.headingSuspect && !r.headingBlank) g.globalAlpha = 0.38;       // dimmed but readable
+  if (showNumbers) {
+    g.strokeStyle = '#fff'; g.lineWidth = 2;
+    for (let i = -6; i <= 6; i++) {
+      const x = W / 2 + i * 55;
+      g.beginPath(); g.moveTo(x, h); g.lineTo(x, h - (i % 2 === 0 ? 14 : 8)); g.stroke();
+      if (i % 2 === 0) txt(String(((90 + i * 5) + 360) % 360).padStart(3, '0'), x, 14, 17, '#fff', 'center', 'normal');
+    }
+    g.fillStyle = '#000'; rr(W / 2 - 38, 2, 76, 34, 5); g.fill(); g.strokeStyle = '#fff'; g.lineWidth = 2; g.stroke();
+    txt('090', W / 2, 20, 24, '#fff');
+  }
+  g.restore();
+  if (!r.v.heading || r.headingSuspect) {
+    if (look.hx === 'full') redX(0, y0, W, h, 'HDG');
+    else redX(W / 2 - 70, y0, 140, h, 'HDG');
+  }
+}
+
+function drawAnnunciators(r, now) {
+  const items = [...r.warn.map(t => ({t, c:'#ff3b30'})), ...r.caut.map(t => ({t, c:'#ffb000'}))];
+  const seen = new Set(items.map(i => i.t));
+  for (const k of Object.keys(firstSeen)) if (!seen.has(k)) delete firstSeen[k];
+  const lh = look.fs + 8;
+  items.slice(0, 4).forEach((it, idx) => {
+    if (!(it.t in firstSeen)) firstSeen[it.t] = now;
+    const age = (now - firstSeen[it.t]) / 1000;
+    const flashing = age < 5;
+    const on = !flashing || (Math.floor(age * 3) % 2 === 0);
+    const y = 62 + idx * lh;
+    g.font = `bold ${look.fs}px ${FONT}`;
+    const w = g.measureText(it.t).width + 26;
+    g.fillStyle = on ? 'rgba(0,0,0,0.78)' : 'rgba(0,0,0,0.25)';
+    rr(W / 2 - w / 2, y - lh / 2 + 2, w, lh - 4, 5); g.fill();
+    if (on) txt(it.t, W / 2, y, look.fs, it.c);
+  });
+}
+
+function draw(now) {
+  const r = evaluate(now);
+  drawAttitude(r.v.attitude);
+
+  // airspeed tape (left, 90 wide), altitude tape (right), VSI strip (far right)
+  tape(0, 70, 90, 500, true, r.v.airspeed, 112, 10);
+  tape(W - 125, 70, 90, 500, false, r.v.altitude, 2400, 100);
+  g.fillStyle = 'rgba(20,22,26,0.88)'; g.fillRect(W - 35, 70, 35, 500);
+  if (r.v.vsi) { g.fillStyle = '#34c759'; g.fillRect(W - 28, 300, 21, 20); txt('+150', W - 17, 280, 12, '#fff', 'center', 'normal'); }
+
+  // speed / altitude wheels
+  g.fillStyle = '#000'; rr(0, 305, 78, 40, 4); g.fill(); g.strokeStyle = '#fff'; g.lineWidth = 2; g.stroke();
+  txt(r.v.airspeed ? '112' : '', 38, 325, 26, '#fff');
+  g.fillStyle = '#000'; rr(W - 125, 300, 90, 48, 4); g.fill(); g.strokeStyle = '#fff'; g.lineWidth = 2; g.stroke();
+  txt(r.v.altitude ? '2400' : '', W - 80, 325, 28, '#fff');
+
+  // small readouts: ground speed (top left), GPS altitude (top right), OAT (bottom left), QNH (bottom right)
+  readoutBox(0, 45, 90, 25, 'GS', '112', r.v.gps, '#ff4dd2');
+  readoutBox(W - 125, 45, 90, 25, 'GPS', '2410', r.v.gps, '#ff4dd2');
+  readoutBox(0, 575, 90, 25, 'OAT', '22.8', r.v.oat);
+  readoutBox(W - 125, 575, 90, 25, 'QNH', '30.36', true, '#6ae0ff');
+
+  // turn rate (bottom centre)
+  g.fillStyle = 'rgba(20,22,26,0.88)'; rr(W / 2 - 110, H - 34, 220, 30, 6); g.fill();
+  g.strokeStyle = '#fff'; g.lineWidth = 2;
+  for (const dx of [-80, 0, 80]) { g.beginPath(); g.moveTo(W / 2 + dx, H - 30); g.lineTo(W / 2 + dx, H - 20); g.stroke(); }
+  if (r.v.turn) { g.fillStyle = '#34c759'; g.fillRect(W / 2 - 2, H - 20, 4, 12); }
+
+  drawHeading(r);
+
+  // failure flags
+  if (!r.v.attitude) redX(100, 90, W - 240, 470, 'ATT');
+  if (!r.v.airspeed) redX(0, 70, 90, 500, 'ASI');
+  if (!r.v.altitude) redX(W - 125, 70, 90, 500, 'ALT');
+  if (!r.v.vsi) redX(W - 35, 70, 35, 500, '');
+  if (!r.v.turn) redX(W / 2 - 110, H - 34, 220, 30, '');
+
+  drawAnnunciators(r, now);
+  updatePanel(r);
+}
+
+// ---- side panel -------------------------------------------------------------------
+function fmt(s) { s = Math.max(0, Math.floor(s)); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); }
+function updatePanel(r) {
+  document.getElementById('magTime').textContent = fmt(Math.min(r.magAge, 300));
+  const lines = [];
+  lines.push('valid: ' + Object.entries(r.v).map(([k, x]) => k + '=' + (x ? 'yes' : 'NO')).join('  '));
+  lines.push('heading: ' + (!r.v.heading ? 'no value' : r.headingBlank ? 'blanked (gyro-only > 5 min)' : r.headingSuspect ? 'shown dimmed, gyro-only ' + fmt(r.magAge) : 'normal'));
+  lines.push('warnings (red): ' + (r.warn.join(', ') || 'none'));
+  lines.push('cautions (amber): ' + (r.caut.join(', ') || 'none'));
+  document.getElementById('state').textContent = lines.join('\n');
+}
+
+// ---- controls ---------------------------------------------------------------------
+for (const k of Object.keys(faults)) {
+  document.getElementById(k).addEventListener('change', e => {
+    faults[k] = e.target.checked;
+    if (k === 'mag') { magSince = e.target.checked ? performance.now() : null; magOffset = 0; }
+  });
+}
+function setFault(k, on) {
+  faults[k] = on; document.getElementById(k).checked = on;
+  if (k === 'mag') { magSince = on ? performance.now() : null; magOffset = 0; }
+}
+document.getElementById('clear').onclick = () => { for (const k of Object.keys(faults)) setFault(k, false); restartUntil = 0; };
+document.getElementById('restart').onclick = () => { restartUntil = performance.now() + 8000; };
+document.getElementById('combo').onclick = () => { for (const k of ['pitot', 'oat', 'mag', 'gps']) setFault(k, true); };
+document.getElementById('skip').onclick = () => { if (!faults.mag) setFault('mag', true); magOffset = 295 - (performance.now() - magSince) / 1000; };
+document.getElementById('resetMag').onclick = () => { magSince = performance.now(); magOffset = 0; };
+function bindRange(id, outId, fn) { const el = document.getElementById(id); el.oninput = () => { document.getElementById(outId).textContent = el.value; fn(+el.value); }; }
+bindRange('xw', 'xwv', v => look.xw = v);
+bindRange('xo', 'xov', v => look.xo = v / 100);
+bindRange('fs', 'fsv', v => look.fs = v);
+document.querySelectorAll('input[name=hx]').forEach(el => el.onchange = () => look.hx = el.value);
+document.getElementById('labels').onchange = e => look.labels = e.target.checked;
+
+function loop(t) { draw(t); requestAnimationFrame(loop); }
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
