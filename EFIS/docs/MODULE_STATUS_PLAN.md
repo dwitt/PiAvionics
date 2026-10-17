@@ -38,8 +38,8 @@ made (see "Decisions recorded" at the end); nothing is built yet. Start at step 
    module's heartbeat says the sensor is lost; the data stops arriving (timeout).
 3. The module heartbeat tells the EFIS **why** (which sensor); the data timeout covers a module that cannot even say that
    (dead, CAN cable out, bus off).
-4. The EFIS decides, once, in the server, what is valid and what to tell the pilot. The display only draws that. (One place
-   to test.)
+4. The server tracks the facts once (module states, which sensors work, whether data is arriving) and sends them; the web page
+   decides what to show and how (decision 11). The backup display makes its own simpler decisions from the same facts on the bus.
 5. The backup display has its own, simpler copy of the same rules, because it must work without the Pi.
 
 ## Design
@@ -66,43 +66,78 @@ made (see "Decisions recorded" at the end); nothing is built yet. Start at step 
   a display client is connected. State 1 all modules OK, 2 a module degraded or missing, 3 EFIS cannot produce a display.
   Purpose: the backup display (and a future bus monitor) can tell "Pi alive, but a module is missing" from "Pi dead".
 
-### 2. EFIS server (`aio_server.py`)
-1. **Heartbeat handlers** for 0x701 to 0x703 fill `data.modules`: for each module its name, version, state, sensors mask,
-   uptime and last-seen time. A module not heard for 3 s is `missing`; an uptime that goes backwards is flagged
-   "restarted" (visible in the status page, and as a short caution).
-2. **Validity** (`data.valid`, a dict of booleans per instrument: `airspeed`, `altitude`, `vsi`, `attitude`, `heading`,
-   `turn_rate`, `oat`, `gps`). A value is valid only if its message is recent **and** is not a marker **and** the owning
-   module's mask says the sensor is working. Invalid values are also set to `null`, so nothing can draw them by accident.
-3. **Timeouts for every message**, in a table (replaces the AHRS-only `monitor_timeout`):
+### 2. EFIS server (`aio_server.py`, `module_status.py`): tracks the facts, never decides what to show
 
-| Message | Rate | Invalid after |
+Division of work (David, 2026-10-17): **the server tracks the data and sends facts; the web page decides what things look like
+and how they are drawn** (wording, colours, order, flashing, how long a caution stays up, when the gyro heading is blanked).
+The server needs the module state anyway for the 0x700 heartbeat, and it keeps its state when the browser reloads.
+
+1. **Heartbeat handlers** for 0x701 to 0x703 fill a tracker (`module_status.StatusTracker`): version, state, sensors mask, uptime
+   and last-heard time per module. A module not heard for 3 s is `missing`; one never heard is `missing` only after a 5 s
+   start-up grace. An uptime that goes backwards records a restart time.
+2. **Timeouts for every message** (replaces the AHRS-only `monitor_timeout`, which also spun without sleeping, ISSUES.md #2):
+
+| Message | Rate | Lost after |
 |---|---|---|
 | 0x28 airspeed / altitude / VSI | 10 Hz | 0.5 s |
 | 0x48, 0x49 attitude, acceleration | 10 Hz | 0.5 s (was 0.2 s; decision 8) |
-| 0x2A OAT | 5 Hz | 1.5 s |
+| 0x2A OAT, 0x2B raw pressure | 5 Hz | 1.5 s |
 | 0x63 to 0x65 GPS | 1 Hz | 3.5 s |
 | 0x701 to 0x703 heartbeats | 1 Hz | 3 s (module missing) |
 
-   The loop gets a real `await asyncio.sleep(0.05)` (fixes ISSUES.md #2).
-4. **Annunciations**: the server builds a list in the JSON, each with a level (`caution` amber, `warning` red) and a short
-   text, derived from the module states, masks and timeouts. Draft list: `NO AIR DATA` (AIR missing), `PITOT`, `STATIC`,
-   `AOA`, `OAT`, `NO IMU` (IMU missing), `ATT FAIL` (accel/gyro), `HDG GYRO` (magnetometer lost, gyro-only heading),
-   `GPS NO DATA`, `NO GPS FIX` (info only), `IMU NO CAL` (calibration missing), `MODULE RESTARTED`.
-5. **Heartbeat 0x700** sent by a new asyncio task (1 Hz), so it stops if the server stops.
-6. Decode markers in each existing message handler (value becomes `None`, validity false).
+3. **Facts in the JSON** (added to the existing fields, which keep their names; evaluated every 0.1 s):
 
-### 3. EFIS display (`efis-display.js`, `support/*.mjs`)
-1. A small reusable **failure flag** (red X with a label such as `ASI`, `ALT`, `ATT`, `HDG`) drawn over an instrument when its
-   `valid` flag is false; the instrument underneath stops updating and hides its numbers. Instruments covered: attitude
-   indicator (also hide sky/ground), airspeed tape, altitude tape, VSI, heading/HSI rose, turn rate, OAT readout, GPS
-   readouts.
-2. An **annunciator strip** showing the server's list (amber / red text), always visible, not interactive.
-3. **Module status page** on the menu: a table of IMU / AIR / GPS (and the EFIS itself): version, state, which sensors are
-   up, uptime, last heard. This also serves the original wish to read module versions without a USB cable.
+| Key | Content |
+|---|---|
+| `modules.{imu,air,gps}` | `present`, `missing`, `state` (0 to 3, null if not present), `version` ("1.0.15"), `uptime` (s), `age` (s since the last heartbeat), `restarted_age` (s since an uptime drop, or null), `sensors` (named booleans from the mask, or null if unknown) |
+| `modules.imu.sensors` | `gyro_accel`, `magnetometer`, `calibration` |
+| `modules.air.sensors` | `pitot`, `aoa`, `static`, `oat` |
+| `modules.gps.sensors` | `nmea`, `fix` |
+| `valid` | true/false for `airspeed`, `altitude`, `vsi`, `static_pressure`, `differential_pressure`, `oat`, `attitude`, `heading`, `turn_rate`, `acceleration`, `gps_position` |
+| `data_lost` | true when a message group has stopped arriving (after the start-up grace): `air_data`, `raw_pressure`, `oat`, `attitude`, `acceleration`, `gps_position`, `gps_status` |
+| `heading_status` | `valid`, `suspect` (the heading is gyro-only because the magnetometer is lost), `gyro_seconds` (how long, or null) |
+| `system_state` | 1 when all three modules are present and OK, else 2 (also used for the 0x700 heartbeat) |
+
+   `valid` is true only if the message is recent **and** the module's sensors mask says the sensor works. It is a fact about the
+   data, not a style choice.
+4. **Values**: attitude and acceleration are set to `null` when invalid (as the old monitor did for attitude). Airspeed, altitude,
+   VSI, OAT, turn rate and GPS are only set to `null` when `NULL_INVALID_VALUES = True` in the server, which stays `False` until
+   the display copes with `null` (display step A); until then they keep their last value and `valid` says they cannot be trusted.
+5. **Heartbeat 0x700** from a new asyncio task (1 Hz), so it stops if the server stops (server step B).
+6. Markers in the data messages are decoded into `null` and `valid = false` (server step B).
+
+### 3. EFIS display (`efis-display.js`, `support/*.mjs`): decides and draws
+
+The page receives the facts above and owns every presentation choice.
+
+1. A reusable **failure flag** (the red X with its label) drawn over an instrument when its `valid` flag is false; the instrument
+   stops updating and hides its numbers, except the gyro-only heading, which stays visible and dimmed under the X until the page
+   decides to blank it (5 minutes, decision 1). Instruments: attitude indicator (also hides sky/ground), airspeed tape,
+   altimeter, VSI, heading ribbon/HSI, turn rate, OAT readout, GPS readouts. Look as in the approved mock-up.
+2. An **annunciator strip** at top centre, built by the page from the facts. Rules (the page may refine them):
+
+| Text | Level | Shown when |
+|---|---|---|
+| NO AIR DATA | warning (red) | `modules.air.missing` or `data_lost.air_data` |
+| PITOT | warning | AIR present and `sensors.pitot` is false |
+| STATIC | warning | AIR present and `sensors.static` is false |
+| OAT | caution (amber) | AIR present and (`sensors.oat` false or `data_lost.oat`) |
+| AOA | caution | AIR present and `sensors.aoa` false |
+| NO IMU | warning | `modules.imu.missing` or `data_lost.attitude` |
+| ATT FAIL | warning | IMU present and `sensors.gyro_accel` false |
+| HDG GYRO | caution | `heading_status.suspect` |
+| IMU NO CAL | caution | IMU present and `sensors.calibration` false |
+| GPS NO DATA | caution | `modules.gps.missing` or `data_lost.gps_status` or `sensors.nmea` false |
+| MODULE RESTARTED | caution | any module `restarted_age` below 8 s |
+
+   Warnings first, then cautions; a new entry flashes for 5 s then stays steady (decision 4); the page times the flash and
+   the restart caution itself. "No fix" is information only, not an annunciation.
+3. **Module status page** from the Menu (decision 5): the `modules` facts as a table.
 4. Replace the start-up defaults of 0 with "no data" (red X) until the first valid message arrives.
-5. Guard every `dataObject.x` use against `null` (several places pass `null` into drawing code today).
+5. Guard every `dataObject.x` use against `null`, and treat a stalled websocket (no message for about 1 s) as "everything invalid"
+   with its own message, because the server cannot report its own absence.
 - Development without hardware: `efis-test.js` / a fake websocket feed with each failure; then the real modules with
-  their fault-injection commands.
+  their fault-injection commands. The mock-up `docs/mockups/annunciator_mockup.html` holds the same rules in `evaluate()`.
 
 ### 4. Backup display (`CAN_Display/CAN_Feather`, `Display_Feather`)
 1. `CAN_Feather`: treat a marker as invalid; per-field validity instead of one bit per message (airspeed can fail while altitude
@@ -128,9 +163,12 @@ made (see "Decisions recorded" at the end); nothing is built yet. Start at step 
    the heartbeat notes brought up to date, and the new planned message 0x700 EFIS_HEARTBEAT. The generator (1.1.0) adds an
    "Invalid marker" column, a "Treated as lost after" row, and checks each marker fits its type. All magnitudes checked: no real value
    reaches 0x7FFF (largest real values: heading 3600, static pressure 11000, differential pressure under 7000, accel about 4000).
-2. **Server step A**: heartbeat handlers, module table, timeouts for every message, validity flags, annunciation list in the
-   JSON, sleep fix. Markers not used yet. Test: unplug each module's CAN cable and use the modules' fault commands; read the
-   JSON with a small websocket client; unit tests with fake frames.
+2. **Server step A** (built 2026-10-17, not yet deployed to the live EFIS): `module_status.py` + changes in `aio_server.py`:
+   heartbeat handlers, module table, timeouts for every message, `valid` / `data_lost` / `heading_status` facts in the JSON, sleep
+   fix. No display text, no markers yet. Tests: 28 unit tests of the facts (`EFIS/tests/test_module_status.py`, run anywhere) and 7
+   that run the real handlers and receive loop with a fake CAN reader (`test_server_glue.py`, run on the Pi with
+   `~/EFIS/venv/bin/python -m unittest discover -s tests`); `tests/live_check.py` listens read-only to the real bus. Still to do:
+   fault-inject the real modules while it listens, then deploy with `copytopiefis.sh` and restart `piefis`.
 3. **Display step A**: failure flags, annunciator strip, module status page, null guards, "no data" start-up. Test with the
    fake feed, then the Pi screen with the real modules.
 4. **Server step B**: decode markers; EFIS heartbeat 0x700.
@@ -195,3 +233,6 @@ each module can be rolled back by reflashing.
 - **10. EFIS heartbeat 0x700 (2026-10-17).** Same layout as the module heartbeats (module 0), with the mask bits: 0 AIR, 1 IMU, 2 GPS seen
   healthy by the EFIS, 3 a display client connected. State 1 all modules OK, 2 a module degraded or missing, 3 the EFIS cannot
   produce a display.
+- **11. Division of work (2026-10-17).** The server tracks the data and sends facts (module states, named sensor flags, `valid`,
+  `data_lost`, durations). The web page decides every presentation choice: wording, colours, order, flashing, how long a caution
+  stays up, when the gyro-only heading is blanked, and the layout. The server does not produce display text.

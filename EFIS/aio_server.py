@@ -1,7 +1,7 @@
 """ Asynchronous I/O based webserver to handle page and websocket"""
 # pyright: reportMissingImports=false
 
-VERSION = "1.0.1"
+VERSION = "1.1.0"
 
 import asyncio
 import json
@@ -16,6 +16,7 @@ import can #pylint: disable=import-error
 
 from enum import Enum
 from flightplan import FlightPlan, compute_navigation
+import module_status
 
 #import board #pylint: disable=import-error
 from adafruit_extended_bus import ExtendedI2C as I2C
@@ -63,6 +64,9 @@ class CAN_MSG_ID(Enum):
     MAGY = 0x82
     MAGZ = 0x83
     TIME_SYNC = 0x19
+    IMU_HEARTBEAT = 0x701
+    AIR_HEARTBEAT = 0x702
+    GPS_HEARTBEAT = 0x703
 
 # =============================================================================
 # HARDWARE CONFIGURATION
@@ -85,7 +89,15 @@ SEESAW_EXPECTED_PRODUCT_ID = 4991  # Expected product ID for seesaw encoder
 # =============================================================================
 # TIMEOUT AND RATE CONFIGURATION
 # =============================================================================
-MESSAGE_TIMEOUT = 0.2  # seconds
+# How long each CAN message may be missing before its data is treated as lost is in
+# module_status.DATA_TIMEOUTS (0.5 s for attitude and air data, 1.5 s OAT, 3.5 s GPS) and
+# module_status.HEARTBEAT_TIMEOUT (3 s, module missing).
+# While False, data that is invalid or timed out is only flagged in the JSON ("valid",
+# "data_lost"); the old fields keep their last value, so the current display (which cannot
+# handle null in most places) keeps working. Attitude and acceleration are cleared as before.
+# Set True once the display handles null/invalid values (display step A of MODULE_STATUS_PLAN.md).
+NULL_INVALID_VALUES = False
+STATUS_UPDATE_PERIOD = 0.1  # seconds between status evaluations
 JSON_UPDATE_RATE = 0.05  # seconds between JSON updates (20Hz = 50ms)
 
 # =============================================================================
@@ -155,6 +167,13 @@ class AvionicsData:
         self.tm_sec = None
         self.position = None
         self.pressed = None
+        # Module health and data validity (module_status.py, evaluated about every 0.1 s)
+        self.modules = None         # per module: present, missing, state, version, uptime, age, restarted_age, sensors
+        self.valid = None           # per instrument: True if the value can be trusted
+        self.data_lost = None       # per message group: True if it has stopped arriving
+        self.heading_status = None  # valid, suspect (gyro-only heading), gyro_seconds
+        self.system_state = None    # 1 all modules OK, 2 otherwise (for the EFIS heartbeat)
+        # The web page decides what to show (wording, colours, flashing) from these facts.
         # Navigation (computed from flight plan + GPS position)
         self.dtk = None         # desired track (degrees)
         self.bearing = None     # bearing to active waypoint (degrees)
@@ -168,6 +187,8 @@ class AvionicsData:
         self.direct_to_active = False  # True when Direct-To navigation is active
         # Internal (not serialized to JSON)
         self._flight_plan = None  # FlightPlan instance
+        self._status = module_status.StatusTracker(time.monotonic())  # heartbeats and validity
+        self._modules_ok_mask = 0  # bit 0 AIR, 1 IMU, 2 GPS seen healthy (for the EFIS heartbeat 0x700)
 
 # *****************************************************************************
 
@@ -669,7 +690,7 @@ async def process_ahrs_orient_message(msg, data, last_received_times):
         data.pitch = data.pitch / AHRS_SCALING_FACTOR
         data.roll = data.roll / AHRS_SCALING_FACTOR
         data.turn_rate = data.turn_rate / AHRS_SCALING_FACTOR
-        last_received_times[CAN_MSG_ID.AHRS_ORIENT.value] = time.time()
+        last_received_times[CAN_MSG_ID.AHRS_ORIENT.value] = time.monotonic()
         return True
     except struct.error as e:
         if DEBUG_CAN:
@@ -697,7 +718,7 @@ async def process_ahrs_accel_message(msg, data, last_received_times):
         (data.accx, data.accy, data.accz, data.calib) = (
             struct.unpack("<hhhh", msg.data)
         )
-        last_received_times[CAN_MSG_ID.AHRS_ACCEL.value] = time.time()
+        last_received_times[CAN_MSG_ID.AHRS_ACCEL.value] = time.monotonic()
         return True
     except struct.error as e:
         if DEBUG_CAN:
@@ -917,6 +938,13 @@ async def process_time_sync_message(msg, data, last_received_times):
             print(f"Error creating GPS datetime: {e}")
         return False
 
+async def process_heartbeat_message(msg, data, last_received_times):
+    """Process a module heartbeat (0x701 IMU, 0x702 AIR, 0x703 GPS).
+
+    The tracker keeps the state, sensors mask, version and uptime of each module.
+    Returns True if it was a valid heartbeat."""
+    return data._status.on_heartbeat(msg.arbitration_id, bytes(msg.data), time.monotonic())
+
 # -----------------------------------------------------------------------------
 # --- CAN Message Handler Dispatch Table                                      ---
 # -----------------------------------------------------------------------------
@@ -937,6 +965,9 @@ CAN_MESSAGE_HANDLERS = {
     CAN_MSG_ID.MAGY.value: process_magy_message,
     CAN_MSG_ID.MAGZ.value: process_magz_message,
     CAN_MSG_ID.TIME_SYNC.value: process_time_sync_message,
+    CAN_MSG_ID.IMU_HEARTBEAT.value: process_heartbeat_message,
+    CAN_MSG_ID.AIR_HEARTBEAT.value: process_heartbeat_message,
+    CAN_MSG_ID.GPS_HEARTBEAT.value: process_heartbeat_message,
 }
 
 # -----------------------------------------------------------------------------
@@ -980,7 +1011,7 @@ async def process_can_messages(reader, data, last_received_times):
                 # Update last received time for messages that don't update it themselves
                 # (AHRS_ORIENT and AHRS_ACCEL update it in their handlers)
                 if success and msg.arbitration_id not in [CAN_MSG_ID.AHRS_ORIENT.value, CAN_MSG_ID.AHRS_ACCEL.value]:
-                    last_received_times[msg.arbitration_id] = time.time()
+                    last_received_times[msg.arbitration_id] = time.monotonic()
             except Exception as e:
                 if DEBUG_CAN:
                     print(f"Error processing CAN message 0x{msg.arbitration_id:02X}: {e}")
@@ -990,34 +1021,71 @@ async def process_can_messages(reader, data, last_received_times):
         
         await asyncio.sleep(0)  # let another process run
     
-async def monitor_timeout(data, last_received_times):
-    """Monitor CAN message timeouts and clear stale data.
-    
+def update_status(data, last_received_times, now):
+    """Judge the module heartbeats and data freshness and store the result in `data`.
+
+    Fills data.modules, data.valid, data.data_lost, data.heading_status and data.system_state
+    with facts only; the web page decides how to show them. Attitude and acceleration are
+    cleared (None) when invalid, as the old timeout monitor did. Other values are cleared only
+    when NULL_INVALID_VALUES is True.
+    """
+    snapshot = data._status.evaluate(now, last_received_times)
+    valid = snapshot["valid"]
+
+    data.modules = snapshot["modules"]
+    data.valid = valid
+    data.data_lost = snapshot["data_lost"]
+    data.heading_status = snapshot["heading"]
+    data.system_state = snapshot["system_state"]
+    data._modules_ok_mask = snapshot["modules_ok_mask"]     # for the EFIS heartbeat, not sent to the page
+
+    if not valid["attitude"]:
+        data.pitch = None
+        data.roll = None
+    if not valid["heading"]:
+        data.yaw = None
+    if not valid["acceleration"]:
+        data.accx = None
+        data.accy = None
+        data.accz = None
+
+    if NULL_INVALID_VALUES:
+        if not valid["airspeed"]:
+            data.airspeed = None
+        if not valid["altitude"]:
+            data.altitude = None
+        if not valid["vsi"]:
+            data.vsi = None
+        if not valid["static_pressure"]:
+            data.static_pressure = None
+        if not valid["differential_pressure"]:
+            data.differential_pressure = None
+        if not valid["oat"]:
+            data.oat = None
+        if not valid["turn_rate"]:
+            data.turn_rate = None
+        if not valid["gps_position"]:
+            data.latitude = None
+            data.longitude = None
+            data.gps_speed = None
+            data.gps_altitude = None
+            data.true_track = None
+    return snapshot
+
+async def monitor_status(data, last_received_times):
+    """Evaluate module health and data freshness about every STATUS_UPDATE_PERIOD seconds.
+
+    Replaces the old monitor_timeout(), which only handled the AHRS messages and ran
+    without ever sleeping (ISSUES.md #2).
+
     Args:
         data: AvionicsData instance to update
         last_received_times: Dictionary mapping message IDs to last receive time
+            (time.monotonic())
     """
-    timeout = MESSAGE_TIMEOUT
-
     while True:
-
-        current_time = time.time()
-        for message_id in list(last_received_times.keys()):
-            if current_time - last_received_times[message_id] > timeout:
-                if message_id == CAN_MSG_ID.AHRS_ORIENT.value:
-                    if DEBUG_CAN:
-                        print(f"time.time function: {time.time}")
-                        print(f"current_time: {current_time}")
-                        print(f"last_received_times[{message_id}]: {last_received_times[message_id]}")
-                    data.yaw = None
-                    data.pitch = None
-                    data.roll = None
-                if message_id == CAN_MSG_ID.AHRS_ACCEL.value:
-                    data.accx = None
-                    data.accy = None
-                    data.accz = None
-                
-        await asyncio.sleep(0)  #let another process run
+        update_status(data, last_received_times, time.monotonic())
+        await asyncio.sleep(STATUS_UPDATE_PERIOD)
 
 # -----------------------------------------------------------------------------
 # --- Send regular updates to the client using json                         ---
@@ -1288,7 +1356,7 @@ async def main():
     # --- Create an instance of the AvionicsData class to store the data in
     # This object is used to store avionics data and is passed to:
     # - process_can_messages() to update data from CAN bus
-    # - monitor_timeout() to check for stale data
+    # - monitor_status() to check module heartbeats and stale data
     # - send_json() to send data to websocket clients
     # - read_input() to store encoder/button input
     # - web_socket_response.data to make data accessible to websocket handler
@@ -1347,7 +1415,7 @@ async def main():
     # Build the list of coroutines to run based on what's enabled
     coroutines = [
     #    process_can_messages(reader, avionics_data, last_received_times),
-        monitor_timeout(avionics_data, last_received_times),
+        monitor_status(avionics_data, last_received_times),
         send_json(web_socket_response, avionics_data),
         monitor_flight_plan(avionics_data),
     #    read_input(encoder, button, avionics_data)
