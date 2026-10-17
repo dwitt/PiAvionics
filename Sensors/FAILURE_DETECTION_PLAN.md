@@ -307,6 +307,11 @@ Fault-injection results (I2, I3 equivalents):
   and back; roll/pitch correct, yaw drift about 0.1 deg/s afterwards; when the magnetometer came back heading eased to the
   correct value over about 5 s without a jump.
 
-- Remaining for step 2: the real wing-pull test (I7) with this firmware.
+- **I7 repeat, IMU wing pulled live (IMU_AHRS 1.0.11):** detected about 1 s after the pull: heartbeat state 3, mask 04 (accel/gyro
+  and magnetometer bits clear). 0x48 / 0x49 stopped changing (attitude held at the last value instead of drifting, which was
+  the 1.0.4 failure). About 15 s later, when the wing was pushed back in, **the module rebooted** (uptime back to 2 s, USB
+  re-enumerated, came up normally with state 1 mask 07). So the live re-insertion itself resets the Feather (supply glitch or
+  contact bounce on the stacked pins); the re-initialisation path was therefore exercised only with `!z` / `!x`, not by a real
+  re-insertion.
 - (Done above:) act on getEvent() failure, detect the all-zero accel, mark gyro invalid, re-initialise the chip (begin and
   configure) about every 2 s while it is missing, and do not let the AHRS integrate stale gyro data.

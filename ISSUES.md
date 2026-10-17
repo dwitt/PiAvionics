@@ -80,6 +80,14 @@ Status: **Open**, **Monitoring** (fix applied, watching), **Fixed**.
 - Found while planning: the installed `Adafruit_LSM6DS` library has a local patch (a failed read
   returns false) kept outside the repo; the IMU sketch ignores the result; the LIS3MDL library
   does not check its read at all.
+- 2026-10-17 progress (details and test log in the plan): baseline unplug tests done. Root cause
+  of the AIR/GPS freeze when the CAN cable is pulled: no 120 ohm termination on their CAN boards, so
+  the stock MCP2515 library waited forever for an acknowledge. Step 1 done (bounded CAN send, patched
+  library in `Sensors/Libraries/Adafruit_MCP2515`; verified on all three modules). Step 2 done (IMU:
+  health tracking, chip re-initialisation, 6-axis AHRS without magnetometer, fault injection; verified
+  with injected faults and a real wing pull). Still to do: step 3 AIR (pressure drivers report read
+  failure, RTD range check, OAT filter reset), step 4 LED amber/red, step 5 GPS no-data test, then
+  recovery tests and the 0x7FFF markers with the EFIS pass.
 
 ## Monitoring
 

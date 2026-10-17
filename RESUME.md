@@ -2,31 +2,32 @@
 
 Tell Claude: "Read RESUME.md and carry on."
 
-## Where we are
-Sensor modules (Feather RP2040 on the Pi's CAN bus) are all flashed and committed:
-IMU_AHRS 1.0.4, AIR_Module 1.0.23, GPS_Module 1.0.3, ModuleInfo lib 1.1.0, StatusLED lib 1.1.0,
-protocol 0.1.2. Done this session: AIR zero offset, INT trace cut verified, pitot filter
-(change-driven + 0.12 hPa deadband), static pressure checked, vertical speed, CAN heartbeats
-0x701 IMU / 0x702 AIR / 0x703 GPS (1 Hz, state + sensors mask + uptime).
+## Where we are (updated 2026-10-17, later)
+Firmware on the boards: IMU_AHRS 1.0.11, AIR_Module 1.0.26, GPS_Module 1.0.4, ModuleInfo 1.3.0, StatusLED 1.1.0.
+Libraries in the repo with local patches: `Sensors/Libraries/Adafruit_LSM6DS` (failed read returns false) and
+`Sensors/Libraries/Adafruit_MCP2515` (bounded send); each has `PATCH_NOTES.md`. `flash_remote.sh` builds with them.
 
 ## Current task: module failure detection (ISSUES.md #13)
-Plan and test tables: `Sensors/FAILURE_DETECTION_PLAN.md`. Nothing is built yet. Next is
-Phase 1: baseline unplug tests on today's firmware, just watching what happens.
+Plan, decisions and the full test log: `Sensors/FAILURE_DETECTION_PLAN.md`.
+Build order (David approved): 1 bounded CAN send DONE (AIR, GPS, IMU all verified), 2 IMU DONE
+(health tracking, re-init, 6-axis, fault injection `!G !g !M !m !z !x` over USB serial, wing pull tested),
+3 AIR next (pressure drivers report read failure, RTD range check, OAT filter reset on recovery, test live
+unplugging of the pressure sensors in their sockets), 4 LED amber/red, 5 GPS no-data test.
+Then Phase 3/4 retests and recovery tests, and the 0x7FFF markers with the EFIS pass.
+Decisions: 0x7FFF markers held until the EFIS/backup display pass; amber = degraded, red = failed;
+IMU runs 6-axis if only the magnetometer fails.
+Findings: no CAN termination on AIR and GPS boards (IMU has it); live re-insertion of the IMU wing
+reboots the module; a Pi tty with echo on feeds the module's own report back to it (use `stty raw -echo`).
+Open: FAULT_INJECT is on in IMU_AHRS (decide at the end); EFLG 0x40 (RX0OVR) set even when healthy;
+symlink ~/Documents/Arduino/libraries copies of Adafruit_LSM6DS to the repo copies (asked, unanswered).
 
 Watch the bus from the Pi:
 `ssh david@pi-efis.local` then
 `candump -ta can0,701:7FF,702:7FF,703:7FF,48:7FF,28:7FF,2A:7FF,65:7FF`
+Status query: `stty -F <port> 115200 raw -echo hupcl`, write `?`, read.
 
-## Questions David has not answered yet
-1. Which parts are on connectors in each module (RTD probe, MAX31865 board, EEPROM, GPS antenna,
-   GPS wing, CAN cable, IMU wing)? Decides hot vs cold tests and what needs fault injection.
-2. Invalid data: send 0x7FFF in the affected field (suggested) or stop sending the frame?
-3. LED: amber = degraded, red = failed?
-4. IMU keeps running as 6-axis AHRS if only the magnetometer fails (suggested)?
-5. Copy the patched `Adafruit_LSM6DS` (in ~/Documents/Arduino/libraries) into `Sensors/Libraries/`?
-
-Safety: do not hot-unplug stacked wings on a powered module. Cables, probes and antennas only;
-wings get a cold test.
+Safety: stacked wings are not hot-unplugged except where David chooses to (he pulled the IMU wing live twice).
+Cables, probes and antennas are fine. AIR pressure sensors share the Wire bus: pulling them live risks a stuck bus.
 
 ## Not done / later
 - EFIS side: handle heartbeats in aio_server.py, display, EFIS heartbeat 0x700, together with
