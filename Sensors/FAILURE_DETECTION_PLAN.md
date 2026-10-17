@@ -234,5 +234,15 @@ detect, time to recover, notes.)
 - So the modules really differ. Same send code and library, so the cause is something in setup or hardware (CAN chip
   state, wing, termination?). Plan: when the bounded send is built, also log the MCP2515 error flags and counters
   (EFLG, TEC) on timeout in the `?` report on each module and compare. Not needed to proceed.
+
+**Cause found: bus termination (David's observation, tested 2026-10-17)**
+- The IMU's CAN board has the 120 ohm end-of-bus resistor fitted; the AIR module's does not.
+- AIR module, cable pulled: LED stuck blue (frozen in the send). With a 120 ohm resistor connected across CANH/CANL (cable
+  still out) the LED went green, i.e. the send completed and the module ran. Repeated several times, same result; cable
+  then reconnected. (David reported this as "the imu"; the blue marker only exists in the AIR build, so I take it as AIR.)
+- Conclusion: a node alone on an UNTERMINATED bus freezes in `endPacket()`; with termination the chip raises its error
+  flag and the library aborts. In the aircraft only the two ends of the bus are terminated, so any middle module whose
+  connector or wire fails ends up in exactly this state. The bounded send is therefore needed on every module regardless.
+- The same applies to a module whose neighbours on both sides are lost; test the fix with the resistor removed.
 - Needed: act on getEvent() failure, detect the all-zero accel, mark gyro invalid, re-initialise the chip (begin and
   configure) about every 2 s while it is missing, and do not let the AHRS integrate stale gyro data.
