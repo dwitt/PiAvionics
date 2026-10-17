@@ -17,7 +17,7 @@
 #include "XYZgeomag.hpp"         // WMM2025 magnetic declination (nhz2/XYZgeomag)
 #include <ModuleInfo.h>        // USB product name, startup log and '?' report
 
-#define VERSION "1.0.2"
+#define VERSION "1.0.3"
 
 ModuleInfo moduleInfo("GPS_Module", VERSION, __DATE__, __TIME__);
 
@@ -166,6 +166,53 @@ void serialPrintCANMsg(uint16_t id, uint8_t *data, uint8_t len) {
 
 static unsigned long lastValidNmea = 0;
 
+// ----------------------------------------------------------------------------
+// CAN heartbeat (Protocol/can_messages.yaml, 0x703). Sent every second with the
+// module version, state and a sensors mask: bit 0 = valid NMEA arriving from the
+// GPS chip, bit 1 = the GPS has a position fix. No fix is not a fault: the state
+// is OK while NMEA is arriving and DEGRADED when the GPS has been silent.
+//
+// lastRealNmea is the time of the last valid sentence. Unlike lastValidNmea it is
+// not reset by the watchdog after a retry, so it says what the GPS really did.
+// ----------------------------------------------------------------------------
+#define HB_NMEA  0x01
+#define HB_FIX   0x02
+
+static unsigned long lastRealNmea = 0;
+static bool realNmeaSeen = false;
+static bool canUp = false;        // heartbeat is only sent once the CAN bus is running
+static bool setupDone = false;    // state is STARTING until setup() has finished
+
+static void noteValidNmea() {
+  lastRealNmea = millis();
+  realNmeaSeen = true;
+}
+
+static void sendHeartbeat() {
+  if (!canUp || !moduleInfo.heartbeatDue()) return;
+
+  bool nmeaOk = realNmeaSeen && (millis() - lastRealNmea < GPS_SILENCE_MS);
+  bool hasFix = nmeaOk && gps.fixquality > 0;
+  uint8_t mask = (nmeaOk ? HB_NMEA : 0) | (hasFix ? HB_FIX : 0);
+  uint8_t state = !setupDone ? MODULE_STATE_STARTING
+                : nmeaOk     ? MODULE_STATE_OK
+                             : MODULE_STATE_DEGRADED;
+  moduleInfo.setHealth(state, mask);
+
+  uint8_t frame[8];
+  moduleInfo.packHeartbeat(frame);
+  can.beginPacket(moduleInfo.heartbeatId());
+  can.write(frame, 8);
+  can.endPacket();
+}
+
+// Report on USB connect or '?', and send the heartbeat. Also called while the GPS
+// is being probed (a few seconds), so the heartbeat does not stop during a retry.
+static void gpsService() {
+  moduleInfo.service();
+  sendHeartbeat();
+}
+
 // True if the sentence starts with '$' and its *XX checksum is correct
 static bool gpsNmeaValid(const char *nmea) {
   if (!nmea || nmea[0] != '$') return false;
@@ -183,12 +230,13 @@ static bool gpsNmeaValid(const char *nmea) {
 static bool gpsWaitForNMEA(uint32_t timeoutMs) {
   uint32_t start = millis();
   while (millis() - start < timeoutMs) {
+    gpsService();
     while (Serial1.available()) gps.read();
     if (gps.newNMEAreceived()) {
       const char *nmea = gps.lastNMEA();
       bool ok = gpsNmeaValid(nmea);
       if (ok) gps.parse((char *)nmea);
-      if (ok) return true;
+      if (ok) { noteValidNmea(); return true; }
     }
   }
   return false;
@@ -259,17 +307,11 @@ void setup() {
 
   bool gps_success, can_success;
 
-  // --------------------------------------------------------------------------
-  // Connect to the GPS module
-  // Probe for the GPS baud rate, switch it to 115200, then configure it
-  // --------------------------------------------------------------------------
-
-  gps_success = gpsInit(GPS_INIT_ATTEMPTS);
-  lastValidNmea = millis();
-  moduleInfo.log(gps_success ? "GPS OK (NMEA at 115200)" : "GPS not responding (loop() keeps retrying)");
+  moduleInfo.setModuleNumber(MODULE_NUM_GPS);
+  moduleInfo.setHealth(MODULE_STATE_STARTING, 0);
 
   // --------------------------------------------------------------------------
-  // Connect to the CAN Bus
+  // Connect to the CAN Bus - before the GPS, so the heartbeat can run while the GPS is probed
   // --------------------------------------------------------------------------
 
   #if defined(DEBUG_NO_CAN)
@@ -282,6 +324,19 @@ void setup() {
   #endif
 
   moduleInfo.log(can_success ? "CAN bus OK" : "CAN bus init FAILED");
+  #if !defined(DEBUG_NO_CAN)
+  canUp = can_success;      // with DEBUG_NO_CAN there is no CAN to send the heartbeat on
+  #endif
+
+
+  // --------------------------------------------------------------------------
+  // Connect to the GPS module
+  // Probe for the GPS baud rate, switch it to 115200, then configure it
+  // --------------------------------------------------------------------------
+
+  gps_success = gpsInit(GPS_INIT_ATTEMPTS);
+  lastValidNmea = millis();
+  moduleInfo.log(gps_success ? "GPS OK (NMEA at 115200)" : "GPS not responding (loop() keeps retrying)");
 
   // --------------------------------------------------------------------------
   // Go / No-Go decision
@@ -292,6 +347,7 @@ void setup() {
     pixel.setPixelColor(0, gps_success ? pixel.Color(0, 255, 0)
                                        : pixel.Color(255, 80, 0));
     pixel.show();
+    setupDone = true;
   } else {
     // Flash red LED to indicate failure
     moduleInfo.fatal("Startup failed");
@@ -319,7 +375,7 @@ void setup() {
 
 void loop() {
 
-  moduleInfo.service();   // report on USB connect or '?'
+  gpsService();   // report on USB connect or '?', and the CAN heartbeat
 
   // --------------------------------------------------------------------------
   // Define variables
@@ -367,7 +423,10 @@ void loop() {
       Serial.print(gps.lastNMEA());
     }
     #endif
-    if (gpsNmeaValid(gps.lastNMEA())) lastValidNmea = millis();
+    if (gpsNmeaValid(gps.lastNMEA())) {
+      lastValidNmea = millis();
+      noteValidNmea();
+    }
     gps.parse(gps.lastNMEA());
     #if defined(DEBUG)
     if (printNmea && Serial) {
