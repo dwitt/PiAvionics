@@ -209,5 +209,12 @@ detect, time to recover, notes.)
 - Reconnected: frames resumed about 1 s after plugging in (55.9 s gap), no burst of buffered frames, heartbeat uptime
   continuous (142 s, no reset), attitude sensible (yaw 348 deg), no error frames. No power cycle needed.
 - Still needed on both: show the CAN problem (LED amber/red, `?` report) instead of looking healthy.
+
+**C1/C2 repeat, AIR module CAN cable pulled 3 more times** (poller sent `?` every 2 s; bus gaps compared)
+- Pull 1: bus silent 14.0 to 25.4 s, `?` unanswered 16 to 24 s. Pull 2: silent 30.7 to 42.0 s, unanswered 32 to 40 s.
+  Pull 3: silent 46.8 to 56.9 s, unanswered 48 to 54 s. **Froze all three times** and recovered by itself each time when the
+  cable went back in (about 1 s). Uptime continuous (no resets). David varied when he pulled.
+- So the AIR freeze is reproducible; the idea that the IMU differed only because it was pulled between frames is not
+  supported by the AIR side (3 of 3 froze). The IMU has only been pulled once; repeat to see if it ever freezes.
 - Needed: act on getEvent() failure, detect the all-zero accel, mark gyro invalid, re-initialise the chip (begin and
   configure) about every 2 s while it is missing, and do not let the AHRS integrate stale gyro data.
