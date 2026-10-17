@@ -85,9 +85,8 @@ Status: **Open**, **Monitoring** (fix applied, watching), **Fixed**.
   the stock MCP2515 library waited forever for an acknowledge. Step 1 done (bounded CAN send, patched
   library in `Sensors/Libraries/Adafruit_MCP2515`; verified on all three modules). Step 2 done (IMU:
   health tracking, chip re-initialisation, 6-axis AHRS without magnetometer, fault injection; verified
-  with injected faults and a real wing pull). Still to do: step 3 AIR (pressure drivers report read
-  failure, RTD range check, OAT filter reset), step 4 LED amber/red, step 5 GPS no-data test, then
-  recovery tests and the 0x7FFF markers with the EFIS pass.
+  with injected faults and a real wing pull). Steps 3 (AIR), 4 (status LED) and 5 (GPS no-data path) also done and tested. Still to do: full retest against the
+  plan tables and recovery tests, then the 0x7FFF invalid-data markers with the EFIS pass.
 
 ## Monitoring
 

@@ -2,24 +2,25 @@
 
 Tell Claude: "Read RESUME.md and carry on."
 
-## Where we are (updated 2026-10-17, later)
-Firmware on the boards: IMU_AHRS 1.0.11, AIR_Module 1.0.26, GPS_Module 1.0.4, ModuleInfo 1.3.0, StatusLED 1.1.0.
+## Where we are (updated 2026-10-17, end of build phase)
+Firmware on the boards: IMU_AHRS 1.0.14, AIR_Module 1.0.29, GPS_Module 1.0.7, ModuleInfo 1.3.0, StatusLED 1.2.0,
+SensorHealth 1.0.0 (new shared library), MS4525DO 1.1.0 and SSC 1.1.0 (checked reads).
 Libraries in the repo with local patches: `Sensors/Libraries/Adafruit_LSM6DS` (failed read returns false) and
-`Sensors/Libraries/Adafruit_MCP2515` (bounded send); each has `PATCH_NOTES.md`. `flash_remote.sh` builds with them.
+`Sensors/Libraries/Adafruit_MCP2515` (bounded send, txFault()); each has `PATCH_NOTES.md`. `flash_remote.sh` builds with them.
 
 ## Current task: module failure detection (ISSUES.md #13)
 Plan, decisions and the full test log: `Sensors/FAILURE_DETECTION_PLAN.md`.
-Build order (David approved): 1 bounded CAN send DONE (AIR, GPS, IMU all verified), 2 IMU DONE
-(health tracking, re-init, 6-axis, fault injection `!G !g !M !m !z !x` over USB serial, wing pull tested),
-3 AIR next (pressure drivers report read failure, RTD range check, OAT filter reset on recovery, test live
-unplugging of the pressure sensors in their sockets), 4 LED amber/red, 5 GPS no-data test.
-Then Phase 3/4 retests and recovery tests, and the 0x7FFF markers with the EFIS pass.
-Decisions: 0x7FFF markers held until the EFIS/backup display pass; amber = degraded, red = failed;
-IMU runs 6-axis if only the magnetometer fails.
-Findings: no CAN termination on AIR and GPS boards (IMU has it); live re-insertion of the IMU wing
-reboots the module; a Pi tty with echo on feeds the module's own report back to it (use `stty raw -echo`).
-Open: FAULT_INJECT is on in IMU_AHRS (decide at the end); EFLG 0x40 (RX0OVR) set even when healthy;
-symlink ~/Documents/Arduino/libraries copies of Adafruit_LSM6DS to the repo copies (asked, unanswered).
+Phase 2 build steps 1 to 5 are DONE and tested: bounded CAN send; IMU health/re-init/6-axis; AIR checked pressure reads, health,
+tolerant start-up, OAT range check; status LED (green OK, amber degraded, red failed or CAN fault); GPS no-data path.
+Fault injection over USB serial (`FAULT_INJECT 1` in each sketch, commands start with `!`): IMU `!G/!g` accel-gyro, `!M/!m` mag,
+`!z` `!x` chip resets; AIR `!P/!p` pitot, `!A/!a` AOA, `!S/!s` static, `!O/!o` OAT; GPS `!N/!n` silence.
+Remaining: Phase 3 full retest against the plan tables, Phase 4 recovery tests, Phase 5 any leftover fault injection; then the
+0x7FFF invalid-data markers together with the EFIS pass (handle heartbeats in aio_server.py, backup display, EFIS heartbeat 0x700).
+Findings: no CAN termination on AIR and GPS boards (IMU has it); live re-insertion of the IMU wing reboots the module; a Pi tty with
+echo on feeds the module's own report back to it (use `stty raw -echo`; keep the port open while sending test commands).
+Open: decide FAULT_INJECT 1 or 0 for the flight build; EFLG 0x40 (RX0OVR) set even when healthy; symlink the
+~/Documents/Arduino/libraries copies of Adafruit_LSM6DS (and MCP2515) to the repo copies (asked, unanswered); IMU/GPS/AIR hot-plug of
+a sensor into a running module not tested; stuck I2C bus (SDA held low) recovery on the AIR Wire bus not built.
 
 Watch the bus from the Pi:
 `ssh david@pi-efis.local` then
