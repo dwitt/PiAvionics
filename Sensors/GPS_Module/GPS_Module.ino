@@ -12,12 +12,12 @@
  *****************************************************************************/
 
 #include <Adafruit_GPS.h>        // Adafruit GPS NMEA parsing library
-#include <Adafruit_MCP2515.h>    // for CAN Bus FeatherWing
-#include <StatusLED.h>          // status LED: startup colours and runtime heartbeat
+#include "src/Adafruit_MCP2515/src/Adafruit_MCP2515.h"    // for CAN Bus FeatherWing
+#include "src/StatusLED/StatusLED.h"          // status LED: startup colours and runtime heartbeat
 #include "XYZgeomag.hpp"         // WMM2025 magnetic declination (nhz2/XYZgeomag)
-#include <ModuleInfo.h>        // USB product name, startup log and '?' report
+#include "src/ModuleInfo/ModuleInfo.h"        // USB product name, startup log and '?' report
 
-#define VERSION "1.0.7"
+#define VERSION "1.0.8"
 
 ModuleInfo moduleInfo("GPS_Module", VERSION, __DATE__, __TIME__);
 

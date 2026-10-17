@@ -107,7 +107,7 @@ Build verbosely and look for the library path:
 
 It should say version 4.7.4 and name the folder that contains this patch. A quick source check:
 
-    grep -c "LOCAL PATCH" ~/Documents/Arduino/libraries/Adafruit_LSM6DS/Adafruit_LSM6DS.cpp
+    grep -c "LOCAL PATCH" Sensors/Libraries/Adafruit_LSM6DS/Adafruit_LSM6DS.cpp
 
 (should be 7 or more). Any sketch that references `Adafruit_LSM6DS::readFailures` (the Ride
 G-Force logger does) will fail to link against an unpatched library, which is an automatic guard.
@@ -122,6 +122,7 @@ G-Force logger does) will fail to link against an unpatched library, which is an
 
 ## Where the live copy is
 
-The Arduino IDE and `arduino-cli` build against `~/Documents/Arduino/libraries/Adafruit_LSM6DS`.
-This folder is the version-controlled copy; keep the two identical (or make the Arduino one a
-symlink to this folder, as is done for `StatusLED`).
+This folder is the only copy the PiAvionics sketches use: `IMU_AHRS/src/Adafruit_LSM6DS` is a symlink to it
+(see `Sensors/Libraries/README.md`), so it builds the same in the Arduino IDE, arduino-cli and `flash_remote.sh`.
+A separate copy in `~/Documents/Arduino/libraries/Adafruit_LSM6DS` (identical when this was written) is used only by
+the Ride G-Force logger; it is not linked to this one.

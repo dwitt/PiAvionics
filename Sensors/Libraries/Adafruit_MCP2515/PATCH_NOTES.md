@@ -1,9 +1,10 @@
 # Local patch to Adafruit_MCP2515 0.2.1: bounded transmit
 
-**This is a locally modified copy of the Adafruit library.** The firmware builds use it because
-`flash_remote.sh` (and the `arduino-cli compile --libraries Sensors/Libraries` command) put this folder ahead
-of the copy in `~/Documents/Arduino/libraries`. The Arduino IDE does not; it would build against the stock
-library (the sketches then fail to compile, because they call the new functions below, which is a useful guard).
+**This is a locally modified copy of the Adafruit library.** Each sketch has a symlink to this folder
+(`<Sketch>/src/Adafruit_MCP2515 -> ../../Libraries/Adafruit_MCP2515`) and includes it as
+`#include "src/Adafruit_MCP2515/src/Adafruit_MCP2515.h"`, so the Arduino IDE, arduino-cli and `flash_remote.sh` all
+build the patched code (see `Sensors/Libraries/README.md`). A stock copy in `~/Documents/Arduino/libraries` is not used
+by these sketches and does not matter to them.
 
 Upstream: https://github.com/adafruit/Adafruit_MCP2515 (MIT licence, from Sandeep Mistry's arduino-CAN).
 Base version 0.2.1. Patched 2026-10-17. Unmodified originals: `src/*.orig`. Diff: `local_patch.diff`.

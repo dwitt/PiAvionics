@@ -153,7 +153,7 @@ Status 2026-10-17:
 4. IMU keeps running as a 6-axis AHRS if only the magnetometer fails.
 5. Patched `Adafruit_LSM6DS` is now in `Sensors/Libraries/Adafruit_LSM6DS/` with `PATCH_NOTES.md`
    (why, history, what it does and does not catch, how to re-apply) and `local_patch.diff`.
-   Open: make the Arduino libraries copy a symlink to it, as for `StatusLED`.
+   Resolved 2026-10-17: the sketches now use the repo copy through `src/` symlinks (see `Sensors/Libraries/README.md`).
 
 ## Test log
 
@@ -425,3 +425,16 @@ faults are held in RAM only and clear on a power cycle; and the `?` report shows
 - Harmless: the overflow lost no QNH data that mattered and does not change the error counters or the transmit side.
 - IMU and GPS still show 0x40: they never filter or read frames, so their buffers are always full and the flag is permanent. That is
   expected and harmless until they get a receive path (command messages, ISSUES #9); then give them the same filter + drain + clear.
+
+### 2026-10-17: shared libraries moved into each sketch's src/ (IMU_AHRS 1.0.15, AIR_Module 1.0.33, GPS_Module 1.0.8)
+
+- Problem: the Arduino IDE could not build the sketches (ModuleInfo, SensorHealth and the patched libraries were only found by
+  `flash_remote.sh --libraries`), and symlinking them into `~/Documents/Arduino/libraries` is dangerous: tested with
+  `arduino-cli lib upgrade`, an upgrade of a symlinked library that exists in the public index deletes the folder the link points to.
+- Fix: each sketch has `src/<Library> -> ../../Libraries/<Library>` (relative symlinks) and includes with quotes
+  (`#include "src/ModuleInfo/ModuleInfo.h"`). The IDE/arduino-cli compile `src/` with the sketch, so no Arduino-folder setup is
+  needed and Library Manager cannot touch these copies. Built with and without `--libraries`: identical sizes (IMU 90200, GPS 87468,
+  AIR 84196 bytes). All three flashed through `flash_remote.sh` and healthy afterwards (AIR EFLG 0x0).
+- Removed a stray tracked symlink `Sensors/Libraries/StatusLED/StatusLED` that pointed at its own folder (committed in April); it made
+  the sketch scan fail with "directories symlink loop detected".
+- New files: `Sensors/Libraries/README.md` (how it works), `Sensors/Libraries/LIBRARIES.md` (third-party libraries and versions).

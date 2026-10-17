@@ -12,10 +12,10 @@
  * Adafruit 24LC32 I2C EEPROM
  *****************************************************************************/
 
-#include <ModuleInfo.h>		// USB product name, startup log and '?' report
-#include <SensorHealth.h>	// valid / invalid decision for each sensor
-#include <Adafruit_ISM330DHCX.h>	// Only for ISM330DHCX
-#include <Adafruit_LSM6DS.h>		// I2C Driver base for Adafruit LSM6DSxx sensors
+#include "src/ModuleInfo/ModuleInfo.h"		// USB product name, startup log and '?' report
+#include "src/SensorHealth/SensorHealth.h"	// valid / invalid decision for each sensor
+#include "src/Adafruit_LSM6DS/Adafruit_ISM330DHCX.h"	// Only for ISM330DHCX
+#include "src/Adafruit_LSM6DS/Adafruit_LSM6DS.h"		// I2C Driver base for Adafruit LSM6DSxx sensors
 
 // Remove the following includes once the the code is running.
 //#include <Adafruit_LSM6DS3.h>			// Only for LSM6DS3
@@ -26,7 +26,7 @@
 //#include <Adafruit_LSM6DSOX.h>    	// Only for LSMDSOX
 
 #include <Adafruit_LIS3MDL.h>		// For Magnetometer
-#include <Adafruit_MCP2515.h>		// For CAN Bus FeatherWing
+#include "src/Adafruit_MCP2515/src/Adafruit_MCP2515.h"		// For CAN Bus FeatherWing
 #include <Adafruit_EEPROM_I2C.h>	// EEPROM to hold calibration data
 
 /*****************************************************************************
@@ -48,12 +48,12 @@
 // Status LED for startup diagnostics and runtime heartbeat
 // See Sensors/Libraries/StatusLED/StatusLED.md for full specification
 // ---------------------------------------------------------------------------
-#include <StatusLED.h>
+#include "src/StatusLED/StatusLED.h"
 
 /*****************************************************************************
  * Firmware version - increment the patch number on every change
  *****************************************************************************/
-#define VERSION "1.0.14"
+#define VERSION "1.0.15"
 
 ModuleInfo moduleInfo("IMU_AHRS", VERSION, __DATE__, __TIME__);
 

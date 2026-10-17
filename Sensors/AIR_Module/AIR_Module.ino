@@ -12,8 +12,8 @@
  *****************************************************************************/
 
 #include <Wire.h>               // I2C library
-#include <Adafruit_MCP2515.h>   // for CAN bus FeatherWing
-#include <StatusLED.h>         // status LED: startup colours and runtime heartbeat
+#include "src/Adafruit_MCP2515/src/Adafruit_MCP2515.h"   // for CAN bus FeatherWing
+#include "src/StatusLED/StatusLED.h"         // status LED: startup colours and runtime heartbeat
 #include <Adafruit_MAX31865.h>  // for MAX31865 RTD temperature sensor
 #include "MS4525DO.h"           // MS4525DO Sensor Library
 #include "SSC.h"                // SSC Sensor Library
@@ -24,13 +24,13 @@
 #include "RollingAverageFilter.h" // Rolling Average Filter Library
 #include "SmoothDeadband.h"      // Smooth Deadband Library
 #include "DeadbandFilter.h"      // Deadband Filter Library
-#include <ModuleInfo.h>        // USB product name, startup log and '?' report
-#include <SensorHealth.h>      // valid / invalid decision for each sensor
+#include "src/ModuleInfo/ModuleInfo.h"        // USB product name, startup log and '?' report
+#include "src/SensorHealth/SensorHealth.h"      // valid / invalid decision for each sensor
 
 /*****************************************************************************
  * Firmware version - increment the patch number on every change
  *****************************************************************************/
-#define VERSION "1.0.32"
+#define VERSION "1.0.33"
 
 // Set to 0 to run without the AOA sensor (Wire1, GPIO8/9). With 0, Wire1 is not
 // touched at all and a missing AOA sensor does not stop startup.

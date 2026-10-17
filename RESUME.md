@@ -3,9 +3,9 @@
 Tell Claude: "Read RESUME.md and carry on."
 
 ## Where we are (updated 2026-10-17, end of build phase)
-Firmware on the boards: IMU_AHRS 1.0.14, AIR_Module 1.0.29, GPS_Module 1.0.7, ModuleInfo 1.3.0, StatusLED 1.2.0,
+Firmware on the boards: IMU_AHRS 1.0.15, AIR_Module 1.0.33, GPS_Module 1.0.8, ModuleInfo 1.3.0, StatusLED 1.2.0,
 SensorHealth 1.0.0 (new shared library), MS4525DO 1.1.0 and SSC 1.1.0 (checked reads).
-Libraries in the repo with local patches: `Sensors/Libraries/Adafruit_LSM6DS` (failed read returns false) and
+Shared libraries are in `Sensors/Libraries/` and reach each sketch through relative symlinks in `<Sketch>/src/` (see `Sensors/Libraries/README.md`; third-party versions in `LIBRARIES.md`); the Arduino IDE 2.3.5 builds them without setup. Libraries in the repo with local patches: `Sensors/Libraries/Adafruit_LSM6DS` (failed read returns false) and
 `Sensors/Libraries/Adafruit_MCP2515` (bounded send, txFault()); each has `PATCH_NOTES.md`. `flash_remote.sh` builds with them.
 
 ## Current task: module failure detection (ISSUES.md #13)
@@ -18,8 +18,7 @@ Remaining: Phase 3 full retest against the plan tables, Phase 4 recovery tests, 
 0x7FFF invalid-data markers together with the EFIS pass (handle heartbeats in aio_server.py, backup display, EFIS heartbeat 0x700).
 Findings: no CAN termination on AIR and GPS boards (IMU has it); live re-insertion of the IMU wing reboots the module; a Pi tty with
 echo on feeds the module's own report back to it (use `stty raw -echo`; keep the port open while sending test commands).
-Decided: FAULT_INJECT stays 1 in the flight build (no USB in the aircraft, faults are RAM only; see the plan). Open: EFLG 0x40 (RX0OVR) set even when healthy; symlink the
-~/Documents/Arduino/libraries copies of Adafruit_LSM6DS (and MCP2515) to the repo copies (asked, unanswered); IMU/GPS/AIR hot-plug of
+Decided: FAULT_INJECT stays 1 in the flight build (no USB in the aircraft, faults are RAM only; see the plan). Open: EFLG 0x40 (RX0OVR) set even when healthy; IMU/GPS/AIR hot-plug of
 a sensor into a running module not tested; stuck I2C bus (SDA held low) recovery on the AIR Wire bus not built.
 
 Watch the bus from the Pi:
