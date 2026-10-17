@@ -5,7 +5,7 @@ Tell Claude: "Read RESUME.md and carry on."
 ## Where we are (updated 2026-10-17, end of build phase)
 Firmware on the boards: IMU_AHRS 1.0.15, AIR_Module 1.0.33, GPS_Module 1.0.8, ModuleInfo 1.3.0, StatusLED 1.2.0,
 SensorHealth 1.0.0 (new shared library), MS4525DO 1.1.0 and SSC 1.1.0 (checked reads).
-Shared libraries are in `Sensors/Libraries/` and reach each sketch through relative symlinks in `<Sketch>/src/` (see `Sensors/Libraries/README.md`; third-party versions in `LIBRARIES.md`); the Arduino IDE 2.3.5 builds them without setup. Libraries in the repo with local patches: `Sensors/Libraries/Adafruit_LSM6DS` (failed read returns false) and
+Shared libraries are in `Sensors/Libraries/` and reach each sketch through relative symlinks in `<Sketch>/src/` (see `Sensors/Libraries/README.md`; third-party versions in `LIBRARIES.md`); the Arduino IDE 2.3.5 builds them without setup (verified by David with IMU_AHRS). Libraries in the repo with local patches: `Sensors/Libraries/Adafruit_LSM6DS` (failed read returns false) and
 `Sensors/Libraries/Adafruit_MCP2515` (bounded send, txFault()); each has `PATCH_NOTES.md`. `flash_remote.sh` builds with them.
 
 ## Current task: module failure detection (ISSUES.md #13)

@@ -438,3 +438,4 @@ faults are held in RAM only and clear on a power cycle; and the `?` report shows
 - Removed a stray tracked symlink `Sensors/Libraries/StatusLED/StatusLED` that pointed at its own folder (committed in April); it made
   the sketch scan fail with "directories symlink loop detected".
 - New files: `Sensors/Libraries/README.md` (how it works), `Sensors/Libraries/LIBRARIES.md` (third-party libraries and versions).
+- David verified the layout in the Arduino IDE 2.3.5: IMU_AHRS compiled with no library setup (2026-10-17).
