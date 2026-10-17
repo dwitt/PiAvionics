@@ -344,3 +344,11 @@ Fault-injection results (5 s fault each):
   the new reading), vertical speed 0 then 50 fpm for a moment.
 - AOA: state 2 mask 0D, back to 0F.
 - OAT: state 2 mask 07 after 2 s, no 0x2A frames during the fault, back to state 1 mask 0F and OAT frames about 1 s after clearing.
+
+**A1 / A1b / A1c / A2 repeat on AIR_Module 1.0.27 (RTD- wire, RTD+ wire, third wire, MAX31865 board pulled live, one after the other)**
+- All four detected: heartbeat state 2, mask 07 about 2 s after the pull (8 bad samples at 4 Hz). The 0x2A OAT frames stopped
+  during every pull (gaps of 2 to 6 s). Phase 1 had kept sending the last good value forever and then garbage on reconnect.
+- After reconnecting, state 1 mask 0F and OAT frames resumed within about 1 to 2 s at the correct value (22.8 C); no reconnect
+  spikes (previously the filter passed a wild reading; the range check and the filter restart handle it).
+- The pulls were shorter than asked (2 to 6 s). The `?` report afterwards: OAT lost 6x (start-up 1, earlier injection 1, these 4),
+  last problem "no reading (board missing?)", 71 samples dropped.
