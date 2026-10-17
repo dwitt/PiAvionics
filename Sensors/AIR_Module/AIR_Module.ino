@@ -29,11 +29,13 @@
 /*****************************************************************************
  * Firmware version - increment the patch number on every change
  *****************************************************************************/
-#define VERSION "1.0.10"
+#define VERSION "1.0.12"
 
 // Set to 0 to run without the AOA sensor (Wire1, GPIO8/9). With 0, Wire1 is not
 // touched at all and a missing AOA sensor does not stop startup.
 #define AOA_ENABLED 1
+#define CAN_INT_WORKAROUND 1   // 1 = clear MCP2515 CANINTE at start-up. Not needed with the INT trace cut (tested
+                               // 2026-10-17), kept as a safety net for a wing whose INT trace is not cut.
 
 ModuleInfo moduleInfo("AIR_Module", VERSION, __DATE__, __TIME__);
 
@@ -450,8 +452,10 @@ void setup() {
   // --------------------------------------------------------------------------
 
   bool can_success = can.begin(CAN_BAUDRATE);
+  #if CAN_INT_WORKAROUND
   canDisableInterruptOutput();
-  moduleInfo.log(can_success ? "CAN bus OK (INT output off)" : "CAN bus (MCP2515) NOT FOUND");
+  #endif
+  moduleInfo.log(can_success ? "CAN bus OK" : "CAN bus (MCP2515) NOT FOUND");
 
   bool ms4525do_pitot_success, ms4525do_aoa_success, ssc_success;
 

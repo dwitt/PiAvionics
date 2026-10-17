@@ -65,24 +65,6 @@ Status: **Open**, **Monitoring** (fix applied, watching), **Fixed**.
 - First step when picked up: draft the protocol in `CAN Reference/Can Docs.md` for
   review before any firmware changes.
 
-### 10. AIR module: cut the INT trace on the CAN FeatherWing
-- Found 2026-10-16: the CAN FeatherWing INT output is on GPIO8, the same pin as
-  Wire1 SDA (AOA sensor). `Electronics/Feather-Air/Feather-Air_Connections.md` and the
-  AIR sketch both say the INT trace must be cut, but on the wing in the AIR module it
-  is not cut (or not fully): GPIO8 read low before Wire1 started and 9 clock pulses
-  did not release it.
-- Effect: after any software reset (flash, picotool reboot, a watchdog reset) the
-  MCP2515 kept INT asserted, the AOA sensor was "not found" and the module halted
-  until a hard reset or power cycle. In normal running INT can also disturb Wire1.
-- Software workaround in place: AIR_Module v1.0.4 starts CAN first (which resets the
-  chip) and clears the MCP2515 CANINTE register so INT is never driven. The CAN library
-  polls flags, so receiving is unaffected. This is not a substitute for the cut.
-- To do: cut the INT trace on the CAN FeatherWing used in the AIR module, then check
-  with a meter that there is no continuity between the wing's INT pad and GPIO8
-  (D9). Check any other CAN wing that goes into a module using GPIO8 as well.
-- Related: a reset command over CAN (issue 9) would hit the same problem on boards
-  where the trace is not cut and the workaround is missing.
-
 ## Monitoring
 
 ### 6. MCP2515 not initialising on the Pi (`Cannot initialize MCP2515. Wrong wiring?`)
@@ -100,6 +82,28 @@ Status: **Open**, **Monitoring** (fix applied, watching), **Fixed**.
 - Config: `dtoverlay=mcp2515-can0,oscillator=16000000,interrupt=25,spimaxfrequency=2000000`.
 
 ## Fixed
+
+### 10. AIR module: INT trace on the CAN FeatherWing (cut 2026-10-17)
+- Found 2026-10-16: the CAN FeatherWing INT output is on GPIO8, the same pin as
+  Wire1 SDA (AOA sensor). `Electronics/Feather-Air/Feather-Air_Connections.md` and the
+  AIR sketch both say the INT trace must be cut, but on the wing in the AIR module it
+  is not cut (or not fully): GPIO8 read low before Wire1 started and 9 clock pulses
+  did not release it.
+- Effect: after any software reset (flash, picotool reboot, a watchdog reset) the
+  MCP2515 kept INT asserted, the AOA sensor was "not found" and the module halted
+  until a hard reset or power cycle. In normal running INT can also disturb Wire1.
+- Software workaround in place: AIR_Module v1.0.4 starts CAN first (which resets the
+  chip) and clears the MCP2515 CANINTE register so INT is never driven. The CAN library
+  polls flags, so receiving is unaffected. This is not a substitute for the cut.
+- To do: cut the INT trace on the CAN FeatherWing used in the AIR module, then check
+  with a meter that there is no continuity between the wing's INT pad and GPIO8
+  (D9). Check any other CAN wing that goes into a module using GPIO8 as well.
+- Related: a reset command over CAN (issue 9) would hit the same problem on boards
+  where the trace is not cut and the workaround is missing.
+- Fixed 2026-10-17: the INT trace was cut. Tested with the software workaround off
+  (v1.0.11 build): 5 soft reboots plus a flash, AOA found every time. The workaround stays
+  on in v1.0.12 (`CAN_INT_WORKAROUND 1`) as a safety net for a wing whose trace is not cut.
+- Still to check: any other CAN wing that goes into a module using GPIO8.
 
 ### 11. AIR module: 75 ms RTD read held the whole sensor loop to about 11 Hz
 - Found 2026-10-16. The Adafruit MAX31865 library's `rtd.temperature()` waits with
