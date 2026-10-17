@@ -164,3 +164,9 @@ detect, time to recover, notes.)
 - Reconnected: heartbeat back to state 1, mask 0F about 0.6 s after the readings started coming back, but the OAT
   was still -23 C and took about 6 s (filter slew) to reach 22 C. So the OK bit was set while the value was wrong.
 - Both tests: detection time about 2.7 to 3 s; recovery of the bit about 1 s; recovery of the value 6 to 12 s.
+
+**A1c, RTD third wire (the doubled lead) disconnected (hot), then reconnected**
+- Unplugged: heartbeat state 2, mask 07 (detected). OAT froze at 22.4 C (it normally moves between 22.2 and 22.4).
+- Reconnected: first reading -16.9 C, heartbeat back to state 1, mask 0F within 0.5 s, value back to 22.3 C after about 6 s.
+- RTD summary: every lead pulled is detected through bit 3 (state 2) in about 3 s. Data on 0x2A is either frozen (RTD-,
+  third wire) or a false -70 C (RTD+). After reconnect the OK bit comes back before the value is right (6 to 12 s).
