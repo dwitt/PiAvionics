@@ -223,5 +223,9 @@ detect, time to recover, notes.)
 - So the library's send loop (`while TXREQ`) never exits when nothing ACKs; the abort-on-TXERR path is evidently not triggered
   on this module. Fix: bound the wait (abort via CANCTRL ABAT after a few ms) in our own send helper.
 - Why the IMU does not freeze is still unexplained. Receiving is not the cause. Open: repeat the IMU pull a few times.
+
+**AIR freeze with the INT workaround off** (test build 1.0.25: `CAN_INT_WORKAROUND 0`, INT trace cut)
+- Cable pulled: LED stuck blue again, cable back in: green at once. Same behaviour, so the cut INT trace / CANINTE
+  workaround is not involved. The library polls the TX status register and never uses the INT pin.
 - Needed: act on getEvent() failure, detect the all-zero accel, mark gyro invalid, re-initialise the chip (begin and
   configure) about every 2 s while it is missing, and do not let the AHRS integrate stale gyro data.
