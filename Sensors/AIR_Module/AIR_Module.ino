@@ -29,7 +29,7 @@
 /*****************************************************************************
  * Firmware version - increment the patch number on every change
  *****************************************************************************/
-#define VERSION "1.0.17"
+#define VERSION "1.0.20"
 
 // Set to 0 to run without the AOA sensor (Wire1, GPIO8/9). With 0, Wire1 is not
 // touched at all and a missing AOA sensor does not stop startup.
@@ -76,7 +76,43 @@ RollingAverageFilter staticPressureRollingAverageFilter(128, 256);
 
 // Low Pass Filter
 LowPassFilter StaticPressureLowPassFilter(0.01);
-LowPassFilter PitotPressureLowPassFilter(0.04);
+// ----------------------------------------------------------------------------
+// Pitot pressure low-pass filter that reacts to CHANGE, not to the pressure level.
+//
+// The raw MS4525DO reading is noisy (measured at rest 2026-10-17: std dev about
+// 4.7 Pa, in steps of about 6 Pa), so a fixed filter has to be slow (alpha 0.04,
+// ~0.25 s). That is also slow to drop to zero when the pressure is removed.
+//
+// This filter looks at how far the new sample is from the current output (the
+// innovation). A sample within the noise band is averaged hard (PITOT_LP_ALPHA_SLOW)
+// so the noise is removed. A sample well outside the noise band means the pressure
+// really changed, so the filter follows at PITOT_LP_ALPHA_FAST. In between alpha is
+// blended linearly. Using the difference, not the pressure level, means the output
+// falls as fast as it rises when the pressure stops (a filter whose strength came
+// from the pressure itself lingered after a blow). Measured on the module: the
+// raw pressure drops from ~100 Pa to rest within 0.2 s of releasing the pitot.
+// ----------------------------------------------------------------------------
+#define PITOT_NOISE_HPA       0.047f   // raw noise std dev at rest, in hPa (4.7 Pa)
+#define PITOT_LP_ALPHA_SLOW   0.02f    // inside the noise band: ~0.5 s at 100 Hz
+#define PITOT_LP_ALPHA_FAST   0.2f     // clearly a real change: ~0.05 s
+#define PITOT_LP_BAND_LOW     2.0f     // below this many noise std devs: all slow
+#define PITOT_LP_BAND_HIGH    5.0f     // above this many noise std devs: all fast
+
+static float pitotPressureAdaptiveFilter(float input) {
+  static float value = 0.0f;
+  static bool initialized = false;
+  if (!initialized) {
+    value = input;
+    initialized = true;
+    return value;
+  }
+  float change = fabsf(input - value) / PITOT_NOISE_HPA;     // in noise std devs
+  float t = (change - PITOT_LP_BAND_LOW) / (PITOT_LP_BAND_HIGH - PITOT_LP_BAND_LOW);
+  t = constrain(t, 0.0f, 1.0f);
+  float alpha = PITOT_LP_ALPHA_SLOW + (PITOT_LP_ALPHA_FAST - PITOT_LP_ALPHA_SLOW) * t;
+  value += alpha * (input - value);
+  return value;
+}
 
 // Butterworth Low Pass Filter
 ButterworthLowPass staticPressureButterworthLowPass;
@@ -740,7 +776,7 @@ void loop() {
     previousPitotPressure = sensorPitotPressure;
     sensorPitotPressure = pitot_pressure_event.pressure;
     //pitotPressureFiltered = pitotPressureKalman.update(sensorPitotPressure);
-    pitotPressureFiltered = PitotPressureLowPassFilter.update(sensorPitotPressure);
+    pitotPressureFiltered = pitotPressureAdaptiveFilter(sensorPitotPressure);
     pitotPressureFiltered = pitotPressureDeadbandFilter.update(pitotPressureFiltered);
 
     sensorStaticTemp = ssc_temp_event.temperature;

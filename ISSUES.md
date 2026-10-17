@@ -121,12 +121,19 @@ Status: **Open**, **Monitoring** (fix applied, watching), **Fixed**.
   smoothed with a 1.4 s low-pass and rounded. A sample with a fault is dropped and the last
   good value kept; 0x2A is not sent until the first good sample.
 - Result: 0x28 9.8 Hz, 0x29/0x2A/0x2B 4.9 Hz; OAT std dev 0.035 C, range 0.1 C over 30 s.
-- Pitot filtering re-checked 2026-10-17 with real pressure: the original constant
-  alpha 0.04 low-pass and 0.12 hPa deadband are kept. Tried and dropped: no deadband (rest
-  showed 3-4 kt from a ~2 Pa offset and 1.3 Pa noise), and a pressure-dependent filter
-  (heavy below 10 Pa) with a 5 Pa deadband (clean at rest but a 5-7 kt tail for several
-  seconds after a blow). Consequence of the kept setting: nothing is shown below about
-  9 kt, and the reading steps from 0 to about 9 kt.
+- Pitot filtering reworked 2026-10-17 (AIR_Module v1.0.20). Raw MS4525DO readings at rest
+  were measured: std dev about 4.7 Pa, fast noise, in steps of about 6 Pa; the resting
+  level also moves a few Pa between boots (+2 to -5 Pa), so a deadband is needed. On release
+  the raw pressure falls from about 100 Pa to rest within 0.2 s, so a slow tail is the
+  filter, not the tube. Tried and dropped: no deadband (3-4 kt at rest); a filter whose
+  strength follows the pressure level (5-7 kt tail after a blow); averaging 8 reads per
+  sample (noise 4.8 -> 3.7 Pa only, and about 5 ms of blocking per sample).
+- Kept: 0.12 hPa deadband. New low-pass: strength follows the difference between the new
+  sample and the output (heavy averaging alpha 0.02 inside the noise band, alpha 0.2 for a
+  real change), so it drops to zero quickly when the pressure stops. Result: steady 0 at
+  rest, and 0 within 0.4-0.8 s of releasing a hard blow. Nothing is shown below about 9 kt.
+- Notes: the 4.7 Pa figure is a constant in the sketch (PITOT_NOISE_HPA); re-measure it if
+  the sensor or tubing changes. The same idea could be applied to the static pressure.
 
 ### 7. GPS module needed an RP2040 reset to pick up a fix after a full repower
 - Old firmware set the GPS baud once at boot (9600 -> 115200), sent config commands
