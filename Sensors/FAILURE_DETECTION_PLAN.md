@@ -216,5 +216,12 @@ detect, time to recover, notes.)
   cable went back in (about 1 s). Uptime continuous (no resets). David varied when he pulled.
 - So the AIR freeze is reproducible; the idea that the IMU differed only because it was pulled between frames is not
   supported by the AIR side (3 of 3 froze). The IMU has only been pulled once; repeat to see if it ever freezes.
+
+**AIR freeze located (test build 1.0.24 with `CAN_SEND_MARKER`: LED blue inside `endPacket()`, green when it returns)**
+- Cable pulled: **LED stuck blue**, so the module is frozen inside `Adafruit_MCP2515::endPacket()`, not in the receive code.
+  Cable back in: LED green immediately, bus traffic resumed (28.7 s gap).
+- So the library's send loop (`while TXREQ`) never exits when nothing ACKs; the abort-on-TXERR path is evidently not triggered
+  on this module. Fix: bound the wait (abort via CANCTRL ABAT after a few ms) in our own send helper.
+- Why the IMU does not freeze is still unexplained. Receiving is not the cause. Open: repeat the IMU pull a few times.
 - Needed: act on getEvent() failure, detect the all-zero accel, mark gyro invalid, re-initialise the chip (begin and
   configure) about every 2 s while it is missing, and do not let the AHRS integrate stale gyro data.

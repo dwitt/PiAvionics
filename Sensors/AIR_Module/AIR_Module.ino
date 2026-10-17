@@ -29,7 +29,7 @@
 /*****************************************************************************
  * Firmware version - increment the patch number on every change
  *****************************************************************************/
-#define VERSION "1.0.23"
+#define VERSION "1.0.24"
 
 // Set to 0 to run without the AOA sensor (Wire1, GPIO8/9). With 0, Wire1 is not
 // touched at all and a missing AOA sensor does not stop startup.
@@ -513,6 +513,22 @@ static void wire1CheckAndRecover() {
 #define RTD_FRESH_MS 2000
 
 static uint8_t hbStartupMask = 0;     // sensors found at start-up (bits 0-2)
+// TEMPORARY TEST (CAN cable freeze, FAILURE_DETECTION_PLAN.md): LED blue while a CAN frame is being
+// sent, green when the send returns. If the module freezes with the cable out, the LED colour shows
+// whether it is stuck inside the send. Set to 0 to compile out.
+#define CAN_SEND_MARKER 1
+static void canEndPacket() {
+#if CAN_SEND_MARKER
+  pixel.setPixelColor(0, pixel.Color(0, 0, 255));
+  pixel.show();
+#endif
+  can.endPacket();
+#if CAN_SEND_MARKER
+  pixel.setPixelColor(0, pixel.Color(0, 255, 0));
+  pixel.show();
+#endif
+}
+
 static bool canUp = false;            // heartbeat is only sent once the CAN bus is running
 static bool setupDone = false;
 static bool startupFailed = false;
@@ -532,7 +548,7 @@ static void sendHeartbeat() {
   moduleInfo.packHeartbeat(frame);
   can.beginPacket(moduleInfo.heartbeatId());
   can.write(frame, 8);
-  can.endPacket();
+  canEndPacket();
 }
 
 /*****************************************************************************
@@ -751,7 +767,7 @@ void loop() {
 
     can.beginPacket(CAN_AIR_MSG_ID);
     can.write(canData.bytes, 8);
-    can.endPacket();
+    canEndPacket();
     canAirTimeStamp = millis(); // update the timestamp
   }
 
@@ -764,7 +780,7 @@ void loop() {
 
     can.beginPacket(CAN_AOA_MSG_ID);
     can.write(canData.bytes, 8);
-    can.endPacket();
+    canEndPacket();
     canAoaTimeStamp = millis(); // update the timestamp
   }
 
@@ -789,7 +805,7 @@ void loop() {
 
     can.beginPacket(CAN_RAW_MSG_ID);
     can.write(canData.bytes, 8);
-    can.endPacket();
+    canEndPacket();
     canRawTimeStamp = millis(); // update the timestamp
   }
 
@@ -808,7 +824,7 @@ void loop() {
 
     can.beginPacket(CAN_TEMP_MSG_ID);
     can.write(canData.bytes, 8);
-    can.endPacket();
+    canEndPacket();
     canTempTimeStamp = millis();
   }
 
