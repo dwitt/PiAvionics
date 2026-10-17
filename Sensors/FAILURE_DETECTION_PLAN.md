@@ -201,5 +201,13 @@ detect, time to recover, notes.)
 - Reinserted: 0x49 stayed 0, 0, 0 (the chip lost its configuration and the sketch only configures at start-up), 0x48
   jumped (yaw to 359 deg) and then slowly converged. **Needs a reset to recover.** After a software reboot the module
   came back normally (accel z 994 mg, level attitude).
+
+**C1/C2, IMU module CAN cable unplugged (hot), then reconnected** (watched via the USB `?` report and the LED)
+- Unplugged: nothing reached the bus (last frame 7 s into the capture) but the module did NOT freeze: it kept answering `?`
+  (uptime 100 s then 116 s 16 s later) and the LED kept flashing green. So unlike the AIR module the main loop is
+  still running. Why the two differ is not yet understood (same CAN library; not investigated).
+- Reconnected: frames resumed about 1 s after plugging in (55.9 s gap), no burst of buffered frames, heartbeat uptime
+  continuous (142 s, no reset), attitude sensible (yaw 348 deg), no error frames. No power cycle needed.
+- Still needed on both: show the CAN problem (LED amber/red, `?` report) instead of looking healthy.
 - Needed: act on getEvent() failure, detect the all-zero accel, mark gyro invalid, re-initialise the chip (begin and
   configure) about every 2 s while it is missing, and do not let the AHRS integrate stale gyro data.
