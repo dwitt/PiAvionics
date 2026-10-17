@@ -69,8 +69,35 @@ Status: **Open**, **Monitoring** (fix applied, watching), **Fixed**.
   from uptime 0 s, then state 1 with the sensors mask, uptime resetting on a reboot.
 - Still to do: handle the heartbeats in `aio_server.py` and show them (to be done with the
   EFIS display, together with David's backup text display and an EFIS heartbeat 0x700);
-  detect a pressure sensor that stops answering while running (the AIR mask bits 0-2 only
-  reflect start-up); the command messages (steps 2 to 4 above).
+  detect a sensor that stops answering while running (issue 13); the command messages
+  (steps 2 to 4 above).
+
+### 13. Sensor failure detection while running
+- Raised 2026-10-17. Only start-up is checked today (plus the AIR temperature sensor, and the GPS
+  by NMEA silence). A pressure sensor, the IMU chips or the CAN controller that stop answering in
+  flight are not detected, and their last or zero values keep being sent as if they were good.
+  Design, test list and results go in `Sensors/FAILURE_DETECTION_PLAN.md`.
+- Found while planning: the installed `Adafruit_LSM6DS` library has a local patch (a failed read
+  returns false) kept outside the repo; the IMU sketch ignores the result; the LIS3MDL library
+  does not check its read at all.
+
+## Monitoring
+
+### 6. MCP2515 not initialising on the Pi (`Cannot initialize MCP2515. Wrong wiring?`)
+- 2026-09-30: `can0` went bus-off at 09:17:42 after ~14 h of normal running. It
+  did not recover (`restart-ms 0`). Cold boots then failed with `Probe failed, err=19`
+  and down/up cycles failed with `didn't enter in config mode`.
+- Diagnosis: raw SPI tests (spidev) showed the chip and SPI link were healthy while
+  its oscillator was already running (0 errors in 2000 read/writes at up to 4 MHz).
+  It failed whenever the oscillator had to start from cold (boot, or after the
+  driver put the chip to sleep); registers then read 0x00 and never recovered.
+- Fix: reflowed the MCP2515, C2/C3 and the crystal. Cold boot then initialised
+  normally at 10:04:07 and traffic resumed.
+- Root cause is probably a bad joint on the crystal circuit; not proven.
+- Watch for a repeat. If it returns, suspect Y1 and the load caps (issue 4).
+- Config: `dtoverlay=mcp2515-can0,oscillator=16000000,interrupt=25,spimaxfrequency=2000000`.
+
+## Fixed
 
 ### 10. AIR module: INT trace on the CAN FeatherWing (cut 2026-10-17)
 - Found 2026-10-16: the CAN FeatherWing INT output is on GPIO8, the same pin as
