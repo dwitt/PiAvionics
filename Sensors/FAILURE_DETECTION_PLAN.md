@@ -190,3 +190,16 @@ detect, time to recover, notes.)
   continuous (11090 s, no reset), `?` answers again, no error frames seen on the bus. No power cycle needed.
 - Needed: bound the transmit wait (abort the TX request via TXBnCTRL after a few ms, count it, set LED amber/red,
   keep the loop running), probably also use one-shot mode so a lost frame is not retried forever.
+
+**I5, IMU EEPROM pulled while running:** no change at all (heartbeat state 1 mask 07, 0x48/0x49 at 10 Hz). As expected.
+
+**I7, IMU wing (ISM330DHCX + LIS3MDL) pulled live, then reinserted** (IMU_AHRS 1.0.4)
+- Pulled: **not detected, heartbeat stayed state 1, mask 07 throughout.** 0x49 showed the last reading for about 0.3 s then
+  0, 0, 0 (kept sending at 10 Hz). 0x48 kept sending a plausible attitude that drifted steadily (yaw 19 to 7 deg,
+  pitch to -48 deg, roll to 22 deg in 55 s), presumably the AHRS integrating stale gyro values with no gravity reference.
+  The EFIS would show a smoothly moving horizon that is not real.
+- Reinserted: 0x49 stayed 0, 0, 0 (the chip lost its configuration and the sketch only configures at start-up), 0x48
+  jumped (yaw to 359 deg) and then slowly converged. **Needs a reset to recover.** After a software reboot the module
+  came back normally (accel z 994 mg, level attitude).
+- Needed: act on getEvent() failure, detect the all-zero accel, mark gyro invalid, re-initialise the chip (begin and
+  configure) about every 2 s while it is missing, and do not let the AHRS integrate stale gyro data.
