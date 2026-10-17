@@ -161,3 +161,14 @@ each module can be rolled back by reflashing.
 - The backup display has little room (128x64): the status row must stay tiny.
 - ISSUES.md #9 steps 2 to 4 (commands over CAN: version query, zero, reset) are separate and can follow once the status page
   exists, since that page is a natural home for them.
+
+## Decisions recorded (David)
+
+- **1. Heading with the magnetometer lost (2026-10-17).** The gyro-only heading stays on the display for 5 minutes (about 30 degrees of
+  drift at 0.1 deg/s) under a red X, with the number dimmed but still readable. After 5 minutes the number is blanked and only
+  the red X remains. The server counts the 5 minutes from the first heartbeat that reports the magnetometer lost
+  (IMU sensors mask bit 1 clear) and resets it when the magnetometer comes back. The annunciator still shows `HDG GYRO`.
+  Reason David gave: a red X that does not hide the data underneath, so the pilot can still cross-check.
+- **2. Failure look (2026-10-17, implied by decision 1).** A red X, drawn with thick semi-transparent strokes, over the instrument. Where a
+  value exists but is untrusted (only the gyro-only heading today) the value stays visible and dimmed under the X. Where there
+  is no value at all (a marker, a lost module, a timeout) the instrument is blank under the X. To confirm with David.
