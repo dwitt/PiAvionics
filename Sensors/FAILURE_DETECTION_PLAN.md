@@ -270,5 +270,11 @@ detect, time to recover, notes.)
   resumed (about 0.5 s), `CAN tx: ok`, timeouts 185 total, REC back to 0. EFLG 0x40 (RX0OVR) is set even when healthy: the
   receive buffer overflowed at some point; not investigated.
 - Removed the temporary LED marker and restored `CAN_INT_WORKAROUND 1` in the AIR sketch.
+- **GPS 1.0.4, no termination, cable out about 40 s: no freeze.** Status queries answered every 2 s, uptime continuous. After
+  reconnecting: heartbeat 0x703 back at once, `CAN tx: ok, timeouts 45, skipped 135, TEC 0, REC 0, EFLG 0x40`.
+- **IMU 1.0.5, terminated, cable out about 25 s: no change in behaviour.** Queries answered, data frames 0x48 resumed after
+  reconnect, `CAN tx: ok, timeouts 0, skipped 0` (the terminated node still sees send errors, so the stock exit path works).
+- Step 1 done: no module can freeze on a missing CAN connection any more.
+
 - Needed: act on getEvent() failure, detect the all-zero accel, mark gyro invalid, re-initialise the chip (begin and
   configure) about every 2 s while it is missing, and do not let the AHRS integrate stale gyro data.
