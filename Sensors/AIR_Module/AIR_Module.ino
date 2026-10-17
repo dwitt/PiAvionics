@@ -13,7 +13,7 @@
 
 #include <Wire.h>               // I2C library
 #include <Adafruit_MCP2515.h>   // for CAN bus FeatherWing
-#include <Adafruit_NeoPixel.h>  // for NeoPixel LED
+#include <StatusLED.h>         // status LED: startup colours and runtime heartbeat
 #include <Adafruit_MAX31865.h>  // for MAX31865 RTD temperature sensor
 #include "MS4525DO.h"           // MS4525DO Sensor Library
 #include "SSC.h"                // SSC Sensor Library
@@ -30,7 +30,7 @@
 /*****************************************************************************
  * Firmware version - increment the patch number on every change
  *****************************************************************************/
-#define VERSION "1.0.27"
+#define VERSION "1.0.29"
 
 // Set to 0 to run without the AOA sensor (Wire1, GPIO8/9). With 0, Wire1 is not
 // touched at all and a missing AOA sensor does not stop startup.
@@ -104,10 +104,9 @@ MS4525DO  ms4525do_aoa;
 #define SSC_I2C_ADDRESS 0x78
 SSC ssc;
 
-// NeoPixel LED
-#define LED_PIN 16
-#define LED_COUNT 1
-Adafruit_NeoPixel pixel(LED_COUNT, LED_PIN, NEO_GRB + NEO_KHZ800);
+// Status LED (Feather RP2040 onboard NeoPixel). See Sensors/Libraries/StatusLED/StatusLED.md
+#define POST_CAN 11     // red flashes if the CAN bus does not start
+StatusLED led;
 
 // Kalman Filter (Q, R, P, X)
 KalmanFilter pitotPressureKalman(10, 10, 10, 0);
@@ -631,16 +630,30 @@ static void canReport(Print &out) {
   out.print(", EFLG 0x"); out.println(can.errorFlags(), HEX);
 }
 
+static uint8_t airModuleState(uint8_t mask) {
+  bool noAirData = !pitotChan.health.valid() && !staticChan.health.valid();
+  return startupFailed ? MODULE_STATE_FAILED
+       : !setupDone    ? MODULE_STATE_STARTING
+       : noAirData     ? MODULE_STATE_FAILED
+       : (mask == HB_ALL) ? MODULE_STATE_OK
+                          : MODULE_STATE_DEGRADED;
+}
+
+// Heartbeat colour: green OK, amber (degraded), red (failed, or nobody acknowledges our CAN frames)
+static void updateLedHealth() {
+  uint8_t state = airModuleState(hbSensorMask());
+  StatusLEDHealth health = STATUS_LED_HEALTHY;
+  if (canUp && can.txFault()) health = STATUS_LED_CAN_FAULT;
+  else if (state == MODULE_STATE_FAILED) health = STATUS_LED_FAILED;
+  else if (state == MODULE_STATE_DEGRADED) health = STATUS_LED_SENSOR_FAULT;
+  led.setHealth(health);
+}
+
 static void sendHeartbeat() {
   if (!canUp || !moduleInfo.heartbeatDue()) return;
 
   uint8_t mask = hbSensorMask();
-  bool noAirData = !pitotChan.health.valid() && !staticChan.health.valid();
-  uint8_t state = startupFailed ? MODULE_STATE_FAILED
-                : !setupDone    ? MODULE_STATE_STARTING
-                : noAirData     ? MODULE_STATE_FAILED
-                : (mask == HB_ALL) ? MODULE_STATE_OK
-                                   : MODULE_STATE_DEGRADED;
+  uint8_t state = airModuleState(mask);
   moduleInfo.setHealth(state, mask);
 
   uint8_t frame[8];
@@ -648,6 +661,13 @@ static void sendHeartbeat() {
   can.beginPacket(moduleInfo.heartbeatId());
   can.write(frame, 8);
   can.endPacket();
+}
+
+// Called from loop() and, through the StatusLED callback, while the LED code waits or blinks
+// a failure code, so the heartbeat and the '?' report keep working.
+static void airService() {
+  moduleInfo.service();
+  sendHeartbeat();
 }
 
 //----------------------------------------------------------------------------
@@ -684,10 +704,8 @@ static void faultCommand(char c) {
 
 void setup() {
 
-  pixel.begin();
-  pixel.setBrightness(10);
-  pixel.setPixelColor(0, pixel.Color(255, 0, 0));
-  pixel.show();
+  led.begin();
+  led.startup();      // solid red until setup() has finished
 
   // USB serial never waits for a host. Startup results are stored with
   // moduleInfo.log() and printed from loop() when a host connects, or on '?'.
@@ -698,6 +716,7 @@ void setup() {
   moduleInfo.setCommandHook(faultCommand);
   #endif
   moduleInfo.setHealth(MODULE_STATE_STARTING, 0);
+  led.setServiceCallback(airService);   // '?' report and heartbeat during LED waits
 
   // --------------------------------------------------------------------------
   // Connect to the MCP2515 CAN Bus controller on the SPI bus - FIRST, before
@@ -779,10 +798,7 @@ void setup() {
   if (!can_success) {
     startupFailed = true;
     moduleInfo.fatal("Startup failed");
-    while (1) {             // wait for the user to reset the board
-      moduleInfo.service(); // but still answer a host that connects later
-      delay(100);
-    }
+    led.postCode(POST_CAN); // red flashes forever; the callback below keeps '?' working
   }
 
   setupDone = true;
@@ -790,8 +806,7 @@ void setup() {
   moduleInfo.log(hbSensorMask() == (HB_PITOT | HB_AOA | HB_STATIC) ?
                  "All peripherals connected" : "**WARNING** running with a sensor missing");
 
-  pixel.setPixelColor(0, pixel.Color(0, 255, 0));
-  pixel.show();
+  led.go();               // solid green for 2 s, then the runtime heartbeat takes over
 
   /***************************************************************************
    * Configure the peripherals
@@ -863,6 +878,8 @@ void setup() {
 void loop() {
   moduleInfo.service();   // report on USB connect or '?'
   sendHeartbeat();        // CAN heartbeat, once a second
+  updateLedHealth();
+  led.heartbeat();        // brief coloured flash: green OK, amber degraded, red failed
   rtdUpdate();            // advance the non-blocking OAT reader (never waits)
 
   // --------------------------------------------------------------------------

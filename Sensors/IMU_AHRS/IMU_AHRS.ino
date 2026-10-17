@@ -53,7 +53,7 @@
 /*****************************************************************************
  * Firmware version - increment the patch number on every change
  *****************************************************************************/
-#define VERSION "1.0.12"
+#define VERSION "1.0.14"
 
 ModuleInfo moduleInfo("IMU_AHRS", VERSION, __DATE__, __TIME__);
 
@@ -135,6 +135,7 @@ static bool bangSeen = false;
 static SensorHealth ismHealth(SENSOR_FAIL_COUNT, SENSOR_GOOD_COUNT, SENSOR_STUCK_COUNT);
 static SensorHealth magHealth(SENSOR_FAIL_COUNT, SENSOR_GOOD_COUNT, SENSOR_STUCK_COUNT);
 static bool calibrationLoaded = false;
+static uint8_t moduleState = MODULE_STATE_STARTING;	// as sent in the heartbeat, also drives the LED
 static uint32_t ismOutageMs = 0;	// length of the last accel/gyro outage
 static float magSynthErr = 0;		// average difference real - predicted field, uT (shown in '?')
 
@@ -148,6 +149,7 @@ static void publishHealth() {
 	if (!ismHealth.valid()) state = MODULE_STATE_FAILED;
 	else if (mask != HB_ALL) state = MODULE_STATE_DEGRADED;
 	hbSensors = mask;
+	moduleState = state;
 	moduleInfo.setHealth(state, mask);
 }
 
@@ -629,6 +631,11 @@ void loop() {
 	// ------------------------------------------------------------------------
 	// Runtime heartbeat — brief green flash every ~2 seconds
 	// ------------------------------------------------------------------------
+	StatusLEDHealth ledHealth = STATUS_LED_HEALTHY;			// green
+	if (canUp && can.txFault()) ledHealth = STATUS_LED_CAN_FAULT;	// red: nobody acknowledges our frames
+	else if (moduleState == MODULE_STATE_FAILED) ledHealth = STATUS_LED_FAILED;	// red
+	else if (moduleState == MODULE_STATE_DEGRADED) ledHealth = STATUS_LED_SENSOR_FAULT;	// amber
+	led.setHealth(ledHealth);
 	led.heartbeat();
 
 	// ------------------------------------------------------------------------

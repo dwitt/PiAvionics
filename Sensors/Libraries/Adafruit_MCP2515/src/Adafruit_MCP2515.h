@@ -52,6 +52,10 @@ public:
   uint8_t txErrorCount();   ///< MCP2515 TEC register
   uint8_t rxErrorCount();   ///< MCP2515 REC register
   uint8_t errorFlags();     ///< MCP2515 EFLG register
+  /// LOCAL PATCH: true if our frames are not getting through: sends are being abandoned (txDown), or
+  /// the chip's transmit error counter is high (EFLG TXWAR/TXEP/TXBO). A terminated module with its cable
+  /// pulled never times out but its error counter climbs to 128. Reads EFLG at most every 200 ms.
+  bool txFault();
 
   void dumpRegisters(Stream &out);
 

@@ -81,6 +81,11 @@ During normal operation the LED shows a heartbeat -- a brief flash every ~2 seco
 | Sensor fault (recoverable) | **Amber** heartbeat | A sensor read failed but module continues |
 | CAN failure | **Red** heartbeat | CAN transmit error |
 
+Since 1.2.0 the heartbeat flashes once a second (not every 4 s) while the colour is amber or red, so a
+fault is noticed. Modules map their heartbeat state to the colour: state 1 OK = green, state 2 degraded
+(a sensor missing or invalid) = amber (`STATUS_LED_SENSOR_FAULT`), state 3 failed = red
+(`STATUS_LED_FAILED`), and a CAN transmit that nobody acknowledges = red (`STATUS_LED_CAN_FAULT`).
+
 ### GPS-Specific Runtime States
 
 | State | LED Color |

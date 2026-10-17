@@ -86,7 +86,9 @@ void StatusLED::setHealth(StatusLEDHealth state) {
 
 void StatusLED::heartbeat() {
   unsigned long now = millis();
-  if (now - _lastHeartbeat >= STATUS_LED_HEARTBEAT_PERIOD_MS) {
+  bool fault = (_health == STATUS_LED_SENSOR_FAULT || _health == STATUS_LED_CAN_FAULT ||
+                _health == STATUS_LED_FAILED);
+  if (now - _lastHeartbeat >= (fault ? STATUS_LED_FAULT_PERIOD_MS : STATUS_LED_HEARTBEAT_PERIOD_MS)) {
     _lastHeartbeat = now;
     uint32_t color = _healthColor();
     uint8_t r = (color >> 16) & 0xFF;
@@ -131,6 +133,7 @@ uint32_t StatusLED::_healthColor() {
     case STATUS_LED_HEALTHY:      return 0x00FF00;  // green
     case STATUS_LED_SENSOR_FAULT: return 0xFF8C00;  // amber
     case STATUS_LED_CAN_FAULT:    return 0xFF0000;  // red
+    case STATUS_LED_FAILED:       return 0xFF0000;  // red
     case STATUS_LED_NO_GPS_FIX:   return 0x0000FF;  // blue
     case STATUS_LED_GPS_2D_FIX:   return 0xFFFF00;  // yellow
     case STATUS_LED_GPS_3D_FIX:   return 0x00FF00;  // green

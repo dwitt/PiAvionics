@@ -13,11 +13,11 @@
 
 #include <Adafruit_GPS.h>        // Adafruit GPS NMEA parsing library
 #include <Adafruit_MCP2515.h>    // for CAN Bus FeatherWing
-#include <Adafruit_NeoPixel.h>   // for NeoPixel LED
+#include <StatusLED.h>          // status LED: startup colours and runtime heartbeat
 #include "XYZgeomag.hpp"         // WMM2025 magnetic declination (nhz2/XYZgeomag)
 #include <ModuleInfo.h>        // USB product name, startup log and '?' report
 
-#define VERSION "1.0.4"
+#define VERSION "1.0.6"
 
 ModuleInfo moduleInfo("GPS_Module", VERSION, __DATE__, __TIME__);
 
@@ -38,12 +38,13 @@ ModuleInfo moduleInfo("GPS_Module", VERSION, __DATE__, __TIME__);
 Adafruit_GPS gps(&Serial1);
 
 // ----------------------------------------------------------------------------
-// NeoPixel LED
+// Status LED (Feather RP2040 onboard NeoPixel). See Sensors/Libraries/StatusLED/StatusLED.md
+// Runtime heartbeat colour: amber = GPS silent (degraded), red = nobody acknowledges our CAN
+// frames, blue = no fix, yellow = 2D fix, green = 3D fix.
 // ----------------------------------------------------------------------------
 
-#define LED_PIN   16
-#define LED_COUNT 1
-Adafruit_NeoPixel pixel(LED_COUNT, LED_PIN, NEO_GRB + NEO_KHZ800);
+#define POST_CAN 11     // red flashes if the CAN bus does not start
+StatusLED led;
 
 // ----------------------------------------------------------------------------
 // The MCP2515 (CAN Bus) uses the SPI interface
@@ -309,10 +310,8 @@ static bool gpsInit(int attempts) {
 
 void setup() {
 
-  pixel.begin();
-  pixel.setBrightness(10);
-  pixel.setPixelColor(0, pixel.Color(255, 0, 0));
-  pixel.show();
+  led.begin();
+  led.startup();      // solid red until setup() has finished
 
   // USB serial never waits for a host. Startup results are stored with
   // moduleInfo.log() and printed from loop() when a host connects, or on '?'.
@@ -323,6 +322,7 @@ void setup() {
   moduleInfo.setModuleNumber(MODULE_NUM_GPS);
   moduleInfo.setReportHook(canReport);
   moduleInfo.setHealth(MODULE_STATE_STARTING, 0);
+  led.setServiceCallback(gpsService);   // '?' report and heartbeat during LED waits
 
   // --------------------------------------------------------------------------
   // Connect to the CAN Bus - before the GPS, so the heartbeat can run while the GPS is probed
@@ -357,23 +357,12 @@ void setup() {
   // --------------------------------------------------------------------------
 
   if (can_success) {
-    // Green = GPS talking. Orange = GPS silent for now; loop() keeps retrying.
-    pixel.setPixelColor(0, gps_success ? pixel.Color(0, 255, 0)
-                                       : pixel.Color(255, 80, 0));
-    pixel.show();
+    // The runtime heartbeat colour shows whether the GPS is talking and has a fix
+    led.go();
     setupDone = true;
   } else {
-    // Flash red LED to indicate failure
     moduleInfo.fatal("Startup failed");
-    while (1) {
-      moduleInfo.service();   // still answer a host that connects later
-      pixel.setPixelColor(0, pixel.Color(255, 0, 0));
-      pixel.show();
-      delay(500);
-      pixel.setPixelColor(0, pixel.Color(0, 0, 0));
-      pixel.show();
-      delay(500);
-    }
+    led.postCode(POST_CAN);   // red flashes forever; the callback keeps '?' working
   }
 }
 
@@ -390,6 +379,20 @@ void setup() {
 void loop() {
 
   gpsService();   // report on USB connect or '?', and the CAN heartbeat
+
+  // LED heartbeat colour. A GPS with no valid NMEA is degraded (amber); with NMEA the colour
+  // shows the fix (blue none, yellow 2D, green 3D); nobody acknowledging our CAN frames is red.
+  {
+    bool nmeaOk = realNmeaSeen && (millis() - lastRealNmea < GPS_SILENCE_MS);
+    StatusLEDHealth health;
+    if (canUp && can.txFault()) health = STATUS_LED_CAN_FAULT;
+    else if (!nmeaOk) health = STATUS_LED_SENSOR_FAULT;
+    else if (!gps.fix) health = STATUS_LED_NO_GPS_FIX;
+    else if (gps.fixquality_3d >= 3) health = STATUS_LED_GPS_3D_FIX;
+    else health = STATUS_LED_GPS_2D_FIX;
+    led.setHealth(health);
+    led.heartbeat();
+  }
 
   // --------------------------------------------------------------------------
   // Define variables
@@ -472,9 +475,7 @@ void loop() {
     gps.HDOP = 0;
     gps.VDOP = 0;
 
-    bool ok = gpsInit(1);
-    pixel.setPixelColor(0, ok ? pixel.Color(0, 255, 0) : pixel.Color(255, 80, 0));
-    pixel.show();
+    gpsInit(1);
     lastValidNmea = millis();
   }
 

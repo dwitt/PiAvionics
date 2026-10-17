@@ -12,7 +12,7 @@
 #include <Adafruit_NeoPixel.h>
 
 // Version
-#define STATUS_LED_VERSION "1.1.0"
+#define STATUS_LED_VERSION "1.2.0"
 
 // Default hardware config (Feather RP2040 onboard NeoPixel)
 #define STATUS_LED_DEFAULT_PIN        16
@@ -27,7 +27,8 @@
 #define STATUS_LED_POST_FLASH_OFF_MS  200   // POST code flash off
 #define STATUS_LED_POST_PAUSE_MS      1500  // pause between POST code cycles
 #define STATUS_LED_HEARTBEAT_ON_MS    80    // heartbeat flash duration
-#define STATUS_LED_HEARTBEAT_PERIOD_MS 4000 // heartbeat interval
+#define STATUS_LED_HEARTBEAT_PERIOD_MS 4000 // heartbeat interval when healthy
+#define STATUS_LED_FAULT_PERIOD_MS    1000  // heartbeat interval when amber or red, so a fault is noticed
 
 // Health states for runtime heartbeat color
 enum StatusLEDHealth {
@@ -36,7 +37,8 @@ enum StatusLEDHealth {
   STATUS_LED_CAN_FAULT,     // red heartbeat
   STATUS_LED_NO_GPS_FIX,    // blue heartbeat
   STATUS_LED_GPS_2D_FIX,    // yellow heartbeat
-  STATUS_LED_GPS_3D_FIX     // green heartbeat (same as healthy)
+  STATUS_LED_GPS_3D_FIX,    // green heartbeat (same as healthy)
+  STATUS_LED_FAILED         // red heartbeat: the module cannot produce its data (module state 3)
 };
 
 // Optional function called about every millisecond while the LED code waits

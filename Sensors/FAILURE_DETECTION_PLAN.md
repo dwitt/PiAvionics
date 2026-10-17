@@ -359,3 +359,22 @@ Fault-injection results (5 s fault each):
 - Pitot removed: state 2 mask 0E, airspeed 0, altitude and vertical speed normal.
 - Static removed: state 2 mask 0B, "I2C read failed"; altitude 0 and vertical speed 0 (nothing to hold at boot), airspeed normal.
 - Not tested: plugging a sensor into a running module (shared I2C bus risk). Injection covers the running case.
+
+### 2026-10-17, Phase 2 step 4: status LED (IMU_AHRS 1.0.14, AIR_Module 1.0.29, GPS_Module 1.0.6, StatusLED 1.2.0)
+
+- StatusLED 1.2.0: new `STATUS_LED_FAILED` (red); the runtime heartbeat flashes once a second (instead of every 4 s) while amber or
+  red so a fault is noticed. Mapping: heartbeat state 1 = green, 2 = amber (`STATUS_LED_SENSOR_FAULT`), 3 = red, CAN trouble = red.
+- AIR and GPS now use the StatusLED library (they drove the NeoPixel directly and had no runtime heartbeat on AIR). Start-up is red,
+  then 2 s solid green; a CAN failure at start-up gives 11 red flashes. GPS keeps its fix colours (blue none, yellow 2D, green 3D) and
+  shows amber when no NMEA has arrived for 5 s.
+- `Adafruit_MCP2515::txFault()` (patched library): true when sends are being abandoned, or the chip's transmit error flags (EFLG TXWAR /
+  TXEP / TXBO) are set. Needed because a terminated module (IMU) with its cable pulled never times out; its transmit error count
+  just climbs to 128.
+
+Test (David watched the LEDs, faults set with the injection commands):
+- IMU `!M` (compass): amber once a second. IMU `!G` (accel/gyro): red once a second. Cleared: slow green.
+- AIR `!P` (pitot): amber. AIR `!P` + `!S` (pitot and static): red. Cleared: slow green.
+- CAN cable pulled on IMU (terminated), AIR and GPS (unterminated): fast red on all three; slow green after the cable went back
+  (the colour returned within a few seconds).
+- GPS in normal operation (3D fix, 16 satellites): slow green.
+- Not yet tested: GPS amber (needs the no-data path, step 5).

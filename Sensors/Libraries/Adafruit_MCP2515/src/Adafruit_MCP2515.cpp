@@ -253,6 +253,17 @@ uint8_t Adafruit_MCP2515::txErrorCount() { return readRegister(REG_TEC); }
 uint8_t Adafruit_MCP2515::rxErrorCount() { return readRegister(REG_REC); }
 uint8_t Adafruit_MCP2515::errorFlags() { return readRegister(REG_EFLG); }
 
+bool Adafruit_MCP2515::txFault() {
+  static uint32_t lastRead = 0;
+  static bool eflgFault = false;
+  if (_txDown) return true;
+  if (millis() - lastRead >= 200) {
+    lastRead = millis();
+    eflgFault = (readRegister(REG_EFLG) & 0x34) != 0;   // TXWAR 0x04, TXEP 0x10, TXBO 0x20
+  }
+  return eflgFault;
+}
+
 int Adafruit_MCP2515::parsePacket() {
   int n;
 

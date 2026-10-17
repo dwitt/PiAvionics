@@ -1,41 +1,5 @@
---- src/Adafruit_MCP2515.h.orig	2026-10-17 13:31:10
-+++ src/Adafruit_MCP2515.h	2026-10-17 13:31:23
-@@ -40,6 +40,19 @@
- 
-   void setClockFrequency(long clockFrequency);
- 
-+  // LOCAL PATCH (PiAvionics): bounded transmit, see PATCH_NOTES.md.
-+  // endPacket() gives up after the timeout instead of waiting for ever when no
-+  // node acknowledges the frame (for example a lone, unterminated module). After a
-+  // timeout, sends are skipped (return 0) for TX_RETRY_MS, then one frame is
-+  // tried again; the first frame that completes clears the "down" state.
-+  void setTxTimeoutMs(uint16_t ms) { _txTimeoutMs = ms; }
-+  bool txDown() const { return _txDown; }            ///< true while sends are failing
-+  uint32_t txTimeouts() const { return _txTimeouts; }   ///< frames abandoned
-+  uint32_t txSuppressed() const { return _txSuppressed; } ///< frames skipped while down
-+  uint8_t txErrorCount();   ///< MCP2515 TEC register
-+  uint8_t rxErrorCount();   ///< MCP2515 REC register
-+  uint8_t errorFlags();     ///< MCP2515 EFLG register
-+
-   void dumpRegisters(Stream &out);
- 
- private:
-@@ -56,6 +69,13 @@
- 
-   Adafruit_SPIDevice *spi_dev = NULL; ///< Pointer to SPI bus interface
-   long _clockFrequency;
-+
-+  // LOCAL PATCH (PiAvionics)
-+  uint16_t _txTimeoutMs = 10;
-+  bool _txDown = false;
-+  uint32_t _txRetryAt = 0;
-+  uint32_t _txTimeouts = 0;
-+  uint32_t _txSuppressed = 0;
- };
- 
- #endif
---- src/Adafruit_MCP2515.cpp.orig	2026-10-17 13:31:10
-+++ src/Adafruit_MCP2515.cpp	2026-10-17 13:31:23
+--- a/src/Adafruit_MCP2515.cpp
++++ b/src/Adafruit_MCP2515.cpp
 @@ -10,6 +10,12 @@
  #define REG_TXRTSCTRL 0x0d
  
@@ -63,7 +27,7 @@
    int n = 0;
  
    if (_txExtended) {
-@@ -184,17 +197,33 @@
+@@ -184,9 +197,12 @@
      }
    }
  
@@ -76,28 +40,27 @@
  
    while (readRegister(REG_TXBnCTRL(n)) & 0x08) {
      if (readRegister(REG_TXBnCTRL(n)) & 0x10) {
-       // abort
-       aborted = true;
+@@ -196,6 +212,19 @@
+       modifyRegister(REG_CANCTRL, 0x10, 0x10);
+     }
  
-+      modifyRegister(REG_CANCTRL, 0x10, 0x10);
-+    }
-+
 +    uint32_t elapsed = millis() - start;
 +    if (!timedOut && elapsed > _txTimeoutMs) {
 +      // nobody acknowledged the frame: ask the chip to abort it
 +      timedOut = true;
 +      aborted = true;
-       modifyRegister(REG_CANCTRL, 0x10, 0x10);
-     }
++      modifyRegister(REG_CANCTRL, 0x10, 0x10);
++    }
 +    if (timedOut && elapsed > (uint32_t)_txTimeoutMs + TX_ABORT_GRACE_MS) {
 +      // the chip did not abort in time: clear the request by hand
 +      modifyRegister(REG_TXBnCTRL(n), 0x08, 0x00);
 +      break;
 +    }
- 
++
      yield();
    }
-@@ -206,9 +235,24 @@
+ 
+@@ -206,7 +235,33 @@
  
    modifyRegister(REG_CANINTF, FLAG_TXnIF(n), 0x00);
  
@@ -114,12 +77,61 @@
 +    _txDown = false;
 +  }
 +  return ok;
- }
- 
++}
++
 +uint8_t Adafruit_MCP2515::txErrorCount() { return readRegister(REG_TEC); }
 +uint8_t Adafruit_MCP2515::rxErrorCount() { return readRegister(REG_REC); }
 +uint8_t Adafruit_MCP2515::errorFlags() { return readRegister(REG_EFLG); }
 +
- int Adafruit_MCP2515::parsePacket() {
-   int n;
++bool Adafruit_MCP2515::txFault() {
++  static uint32_t lastRead = 0;
++  static bool eflgFault = false;
++  if (_txDown) return true;
++  if (millis() - lastRead >= 200) {
++    lastRead = millis();
++    eflgFault = (readRegister(REG_EFLG) & 0x34) != 0;   // TXWAR 0x04, TXEP 0x10, TXBO 0x20
++  }
++  return eflgFault;
+ }
  
+ int Adafruit_MCP2515::parsePacket() {
+--- a/src/Adafruit_MCP2515.h
++++ b/src/Adafruit_MCP2515.h
+@@ -40,6 +40,23 @@
+ 
+   void setClockFrequency(long clockFrequency);
+ 
++  // LOCAL PATCH (PiAvionics): bounded transmit, see PATCH_NOTES.md.
++  // endPacket() gives up after the timeout instead of waiting for ever when no
++  // node acknowledges the frame (for example a lone, unterminated module). After a
++  // timeout, sends are skipped (return 0) for TX_RETRY_MS, then one frame is
++  // tried again; the first frame that completes clears the "down" state.
++  void setTxTimeoutMs(uint16_t ms) { _txTimeoutMs = ms; }
++  bool txDown() const { return _txDown; }            ///< true while sends are failing
++  uint32_t txTimeouts() const { return _txTimeouts; }   ///< frames abandoned
++  uint32_t txSuppressed() const { return _txSuppressed; } ///< frames skipped while down
++  uint8_t txErrorCount();   ///< MCP2515 TEC register
++  uint8_t rxErrorCount();   ///< MCP2515 REC register
++  uint8_t errorFlags();     ///< MCP2515 EFLG register
++  /// LOCAL PATCH: true if our frames are not getting through: sends are being abandoned (txDown), or
++  /// the chip's transmit error counter is high (EFLG TXWAR/TXEP/TXBO). A terminated module with its cable
++  /// pulled never times out but its error counter climbs to 128. Reads EFLG at most every 200 ms.
++  bool txFault();
++
+   void dumpRegisters(Stream &out);
+ 
+ private:
+@@ -56,6 +73,13 @@
+ 
+   Adafruit_SPIDevice *spi_dev = NULL; ///< Pointer to SPI bus interface
+   long _clockFrequency;
++
++  // LOCAL PATCH (PiAvionics)
++  uint16_t _txTimeoutMs = 10;
++  bool _txDown = false;
++  uint32_t _txRetryAt = 0;
++  uint32_t _txTimeouts = 0;
++  uint32_t _txSuppressed = 0;
+ };
+ 
+ #endif
