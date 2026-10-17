@@ -62,27 +62,15 @@ Status: **Open**, **Monitoring** (fix applied, watching), **Fixed**.
   where the EFIS triggers them (soft-button menu).
 - Out of scope for now: reading or updating the firmware image over CAN, which would
   need a bootloader.
-- Step 1 drafted 2026-10-17 in `Protocol/can_messages.yaml` (0x701 IMU, 0x702 AIR, 0x703 GPS
-  heartbeats, status planned) for review. No firmware or EFIS changes yet. Still to do after
-  review: IMU sender, then AIR and GPS, then handling in `aio_server.py`.
-
-## Monitoring
-
-### 6. MCP2515 not initialising on the Pi (`Cannot initialize MCP2515. Wrong wiring?`)
-- 2026-09-30: `can0` went bus-off at 09:17:42 after ~14 h of normal running. It
-  did not recover (`restart-ms 0`). Cold boots then failed with `Probe failed, err=19`
-  and down/up cycles failed with `didn't enter in config mode`.
-- Diagnosis: raw SPI tests (spidev) showed the chip and SPI link were healthy while
-  its oscillator was already running (0 errors in 2000 read/writes at up to 4 MHz).
-  It failed whenever the oscillator had to start from cold (boot, or after the
-  driver put the chip to sleep); registers then read 0x00 and never recovered.
-- Fix: reflowed the MCP2515, C2/C3 and the crystal. Cold boot then initialised
-  normally at 10:04:07 and traffic resumed.
-- Root cause is probably a bad joint on the crystal circuit; not proven.
-- Watch for a repeat. If it returns, suspect Y1 and the load caps (issue 4).
-- Config: `dtoverlay=mcp2515-can0,oscillator=16000000,interrupt=25,spimaxfrequency=2000000`.
-
-## Fixed
+- Step 1 done 2026-10-17: heartbeats 0x701 (IMU), 0x702 (AIR), 0x703 (GPS) are in
+  `Protocol/can_messages.yaml` and sent by IMU_AHRS 1.0.4, AIR_Module 1.0.23 and
+  GPS_Module 1.0.3 (shared code in the ModuleInfo library 1.1.0; StatusLED 1.1.0 keeps the
+  heartbeat going during startup and while a failure code blinks). Verified on the bus: state 0
+  from uptime 0 s, then state 1 with the sensors mask, uptime resetting on a reboot.
+- Still to do: handle the heartbeats in `aio_server.py` and show them (to be done with the
+  EFIS display, together with David's backup text display and an EFIS heartbeat 0x700);
+  detect a pressure sensor that stops answering while running (the AIR mask bits 0-2 only
+  reflect start-up); the command messages (steps 2 to 4 above).
 
 ### 10. AIR module: INT trace on the CAN FeatherWing (cut 2026-10-17)
 - Found 2026-10-16: the CAN FeatherWing INT output is on GPIO8, the same pin as

@@ -2,7 +2,7 @@
 
 > **Generated file. Do not edit.** Edit `Protocol/can_messages.yaml` and run `Protocol/.venv/bin/python Protocol/generate_can_docs.py`.
 
-Version 0.1.1 · reviewed 2026-10-17
+Version 0.1.2 · reviewed 2026-10-17
 
 Sensor modules broadcast their data on fixed IDs. The Pi EFIS listens, and sends QNH to the AIR module. There are no addressed commands yet (see ISSUES.md issue 9).
 
@@ -19,7 +19,7 @@ Sensor modules broadcast their data on fixed IDs. The Pi EFIS listens, and sends
 
 - Lower IDs win bus arbitration. All PiAvionics IDs (0x19 to 0x83) are lower than every MGL device ID (0x200 and up).
 - Modules send each message on a timer (period_ms). The firmware adds up to 50 ms of random jitter; it has little effect in practice and is not needed for collision handling, because CAN arbitration never drops a frame.
-- The EFIS treats AHRS data (0x48, 0x49) as stale after 0.2 s. No other message has a timeout yet (see ISSUES.md). Module heartbeats (0x701 to 0x703, planned) add a module-level timeout of 3 s.
+- The EFIS treats AHRS data (0x48, 0x49) as stale after 0.2 s. No other message has a timeout yet (see ISSUES.md). Module heartbeats (0x701 to 0x703) add a module-level timeout of 3 s.
 
 ## Status key
 
@@ -51,9 +51,9 @@ Sensor modules broadcast their data on fixed IDs. The Pi EFIS listens, and sends
 | `0x081` | [MAG_X](#0x081-mag_x) | IMU / AHRS module | Pi EFIS | — | 4 | 🔘 Reserved |
 | `0x082` | [MAG_Y](#0x082-mag_y) | IMU / AHRS module | Pi EFIS | — | 4 | 🔘 Reserved |
 | `0x083` | [MAG_Z](#0x083-mag_z) | IMU / AHRS module | Pi EFIS | — | 4 | 🔘 Reserved |
-| `0x701` | [IMU_HEARTBEAT](#0x701-imu_heartbeat) | IMU / AHRS module | Pi EFIS | 1 s | 8 | ⚪ Planned |
-| `0x702` | [AIR_HEARTBEAT](#0x702-air_heartbeat) | AIR module | Pi EFIS | 1 s | 8 | ⚪ Planned |
-| `0x703` | [GPS_HEARTBEAT](#0x703-gps_heartbeat) | GPS module | Pi EFIS | 1 s | 8 | ⚪ Planned |
+| `0x701` | [IMU_HEARTBEAT](#0x701-imu_heartbeat) | IMU / AHRS module | Pi EFIS | 1 s | 8 | 🟡 Partial |
+| `0x702` | [AIR_HEARTBEAT](#0x702-air_heartbeat) | AIR module | Pi EFIS | 1 s | 8 | 🟡 Partial |
+| `0x703` | [GPS_HEARTBEAT](#0x703-gps_heartbeat) | GPS module | Pi EFIS | 1 s | 8 | 🟡 Partial |
 
 ## Messages
 
@@ -666,7 +666,7 @@ Sensor modules broadcast their data on fixed IDs. The Pi EFIS listens, and sends
 | Received by | Pi EFIS |
 | Rate | 1 s |
 | Data length | 8 bytes |
-| Status | ⚪ Planned |
+| Status | 🟡 Partial |
 
 | Bytes | Field | Type | Unit | Description |
 |:-----:|-------|------|------|-------------|
@@ -686,14 +686,14 @@ Sensor modules broadcast their data on fixed IDs. The Pi EFIS listens, and sends
 
 **Notes**
 
-- Heartbeat, same layout for every module. It is sent once as soon as the CAN bus is up (state 0 while starting, or 3 if start-up failed), then every second. A module that halts at start-up because a sensor is missing keeps sending state 3 with the sensors mask showing which one failed, so the EFIS can say what is wrong.
+- Heartbeat, same layout for every module. It is sent once as soon as the CAN bus is up (state 0 while starting, or 3 if start-up failed), then every second. Firmware: IMU_AHRS 1.0.4, AIR_Module 1.0.23, GPS_Module 1.0.3. The EFIS does not read it yet. A module that halts at start-up because a sensor is missing keeps sending state 3 with the sensors mask showing which one failed, so the EFIS can say what is wrong.
 - The EFIS records the time each heartbeat arrived, the version, the state and the sensors mask. A module is shown as missing when no heartbeat has arrived for 3 s (three missed). Which modules the EFIS expects is EFIS configuration.
 - Sensors mask for the IMU: bit 0 ISM330DHCX (gyro and accelerometer), bit 1 LIS3MDL (magnetometer), bit 2 calibration loaded. Bit 2 clear gives state 2 (degraded), since the AHRS runs but is uncalibrated.
 - The version bytes are the VERSION string of the sketch ("1.0.3" is 1, 0, 3). The same text is in the USB product string and the '?' report (ModuleInfo library).
 
 **Code**
 
-- Sender: not written yet (IMU_AHRS.ino)
+- Sender: IMU_AHRS.ino (sendHeartbeat), ModuleInfo library
 - Receiver: not written yet (aio_server.py)
 
 ### 0x702 AIR_HEARTBEAT
@@ -706,7 +706,7 @@ Sensor modules broadcast their data on fixed IDs. The Pi EFIS listens, and sends
 | Received by | Pi EFIS |
 | Rate | 1 s |
 | Data length | 8 bytes |
-| Status | ⚪ Planned |
+| Status | 🟡 Partial |
 
 | Bytes | Field | Type | Unit | Description |
 |:-----:|-------|------|------|-------------|
@@ -727,11 +727,11 @@ Sensor modules broadcast their data on fixed IDs. The Pi EFIS listens, and sends
 **Notes**
 
 - See 0x701 for the layout and the rules.
-- Sensors mask for the AIR module: bit 0 pitot MS4525DO, bit 1 AOA MS4525DO, bit 2 static pressure SSC, bit 3 outside air temperature (MAX31865 RTD). A sensor that stops answering while running clears its bit and the module goes to state 2; the data that depends on it (for example airspeed) is not trusted.
+- Sensors mask for the AIR module: bit 0 pitot MS4525DO, bit 1 AOA MS4525DO, bit 2 static pressure SSC, bit 3 outside air temperature (MAX31865 RTD). Bits 0 to 2 are set from what was found at start-up. Only the temperature (bit 3) is checked while running (a good RTD sample in the last 2 s). A pressure sensor that stops answering in flight is not detected yet. If start-up halts because a sensor is missing, the module keeps sending state 3 with that sensor's bit clear.
 
 **Code**
 
-- Sender: not written yet (AIR_Module.ino)
+- Sender: AIR_Module.ino (sendHeartbeat), ModuleInfo library
 - Receiver: not written yet (aio_server.py)
 
 ### 0x703 GPS_HEARTBEAT
@@ -744,7 +744,7 @@ Sensor modules broadcast their data on fixed IDs. The Pi EFIS listens, and sends
 | Received by | Pi EFIS |
 | Rate | 1 s |
 | Data length | 8 bytes |
-| Status | ⚪ Planned |
+| Status | 🟡 Partial |
 
 | Bytes | Field | Type | Unit | Description |
 |:-----:|-------|------|------|-------------|
@@ -769,7 +769,7 @@ Sensor modules broadcast their data on fixed IDs. The Pi EFIS listens, and sends
 
 **Code**
 
-- Sender: not written yet (GPS_Module.ino)
+- Sender: GPS_Module.ino (sendHeartbeat), ModuleInfo library
 - Receiver: not written yet (aio_server.py)
 
 ## Nodes

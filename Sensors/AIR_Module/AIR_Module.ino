@@ -29,7 +29,7 @@
 /*****************************************************************************
  * Firmware version - increment the patch number on every change
  *****************************************************************************/
-#define VERSION "1.0.22"
+#define VERSION "1.0.23"
 
 // Set to 0 to run without the AOA sensor (Wire1, GPIO8/9). With 0, Wire1 is not
 // touched at all and a missing AOA sensor does not stop startup.
@@ -202,6 +202,7 @@ static int16_t staticTemp = 0;      // CANbus Data: degrees C * 10
 static int16_t oatTemp = 0;         // CANbus Data: degrees C * 10 (from MAX31865 RTD)
 static bool rtdAvailable = false;   // tracks whether RTD init succeeded
 static bool oatValid = false;       // true once a good OAT sample has been taken
+static unsigned long rtdLastGoodMs = 0;   // time of the last good RTD sample
                                     // (so 0.0 C is never sent before the first sample)
 static int16_t pitotTemp = 0;       // CANbus Data: degrees C * 10
 static int16_t pitotPressure = 0;   // CANbus Data: 
@@ -402,6 +403,7 @@ static void rtdUpdate() {
           float oatC = rtd.calculateTemperature(rtdRaw >> 1, RTD_NOMINAL, RTD_REF_RESISTOR);
           oatTemp = (int16_t)lroundf(oatLowPassFilter.update(oatC) * 10.0f);
           oatValid = true;
+          rtdLastGoodMs = now;
         } else {
           // Faulty sample: keep the last good value. Only the first fault is
           // logged so a bad connection does not fill the startup log.
@@ -492,6 +494,48 @@ static void wire1CheckAndRecover() {
 }
 
 /*****************************************************************************
+ * CAN heartbeat (Protocol/can_messages.yaml, 0x702)
+ *
+ * Sent every second with the module version, state and a mask of the sensors
+ * that are working: bit 0 pitot, bit 1 AOA, bit 2 static pressure (all from
+ * start-up), bit 3 outside air temperature (RTD; has a good sample in the last
+ * 2 s). State: STARTING until setup() finishes, FAILED if start-up halted (the
+ * mask then shows which sensor was missing), OK with all four bits set,
+ * DEGRADED otherwise. A sensor that stops answering while running is NOT
+ * detected yet, except for the RTD.
+ *****************************************************************************/
+
+#define HB_PITOT   0x01
+#define HB_AOA     0x02
+#define HB_STATIC  0x04
+#define HB_OAT     0x08
+#define HB_ALL     (HB_PITOT | HB_AOA | HB_STATIC | HB_OAT)
+#define RTD_FRESH_MS 2000
+
+static uint8_t hbStartupMask = 0;     // sensors found at start-up (bits 0-2)
+static bool canUp = false;            // heartbeat is only sent once the CAN bus is running
+static bool setupDone = false;
+static bool startupFailed = false;
+
+static void sendHeartbeat() {
+  if (!canUp || !moduleInfo.heartbeatDue()) return;
+
+  bool oatFresh = rtdAvailable && oatValid && (millis() - rtdLastGoodMs < RTD_FRESH_MS);
+  uint8_t mask = hbStartupMask | (oatFresh ? HB_OAT : 0);
+  uint8_t state = startupFailed ? MODULE_STATE_FAILED
+                : !setupDone    ? MODULE_STATE_STARTING
+                : (mask == HB_ALL) ? MODULE_STATE_OK
+                                   : MODULE_STATE_DEGRADED;
+  moduleInfo.setHealth(state, mask);
+
+  uint8_t frame[8];
+  moduleInfo.packHeartbeat(frame);
+  can.beginPacket(moduleInfo.heartbeatId());
+  can.write(frame, 8);
+  can.endPacket();
+}
+
+/*****************************************************************************
  * Setup Code
  * 
  * Connect to all the Peripherals
@@ -507,6 +551,8 @@ void setup() {
   // USB serial never waits for a host. Startup results are stored with
   // moduleInfo.log() and printed from loop() when a host connects, or on '?'.
   moduleInfo.begin();
+  moduleInfo.setModuleNumber(MODULE_NUM_AIR);
+  moduleInfo.setHealth(MODULE_STATE_STARTING, 0);
 
   // --------------------------------------------------------------------------
   // Connect to the MCP2515 CAN Bus controller on the SPI bus - FIRST, before
@@ -519,6 +565,8 @@ void setup() {
   #if CAN_INT_WORKAROUND
   canDisableInterruptOutput();
   #endif
+  canUp = can_success;
+  sendHeartbeat();    // first heartbeat (state STARTING) as soon as the bus is up
   moduleInfo.log(can_success ? "CAN bus OK" : "CAN bus (MCP2515) NOT FOUND");
 
   bool ms4525do_pitot_success, ms4525do_aoa_success, ssc_success;
@@ -571,14 +619,22 @@ void setup() {
   // to all the sensors.
   // --------------------------------------------------------------------------
 
+  hbStartupMask = (ms4525do_pitot_success ? HB_PITOT : 0) |
+                  (ms4525do_aoa_success   ? HB_AOA   : 0) |
+                  (ssc_success            ? HB_STATIC : 0);
+
   if (!ms4525do_pitot_success || !ms4525do_aoa_success ||
      !ssc_success || !can_success || !rtdAvailable ) {
+    startupFailed = true;
     moduleInfo.fatal("Startup failed");
     while (1) {             // wait for the user to reset the board
       moduleInfo.service(); // but still answer a host that connects later
+      sendHeartbeat();      // and tell the EFIS which sensor is missing (state FAILED)
       delay(100);
     }
   }
+
+  setupDone = true;
 
   moduleInfo.log("All peripherals connected");
 
@@ -654,6 +710,7 @@ void setup() {
 
 void loop() {
   moduleInfo.service();   // report on USB connect or '?'
+  sendHeartbeat();        // CAN heartbeat, once a second
   rtdUpdate();            // advance the non-blocking OAT reader (never waits)
 
   // --------------------------------------------------------------------------

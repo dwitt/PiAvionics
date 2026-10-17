@@ -22,7 +22,7 @@ schema_version: 1
 
 protocol:
   name: PiAvionics CAN
-  version: 0.1.1
+  version: 0.1.2
   last_reviewed: 2026-10-17
   bitrate: 250000
   identifier: Standard 11-bit
@@ -44,8 +44,7 @@ protocol:
       for collision handling, because CAN arbitration never drops a frame.
     - >
       The EFIS treats AHRS data (0x48, 0x49) as stale after 0.2 s. No other
-      message has a timeout yet (see ISSUES.md). Module heartbeats (0x701 to 0x703,
-      planned) add a module-level timeout of 3 s.
+      message has a timeout yet (see ISSUES.md). Module heartbeats (0x701 to 0x703) add a module-level timeout of 3 s.
 
 # Who sends and receives messages
 nodes:
@@ -450,7 +449,7 @@ messages:
     receivers: [efis]
     period_ms: 1000
     dlc: 8
-    status: planned
+    status: partial
     fields: &heartbeat_fields
       - {bytes: "0", name: module,        type: uint8, desc: "Module number (1 IMU, 2 AIR, 3 GPS). Always equals the ID minus 0x700"}
       - {bytes: "1", name: version_major, type: uint8, desc: Firmware version, major}
@@ -463,6 +462,8 @@ messages:
       - >
         Heartbeat, same layout for every module. It is sent once as soon as the CAN bus
         is up (state 0 while starting, or 3 if start-up failed), then every second.
+        Firmware: IMU_AHRS 1.0.4, AIR_Module 1.0.23, GPS_Module 1.0.3. The EFIS does
+        not read it yet.
         A module that halts at start-up because a sensor is missing keeps sending state 3
         with the sensors mask showing which one failed, so the EFIS can say what is wrong.
       - >
@@ -477,7 +478,7 @@ messages:
         The version bytes are the VERSION string of the sketch ("1.0.3" is 1, 0, 3).
         The same text is in the USB product string and the '?' report (ModuleInfo library).
     code:
-      sender: "not written yet (IMU_AHRS.ino)"
+      sender: "IMU_AHRS.ino (sendHeartbeat), ModuleInfo library"
       receiver: "not written yet (aio_server.py)"
 
   # ---------------------------------------------------------------------------
@@ -488,17 +489,19 @@ messages:
     receivers: [efis]
     period_ms: 1000
     dlc: 8
-    status: planned
+    status: partial
     fields: *heartbeat_fields
     notes:
       - See 0x701 for the layout and the rules.
       - >
         Sensors mask for the AIR module: bit 0 pitot MS4525DO, bit 1 AOA MS4525DO,
         bit 2 static pressure SSC, bit 3 outside air temperature (MAX31865 RTD).
-        A sensor that stops answering while running clears its bit and the module goes
-        to state 2; the data that depends on it (for example airspeed) is not trusted.
+        Bits 0 to 2 are set from what was found at start-up. Only the temperature (bit 3)
+        is checked while running (a good RTD sample in the last 2 s). A pressure sensor
+        that stops answering in flight is not detected yet. If start-up halts because a
+        sensor is missing, the module keeps sending state 3 with that sensor's bit clear.
     code:
-      sender: "not written yet (AIR_Module.ino)"
+      sender: "AIR_Module.ino (sendHeartbeat), ModuleInfo library"
       receiver: "not written yet (aio_server.py)"
 
   # ---------------------------------------------------------------------------
@@ -509,7 +512,7 @@ messages:
     receivers: [efis]
     period_ms: 1000
     dlc: 8
-    status: planned
+    status: partial
     fields: *heartbeat_fields
     notes:
       - See 0x701 for the layout and the rules.
@@ -518,7 +521,7 @@ messages:
         bit 1 has a position fix. No fix is not a fault, so a missing fix does not
         change state; it stays 1 (OK) while NMEA is arriving. 0x65 carries the fix details.
     code:
-      sender: "not written yet (GPS_Module.ino)"
+      sender: "GPS_Module.ino (sendHeartbeat), ModuleInfo library"
       receiver: "not written yet (aio_server.py)"
 
 # IDs that code refers to but which carry no CAN traffic
