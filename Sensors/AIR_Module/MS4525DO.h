@@ -10,7 +10,7 @@
 #include <Adafruit_Sensor.h>
 #include <Wire.h>
 
-#define MS4525DO_VERSION "1.1.0"
+#define MS4525DO_VERSION "1.1.1"
 #define MS4525DO_ADDRESS (0x28)     // Default I2C address for MS4525DO
 
 class MS4525DO;

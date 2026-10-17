@@ -10,7 +10,7 @@
 #include <Adafruit_Sensor.h>
 #include <Wire.h>
 
-#define SSC_VERSION "1.1.0"
+#define SSC_VERSION "1.1.1"
 #define SSC_ADDRESS (0x78)     // Default I2C address for SSC
 #define SSC_SENSOR_ID (0x21)  // 33 decimal
 

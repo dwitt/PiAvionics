@@ -223,8 +223,9 @@ float MS4525DO::readSpeed() {
 // ----------------------------------------------------------------------------
 void MS4525DO::setPressureRange(MS4525DO_Pressure_Range range) {
 
-    _pMin = -range * 68.9476;
-    _pMax = range * 68.9476;
+    const double rangePsi = static_cast<double>(range);   // the enum value is the range in psi
+    _pMin = -rangePsi * 68.9476;
+    _pMax = rangePsi * 68.9476;
     _pRange = _pMax - _pMin;
 }
 

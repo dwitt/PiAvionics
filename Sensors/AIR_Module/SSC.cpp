@@ -218,7 +218,7 @@ float SSC::readAltitude(float seaLevelPressure_hPa) {
 void SSC::setPressureRange(SSC_Pressure_Range range) {
 
     _pMin = 0;
-    _pMax = range * 100.0;
+    _pMax = static_cast<double>(range) * 100.0;   // the enum value is the range in 100 hPa units
     _pRange = _pMax - _pMin;
 }
 
