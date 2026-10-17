@@ -33,9 +33,10 @@ gyro-only heading stays under a red X for 5 minutes then blanks; red X look; att
 annunciators at top centre under the heading ribbon (flash 5 s on first appearance); module status page from the Menu; OAT sends
 the 0x7FFF marker; GPS frames stay stopped (EFIS timeout); timeouts 0.5 s / 1.5 s / 3.5 s; MODULE RESTARTED caution; EFIS
 heartbeat 0x700 with a mask of healthy modules plus display connected.
-Start with step 1 of its "Order of work": the protocol (YAML + generated docs), no code; then the server step A, display step A,
-server step B, backup display, and last the module marker changes (server and display first so nothing draws 32767).
-Also first: sketch the annunciator and red-X look as a mock-up for David before coding the display.
+Step 1 (protocol 0.2.0: markers, timeouts, 0x700 in `Protocol/can_messages.yaml`, docs regenerated) is DONE and committed.
+Next: sketch the annunciator and red-X look as a mock-up for David, then server step A (heartbeat handlers, timeouts, validity
+flags, annunciation list), display step A, server step B (markers, 0x700), backup display, and last the module marker changes
+(server and display first so nothing draws 32767).
 Other open items: AOA value on 0x29 is still always 0; command messages over CAN (ISSUES #9 steps 2 to 4); ISSUES #2
 (`monitor_timeout` busy loop) is fixed by the plan.
 

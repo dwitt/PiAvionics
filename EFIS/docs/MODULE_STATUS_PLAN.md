@@ -120,7 +120,11 @@ made (see "Decisions recorded" at the end); nothing is built yet. Start at step 
 ## Order of work (each step testable on its own)
 
 0. **Decisions**: done (below). Still to do: sketch the annunciator and red-X look as a mock-up before coding the display.
-1. **Protocol** (YAML + docs): markers, 0x700. No code.
+1. **Protocol** (YAML + docs): markers, 0x700. No code. **DONE 2026-10-17** (protocol 0.2.0): `invalid:` markers on the fields in the
+   table above, `timeout_ms` on every message the EFIS watches (0x2B added at 1.5 s, same as OAT), notes with the interim behaviour,
+   the heartbeat notes brought up to date, and the new planned message 0x700 EFIS_HEARTBEAT. The generator (1.1.0) adds an
+   "Invalid marker" column, a "Treated as lost after" row, and checks each marker fits its type. All magnitudes checked: no real value
+   reaches 0x7FFF (largest real values: heading 3600, static pressure 11000, differential pressure under 7000, accel about 4000).
 2. **Server step A**: heartbeat handlers, module table, timeouts for every message, validity flags, annunciation list in the
    JSON, sleep fix. Markers not used yet. Test: unplug each module's CAN cable and use the modules' fault commands; read the
    JSON with a small websocket client; unit tests with fake frames.

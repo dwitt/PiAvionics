@@ -2,9 +2,9 @@
 
 > **Generated file. Do not edit.** Edit `Protocol/can_messages.yaml` and run `Protocol/.venv/bin/python Protocol/generate_can_docs.py`.
 
-Version 0.1.2 · reviewed 2026-10-17
+Version 0.2.0 · reviewed 2026-10-17
 
-Sensor modules broadcast their data on fixed IDs. The Pi EFIS listens, and sends QNH to the AIR module. There are no addressed commands yet (see ISSUES.md issue 9).
+Sensor modules broadcast their data on fixed IDs. The Pi EFIS listens, sends QNH to the AIR module, and sends its own heartbeat (0x700). There are no addressed commands yet (see ISSUES.md issue 9).
 
 ## Bus at a glance
 
@@ -19,7 +19,9 @@ Sensor modules broadcast their data on fixed IDs. The Pi EFIS listens, and sends
 
 - Lower IDs win bus arbitration. All PiAvionics IDs (0x19 to 0x83) are lower than every MGL device ID (0x200 and up).
 - Modules send each message on a timer (period_ms). The firmware adds up to 50 ms of random jitter; it has little effect in practice and is not needed for collision handling, because CAN arbitration never drops a frame.
-- The EFIS treats AHRS data (0x48, 0x49) as stale after 0.2 s. No other message has a timeout yet (see ISSUES.md). Module heartbeats (0x701 to 0x703) add a module-level timeout of 3 s.
+- Invalid-data markers (protocol 0.2.0, planned). A field that cannot be trusted is sent as the largest positive value of its type: 0x7FFF for a 16-bit field, 0x7FFFFFFF for a 32-bit field. No real value can reach it (see the Invalid marker column). A receiver must show such a field as failed and never as a number. The markers are defined here but the firmware does not send them yet; until it does, a module in trouble sends the interim values listed in the notes of each message, and its heartbeat (0x701 to 0x703) says which sensor is lost.
+- Timeouts (decided 2026-10-17, not yet implemented in the EFIS). The EFIS treats data as lost after: 0.5 s without 0x28, 0x48 or 0x49; 1.5 s without 0x2A or 0x2B; 3.5 s without 0x63, 0x64 or 0x65; 3 s without a module heartbeat (the module is shown as missing). Today the EFIS times out only 0x48 and 0x49, after 0.2 s.
+- Three things make a value invalid on the EFIS: the marker, a heartbeat that says the sensor is lost, or the message not arriving within its timeout. All three look the same on the display.
 
 ## Status key
 
@@ -51,6 +53,7 @@ Sensor modules broadcast their data on fixed IDs. The Pi EFIS listens, and sends
 | `0x081` | [MAG_X](#0x081-mag_x) | IMU / AHRS module | Pi EFIS | — | 4 | 🔘 Reserved |
 | `0x082` | [MAG_Y](#0x082-mag_y) | IMU / AHRS module | Pi EFIS | — | 4 | 🔘 Reserved |
 | `0x083` | [MAG_Z](#0x083-mag_z) | IMU / AHRS module | Pi EFIS | — | 4 | 🔘 Reserved |
+| `0x700` | [EFIS_HEARTBEAT](#0x700-efis_heartbeat) | Pi EFIS | CAN display feather | 1 s | 8 | ⚪ Planned |
 | `0x701` | [IMU_HEARTBEAT](#0x701-imu_heartbeat) | IMU / AHRS module | Pi EFIS | 1 s | 8 | 🟡 Partial |
 | `0x702` | [AIR_HEARTBEAT](#0x702-air_heartbeat) | AIR module | Pi EFIS | 1 s | 8 | 🟡 Partial |
 | `0x703` | [GPS_HEARTBEAT](#0x703-gps_heartbeat) | GPS module | Pi EFIS | 1 s | 8 | 🟡 Partial |
@@ -134,12 +137,13 @@ Sensor modules broadcast their data on fixed IDs. The Pi EFIS listens, and sends
 | Rate | 100 ms |
 | Data length | 8 bytes |
 | Status | ✅ Active |
+| Treated as lost after | 0.5 s without a message |
 
-| Bytes | Field | Type | Unit | Description |
-|:-----:|-------|------|------|-------------|
-| 0-1 | `airspeed` | int16 | kt | Indicated airspeed from the pitot sensor |
-| 2-5 | `altitude` | int32 | ft | Pressure altitude using the QNH from 0x2E |
-| 6-7 | `vertical_speed` | int16 | ft/min | Climb rate from the static pressure, positive = climbing (3 s window, about 3 s lag, about +-40 ft/min at rest) |
+| Bytes | Field | Type | Unit | Description | Invalid marker |
+|:-----:|-------|------|------|-------------|-------------|
+| 0-1 | `airspeed` | int16 | kt | Indicated airspeed from the pitot sensor | `0x7FFF` |
+| 2-5 | `altitude` | int32 | ft | Pressure altitude using the QNH from 0x2E | `0x7FFFFFFF` |
+| 6-7 | `vertical_speed` | int16 | ft/min | Climb rate from the static pressure, positive = climbing (3 s window, about 3 s lag, about +-40 ft/min at rest) | `0x7FFF` |
 
 **Byte layout**
 
@@ -149,6 +153,7 @@ Sensor modules broadcast their data on fixed IDs. The Pi EFIS listens, and sends
 
 **Notes**
 
+- Invalid markers (planned): airspeed when the pitot sensor is lost; altitude and vertical speed when the static pressure sensor is lost. Interim behaviour until the firmware sends them (AIR_Module 1.0.34): pitot lost sends airspeed 0; static lost holds the last altitude (0 if the sensor was never found) and sends vertical speed 0. The AIR heartbeat (0x702) mask bits 0 and 2 say which sensor is lost.
 - Altitude is a full 4-byte integer with no padding byte. The older Can Docs.md showed a 3-byte altitude and is wrong.
 - Vertical speed is computed by AIR_Module v1.0.21 and later from the low-passed static pressure (standard atmosphere, not QNH): the altitude change over the last 3 s, smoothed. It lags a real change in climb rate by about 3 s.
 
@@ -201,12 +206,13 @@ Sensor modules broadcast their data on fixed IDs. The Pi EFIS listens, and sends
 | Rate | 200 ms |
 | Data length | 8 bytes |
 | Status | ✅ Active |
+| Treated as lost after | 1.5 s without a message |
 
-| Bytes | Field | Type | Unit | Description |
-|:-----:|-------|------|------|-------------|
-| 0-1 | `oat` | int16 | degC (raw × 0.1) | MAX31865 RTD temperature |
-| 2 | `humidity` | uint8 | % | Not available; always 0 |
-| 3-7 | `unused` | uint8 |  | Always 0 |
+| Bytes | Field | Type | Unit | Description | Invalid marker |
+|:-----:|-------|------|------|-------------|-------------|
+| 0-1 | `oat` | int16 | degC (raw × 0.1) | MAX31865 RTD temperature | `0x7FFF` |
+| 2 | `humidity` | uint8 | % | Not available; always 0 | — |
+| 3-7 | `unused` | uint8 |  | Always 0 | — |
 
 **Byte layout**
 
@@ -216,7 +222,7 @@ Sensor modules broadcast their data on fixed IDs. The Pi EFIS listens, and sends
 
 **Notes**
 
-- Sent only when the RTD (MAX31865) is present and initialised.
+- Sent while the RTD (MAX31865) gives valid readings. When it is lost (open or shorted probe, MAX31865 board missing, or a temperature outside -60 to 80 C) the AIR module currently stops sending this message (AIR_Module 1.0.34). Decided 2026-10-17: it will keep sending it with the invalid marker instead, so the EFIS can tell a failed sensor from a silent module. Heartbeat 0x702 bit 3 says the same.
 
 **Code**
 
@@ -234,13 +240,14 @@ Sensor modules broadcast their data on fixed IDs. The Pi EFIS listens, and sends
 | Rate | 200 ms |
 | Data length | 8 bytes |
 | Status | ✅ Active |
+| Treated as lost after | 1.5 s without a message |
 
-| Bytes | Field | Type | Unit | Description |
-|:-----:|-------|------|------|-------------|
-| 0-1 | `static_pressure` | int16 | hPa (raw × 0.1) | Filtered static pressure |
-| 2 | `sensor_temperature` | int8 | degC | Whole degrees |
-| 3-4 | `differential_pressure` | int16 | Pa | Filtered pitot (differential) pressure |
-| 5-7 | `padding` | uint8 |  | Always 0 |
+| Bytes | Field | Type | Unit | Description | Invalid marker |
+|:-----:|-------|------|------|-------------|-------------|
+| 0-1 | `static_pressure` | int16 | hPa (raw × 0.1) | Filtered static pressure | `0x7FFF` |
+| 2 | `sensor_temperature` | int8 | degC | Whole degrees | — |
+| 3-4 | `differential_pressure` | int16 | Pa | Filtered pitot (differential) pressure | `0x7FFF` |
+| 5-7 | `padding` | uint8 |  | Always 0 | — |
 
 **Byte layout**
 
@@ -251,6 +258,7 @@ Sensor modules broadcast their data on fixed IDs. The Pi EFIS listens, and sends
 **Notes**
 
 - Matches the legacy CircuitPython format (struct "<hbhBBB"). The differential pressure (bytes 3-4) was missing from the old Can Docs.md.
+- Invalid markers (planned): static pressure when the static sensor is lost, differential pressure when the pitot is lost. Interim (AIR_Module 1.0.34): differential pressure is 0 when the pitot is lost; static pressure holds its last value. The 1.5 s timeout was not in the 2026-10-17 decision list; it was set equal to the OAT message because the EFIS uses both for density altitude.
 
 **Code**
 
@@ -329,13 +337,14 @@ Sensor modules broadcast their data on fixed IDs. The Pi EFIS listens, and sends
 | Rate | 100 ms |
 | Data length | 8 bytes |
 | Status | ✅ Active |
+| Treated as lost after | 0.5 s without a message |
 
-| Bytes | Field | Type | Unit | Description |
-|:-----:|-------|------|------|-------------|
-| 0-1 | `heading` | int16 | deg (raw × 0.1) | Fused yaw, clockwise positive (NED), 0 to 360 |
-| 2-3 | `pitch` | int16 | deg (raw × 0.1) | Aircraft (NED) convention |
-| 4-5 | `roll` | int16 | deg (raw × 0.1) | Aircraft (NED) convention |
-| 6-7 | `turn_rate` | int16 | deg/s (raw × 0.1) | Derived from yaw; 0.5 deg/s deadband |
+| Bytes | Field | Type | Unit | Description | Invalid marker |
+|:-----:|-------|------|------|-------------|-------------|
+| 0-1 | `heading` | int16 | deg (raw × 0.1) | Fused yaw, clockwise positive (NED), 0 to 360 | `0x7FFF` |
+| 2-3 | `pitch` | int16 | deg (raw × 0.1) | Aircraft (NED) convention | `0x7FFF` |
+| 4-5 | `roll` | int16 | deg (raw × 0.1) | Aircraft (NED) convention | `0x7FFF` |
+| 6-7 | `turn_rate` | int16 | deg/s (raw × 0.1) | Derived from yaw; 0.5 deg/s deadband | `0x7FFF` |
 
 **Byte layout**
 
@@ -345,8 +354,9 @@ Sensor modules broadcast their data on fixed IDs. The Pi EFIS listens, and sends
 
 **Notes**
 
+- Invalid markers (planned): all four fields when the accelerometer/gyro (ISM330DHCX) is lost. Interim (IMU_AHRS 1.0.15): the last attitude is held and keeps being sent. When only the magnetometer is lost the IMU keeps running as a 6-axis AHRS: pitch and roll stay correct and the heading continues from the gyro alone, drifting about 0.1 deg/s. That heading is NOT marked invalid; the EFIS learns of it from heartbeat 0x701 (sensors bit 1 clear) and shows it under a red X for 5 minutes (decision 1 in EFIS/docs/MODULE_STATUS_PLAN.md).
 - The IMU converts its native frame (NWU) to aircraft NED before sending. The EFIS only divides by 10.
-- The EFIS treats this message as stale after 0.2 s and blanks the values.
+- Today the EFIS treats this message as stale after 0.2 s and blanks the values; the new timeout is 0.5 s.
 
 **Code**
 
@@ -364,13 +374,14 @@ Sensor modules broadcast their data on fixed IDs. The Pi EFIS listens, and sends
 | Rate | 100 ms |
 | Data length | 8 bytes |
 | Status | ✅ Active |
+| Treated as lost after | 0.5 s without a message |
 
-| Bytes | Field | Type | Unit | Description |
-|:-----:|-------|------|------|-------------|
-| 0-1 | `accel_x` | int16 | m/s2 (raw × 0.01) | Sensor X (forward) |
-| 2-3 | `accel_y` | int16 | m/s2 (raw × 0.01) | Sensor Y (left) |
-| 4-5 | `accel_z` | int16 | m/s2 (raw × 0.01) | Sensor Z (up) |
-| 6-7 | `calibration` | int16 |  | Calibration status; always 0 today |
+| Bytes | Field | Type | Unit | Description | Invalid marker |
+|:-----:|-------|------|------|-------------|-------------|
+| 0-1 | `accel_x` | int16 | m/s2 (raw × 0.01) | Sensor X (forward) | `0x7FFF` |
+| 2-3 | `accel_y` | int16 | m/s2 (raw × 0.01) | Sensor Y (left) | `0x7FFF` |
+| 4-5 | `accel_z` | int16 | m/s2 (raw × 0.01) | Sensor Z (up) | `0x7FFF` |
+| 6-7 | `calibration` | int16 |  | Calibration status; always 0 today | — |
 
 **Byte layout**
 
@@ -380,8 +391,9 @@ Sensor modules broadcast their data on fixed IDs. The Pi EFIS listens, and sends
 
 **Notes**
 
+- Invalid markers (planned): the three accelerations when the accelerometer is lost. Interim (IMU_AHRS 1.0.15): the last values are held.
 - Calibrated values in the sensor's native frame, not converted to aircraft axes.
-- The EFIS treats this message as stale after 0.2 s.
+- Today the EFIS treats this message as stale after 0.2 s; the new timeout is 0.5 s.
 
 **Code**
 
@@ -486,6 +498,7 @@ Sensor modules broadcast their data on fixed IDs. The Pi EFIS listens, and sends
 | Rate | 1 s |
 | Data length | 8 bytes |
 | Status | ✅ Active |
+| Treated as lost after | 3.5 s without a message |
 
 | Bytes | Field | Type | Unit | Description |
 |:-----:|-------|------|------|-------------|
@@ -500,7 +513,7 @@ Sensor modules broadcast their data on fixed IDs. The Pi EFIS listens, and sends
 
 **Notes**
 
-- Sent only while the GPS has a fix. The EFIS keeps the last value when the fix is lost.
+- Sent only while the GPS has a fix. Decided 2026-10-17: no invalid markers on the GPS messages; when the GPS has no data or no fix the frames simply stop. Today the EFIS keeps the last position forever; it will time the data out after 3.5 s. 0x65 and the GPS heartbeat (0x703) say why.
 
 **Code**
 
@@ -518,6 +531,7 @@ Sensor modules broadcast their data on fixed IDs. The Pi EFIS listens, and sends
 | Rate | 1 s |
 | Data length | 8 bytes |
 | Status | ✅ Active |
+| Treated as lost after | 3.5 s without a message |
 
 | Bytes | Field | Type | Unit | Description |
 |:-----:|-------|------|------|-------------|
@@ -552,6 +566,7 @@ Sensor modules broadcast their data on fixed IDs. The Pi EFIS listens, and sends
 | Rate | 1 s |
 | Data length | 8 bytes |
 | Status | ✅ Active |
+| Treated as lost after | 3.5 s without a message |
 
 | Bytes | Field | Type | Unit | Description |
 |:-----:|-------|------|------|-------------|
@@ -656,21 +671,22 @@ Sensor modules broadcast their data on fixed IDs. The Pi EFIS listens, and sends
 
 - See 0x81.
 
-### 0x701 IMU_HEARTBEAT
+### 0x700 EFIS_HEARTBEAT
 
-**IMU / AHRS module heartbeat, version and health**
+**Pi EFIS heartbeat and view of the modules**
 
 | | |
 |---|---|
-| Sent by | IMU / AHRS module |
-| Received by | Pi EFIS |
+| Sent by | Pi EFIS |
+| Received by | CAN display feather |
 | Rate | 1 s |
 | Data length | 8 bytes |
-| Status | 🟡 Partial |
+| Status | ⚪ Planned |
+| Treated as lost after | 3 s without a message |
 
 | Bytes | Field | Type | Unit | Description |
 |:-----:|-------|------|------|-------------|
-| 0 | `module` | uint8 |  | Module number (1 IMU, 2 AIR, 3 GPS). Always equals the ID minus 0x700 |
+| 0 | `module` | uint8 |  | Node number (0 EFIS, 1 IMU, 2 AIR, 3 GPS). Always equals the ID minus 0x700 |
 | 1 | `version_major` | uint8 |  | Firmware version |
 | 2 | `version_minor` | uint8 |  | Firmware version |
 | 3 | `version_patch` | uint8 |  | Firmware version |
@@ -686,9 +702,50 @@ Sensor modules broadcast their data on fixed IDs. The Pi EFIS listens, and sends
 
 **Notes**
 
-- Heartbeat, same layout for every module. It is sent once as soon as the CAN bus is up (state 0 while starting, or 3 if start-up failed), then every second. Firmware: IMU_AHRS 1.0.4, AIR_Module 1.0.23, GPS_Module 1.0.3. The EFIS does not read it yet. A module that halts at start-up because a sensor is missing keeps sending state 3 with the sensors mask showing which one failed, so the EFIS can say what is wrong.
+- Planned (decided 2026-10-17, EFIS/docs/MODULE_STATUS_PLAN.md). Same layout as the module heartbeats (0x701 and the rules there), module number 0. Sent by a task in aio_server.py every second, so it stops if the EFIS software stops. The backup display (CAN_Display) uses it to tell "the Pi is alive but a module is missing" from "the Pi is dead".
+- Version bytes: the EFIS software version (to be defined). Uptime: seconds since the EFIS server started.
+- Sensors mask for the EFIS: bit 0 the AIR module is seen healthy (heartbeat state 1 and arriving), bit 1 the IMU module, bit 2 the GPS module, bit 3 a display (browser) client is connected. Bits 4 to 7 are 0.
+- State: 1 all three modules healthy, 2 a module is degraded, failed or missing, 3 the EFIS cannot produce a display (for example no display client for a while after start-up, to be defined with the implementation).
+
+**Code**
+
+- Sender: not written yet (aio_server.py)
+- Receiver: not written yet (CAN_Feather.ino)
+
+### 0x701 IMU_HEARTBEAT
+
+**IMU / AHRS module heartbeat, version and health**
+
+| | |
+|---|---|
+| Sent by | IMU / AHRS module |
+| Received by | Pi EFIS |
+| Rate | 1 s |
+| Data length | 8 bytes |
+| Status | 🟡 Partial |
+| Treated as lost after | 3 s without a message |
+
+| Bytes | Field | Type | Unit | Description |
+|:-----:|-------|------|------|-------------|
+| 0 | `module` | uint8 |  | Node number (0 EFIS, 1 IMU, 2 AIR, 3 GPS). Always equals the ID minus 0x700 |
+| 1 | `version_major` | uint8 |  | Firmware version |
+| 2 | `version_minor` | uint8 |  | Firmware version |
+| 3 | `version_patch` | uint8 |  | Firmware version |
+| 4 | `state` | uint8 |  | 0 = starting, 1 = OK, 2 = degraded (a sensor is missing or invalid), 3 = failed (halted, not producing data) |
+| 5 | `sensors` | uint8 |  | Bit mask of sensors that are present and giving valid data (1 = good). Bit meanings are per module, see the notes |
+| 6-7 | `uptime` | uint16 | s | Seconds since the module started; stops at 65535 (18 h). A drop means the module restarted |
+
+**Byte layout**
+
+| Byte | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 |
+|------|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
+| Field | `module` | `version_major` | `version_minor` | `version_patch` | `state` | `sensors` | `uptime` (1/2) | `uptime` (2/2) |
+
+**Notes**
+
+- Heartbeat, same layout for every module. It is sent once as soon as the CAN bus is up (state 0 while starting, or 3 if start-up failed), then every second. Firmware: IMU_AHRS 1.0.15, AIR_Module 1.0.34, GPS_Module 1.0.8 (ModuleInfo library 1.3.0). The EFIS does not read it yet (planned: EFIS/docs/MODULE_STATUS_PLAN.md). The sensors mask follows the live health of each sensor, not just what was found at start-up. A sensor is invalid after a short run of bad samples (IMU and AIR pressure: 20 samples, 0.2 s; AIR temperature: 2 s) and valid again after a few good ones. The status LED shows the same: green state 1, amber state 2, red state 3 (also red when CAN frames are not acknowledged).
 - The EFIS records the time each heartbeat arrived, the version, the state and the sensors mask. A module is shown as missing when no heartbeat has arrived for 3 s (three missed). Which modules the EFIS expects is EFIS configuration.
-- Sensors mask for the IMU: bit 0 ISM330DHCX (gyro and accelerometer), bit 1 LIS3MDL (magnetometer), bit 2 calibration loaded. Bit 2 clear gives state 2 (degraded), since the AHRS runs but is uncalibrated.
+- Sensors mask for the IMU: bit 0 ISM330DHCX (gyro and accelerometer), bit 1 LIS3MDL (magnetometer), bit 2 calibration loaded. State 2 (degraded) when the magnetometer is lost (the AHRS keeps running on gyro and accelerometer only) or calibration is missing. State 3 (failed) when the accelerometer/gyro is lost: there is no attitude. A missing magnetometer at start-up is no longer fatal; a missing ISM330DHCX still halts start-up with state 3.
 - The version bytes are the VERSION string of the sketch ("1.0.3" is 1, 0, 3). The same text is in the USB product string and the '?' report (ModuleInfo library).
 
 **Code**
@@ -707,10 +764,11 @@ Sensor modules broadcast their data on fixed IDs. The Pi EFIS listens, and sends
 | Rate | 1 s |
 | Data length | 8 bytes |
 | Status | 🟡 Partial |
+| Treated as lost after | 3 s without a message |
 
 | Bytes | Field | Type | Unit | Description |
 |:-----:|-------|------|------|-------------|
-| 0 | `module` | uint8 |  | Module number (1 IMU, 2 AIR, 3 GPS). Always equals the ID minus 0x700 |
+| 0 | `module` | uint8 |  | Node number (0 EFIS, 1 IMU, 2 AIR, 3 GPS). Always equals the ID minus 0x700 |
 | 1 | `version_major` | uint8 |  | Firmware version |
 | 2 | `version_minor` | uint8 |  | Firmware version |
 | 3 | `version_patch` | uint8 |  | Firmware version |
@@ -727,7 +785,7 @@ Sensor modules broadcast their data on fixed IDs. The Pi EFIS listens, and sends
 **Notes**
 
 - See 0x701 for the layout and the rules.
-- Sensors mask for the AIR module: bit 0 pitot MS4525DO, bit 1 AOA MS4525DO, bit 2 static pressure SSC, bit 3 outside air temperature (MAX31865 RTD). Bits 0 to 2 are set from what was found at start-up. Only the temperature (bit 3) is checked while running (a good RTD sample in the last 2 s). A pressure sensor that stops answering in flight is not detected yet. If start-up halts because a sensor is missing, the module keeps sending state 3 with that sensor's bit clear.
+- Sensors mask for the AIR module: bit 0 pitot MS4525DO, bit 1 AOA MS4525DO, bit 2 static pressure SSC, bit 3 outside air temperature (MAX31865 RTD). All four follow the live health of the sensor. A sensor that is not found at start-up no longer stops the module: its bit is clear and the others keep working. An MS4525DO (pitot, AOA) that was missing at start-up stays invalid until the next restart, because it is zeroed at start-up. State 2 when any bit is clear; state 3 only when neither the pitot nor the static pressure works (or CAN did not start).
 
 **Code**
 
@@ -745,10 +803,11 @@ Sensor modules broadcast their data on fixed IDs. The Pi EFIS listens, and sends
 | Rate | 1 s |
 | Data length | 8 bytes |
 | Status | 🟡 Partial |
+| Treated as lost after | 3 s without a message |
 
 | Bytes | Field | Type | Unit | Description |
 |:-----:|-------|------|------|-------------|
-| 0 | `module` | uint8 |  | Module number (1 IMU, 2 AIR, 3 GPS). Always equals the ID minus 0x700 |
+| 0 | `module` | uint8 |  | Node number (0 EFIS, 1 IMU, 2 AIR, 3 GPS). Always equals the ID minus 0x700 |
 | 1 | `version_major` | uint8 |  | Firmware version |
 | 2 | `version_minor` | uint8 |  | Firmware version |
 | 3 | `version_patch` | uint8 |  | Firmware version |
@@ -765,7 +824,7 @@ Sensor modules broadcast their data on fixed IDs. The Pi EFIS listens, and sends
 **Notes**
 
 - See 0x701 for the layout and the rules.
-- Sensors mask for the GPS module: bit 0 NMEA data arriving from the GPS chip, bit 1 has a position fix. No fix is not a fault, so a missing fix does not change state; it stays 1 (OK) while NMEA is arriving. 0x65 carries the fix details.
+- Sensors mask for the GPS module: bit 0 NMEA data arriving from the GPS chip, bit 1 has a position fix. No fix is not a fault, so a missing fix does not change state; it stays 1 (OK) while NMEA is arriving. 0x65 carries the fix details. State 2 (degraded) when no valid NMEA has arrived for 5 s; the module then re-probes the GPS chip every 5 s. LED: blue no fix, yellow 2D, green 3D, amber silent.
 
 **Code**
 

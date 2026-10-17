@@ -21,7 +21,7 @@ from pathlib import Path
 
 import yaml
 
-VERSION = "1.0.3"
+VERSION = "1.1.0"
 
 HERE = Path(__file__).resolve().parent
 PI_YAML = HERE / "can_messages.yaml"
@@ -165,6 +165,12 @@ def validate_pi(doc):
                 if i in used:
                     errors.append(f"{label}: byte {i} used by both {used[i]} and {f.get('name')}")
                 used[i] = f.get("name")
+            inv = f.get("invalid")
+            if inv is not None:
+                limit = {"int16": 0x7FFF, "int32": 0x7FFFFFFF}.get(f.get("type"))
+                if limit is None or inv != limit:
+                    errors.append(f"{label}: field {f.get('name')} invalid marker {inv!r} "
+                                  f"must be {hx(limit) if limit else 'n/a'} for type {f.get('type')}")
             if f.get("name") in names:
                 errors.append(f"{label}: duplicate field name {f.get('name')}")
             names.add(f.get("name"))
@@ -210,12 +216,22 @@ def mgl_id(doc, msg):
 # ---------------------------------------------------------------------------
 
 def field_table(fields):
-    lines = ["| Bytes | Field | Type | Unit | Description |",
-             "|:-----:|-------|------|------|-------------|"]
+    """Field table. An 'Invalid' column is added when any field has an invalid-data marker."""
+    has_invalid = any(f.get("invalid") is not None for f in fields)
+    head = "| Bytes | Field | Type | Unit | Description |"
+    sep = "|:-----:|-------|------|------|-------------|"
+    if has_invalid:
+        head = head + " Invalid marker |"
+        sep = sep + "-------------|"
+    lines = [head, sep]
     for f in fields:
-        lines.append("| {} | `{}` | {} | {} | {} |".format(
+        row = "| {} | `{}` | {} | {} | {} |".format(
             esc(f["bytes"]), esc(f["name"]), esc(f.get("type", "")),
-            esc(fmt_unit(f)), esc(f.get("desc", ""))))
+            esc(fmt_unit(f)), esc(f.get("desc", "")))
+        if has_invalid:
+            inv = f.get("invalid")
+            row += " {} |".format(f"`{hx(inv)}`" if isinstance(inv, int) else "—")
+        lines.append(row)
     return "\n".join(lines)
 
 
@@ -260,7 +276,10 @@ def render_pi(doc):
                 f"| Received by | {', '.join(nodes[r]['name'] for r in m.get('receivers') or []) or '—'} |",
                 f"| Rate | {fmt_period(m)} |",
                 f"| Data length | {m['dlc']} bytes |",
-                f"| Status | {STATUS_LABEL[m['status']]} |", "",
+                f"| Status | {STATUS_LABEL[m['status']]} |"]
+        if m.get("timeout_ms"):
+            out.append(f"| Treated as lost after | {m['timeout_ms'] / 1000:g} s without a message |")
+        out += ["",
                 field_table(m["fields"]), "",
                 "**Byte layout**", "",
                 byte_map(m["fields"], m["dlc"]), ""]
