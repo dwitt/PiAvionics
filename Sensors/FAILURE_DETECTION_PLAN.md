@@ -124,17 +124,22 @@ Expected (after step 3) is what the new firmware should do; Today is filled in d
 - Power cycle with the part missing, then plug it in while running: it should come up (recovery).
 - No test may leave the module needing a hard reset except where noted.
 
-## Questions for David
+## Decisions (David, 2026-10-17)
 
-1. Which of the parts above are really on connectors in your modules (RTD probe, MAX31865 board,
-   EEPROM, GPS antenna, GPS wing, CAN cable, IMU wing)? That decides hot versus cold and which
-   tests need fault injection.
-2. Invalid data: send 0x7FFF in the affected field (my suggestion), or stop sending the frame?
-   0x7FFF keeps the other fields of 0x28 alive (altitude when only the pitot has failed).
-3. Is amber for degraded and red for failed right on the module LED?
-4. Should the IMU keep running as a 6-axis AHRS when only the magnetometer fails (my suggestion), or
-   fail the whole module?
-5. OK to copy the patched `Adafruit_LSM6DS` into `Sensors/Libraries/` so it is in git?
+1. Connectors: on the AIR module the pitot, static and AOA sensors are each in a socket (hot unplug
+   possible, so A3 to A5 are real unplug tests), the RTD probe and the MAX31865 board both unplug
+   (A1, A2 hot), the CAN cable unplugs (C1, C2). IMU: the IMU wing and the EEPROM unplug; the
+   ISM330DHCX and LIS3MDL are one wing, so I2 and I3 need fault injection. GPS: wing and antenna
+   unplug. Stacked wings are still cold tests.
+2. Invalid data marker 0x7FFF (0x7FFFFFFF for the 32-bit altitude) is accepted, but **held until the
+   end**: the EFIS does not recognise it today (it would show 32767 kt etc.). It goes in with the EFIS
+   heartbeat/backup display pass. Until then the data fields keep their old behaviour; the heartbeat
+   state and mask carry the failure.
+3. LED: amber for degraded, red for failed.
+4. IMU keeps running as a 6-axis AHRS if only the magnetometer fails.
+5. Patched `Adafruit_LSM6DS` is now in `Sensors/Libraries/Adafruit_LSM6DS/` with `PATCH_NOTES.md`
+   (why, history, what it does and does not catch, how to re-apply) and `local_patch.diff`.
+   Open: make the Arduino libraries copy a symlink to it, as for `StatusLED`.
 
 ## Test log
 

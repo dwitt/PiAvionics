@@ -1,0 +1,93 @@
+--- a/Adafruit_LSM6DS.h	2026-10-17 12:38:05
++++ b/Adafruit_LSM6DS.h	2026-10-17 12:38:05
+@@ -210,10 +210,15 @@
+   Adafruit_Sensor *getAccelerometerSensor(void);
+   Adafruit_Sensor *getGyroSensor(void);
+ 
++  // LOCAL PATCH (Ride G-Force project): expose an I2C read-failure counter
++  // so the firmware can log the rate. Original library silently dropped
++  // failed reads and published uninitialized stack data as sensor values.
++  static uint32_t readFailures;
++
+ protected:
+   uint8_t chipID(void);
+   uint8_t status(void);
+-  virtual void _read(void);
++  virtual bool _read(void);   // LOCAL PATCH: was `void`; returns false on I2C read failure
+   virtual bool _init(int32_t sensor_id);
+ 
+   uint16_t _sensorid_accel, ///< ID number for accelerometer
+--- a/Adafruit_LSM6DS.cpp	2026-10-17 12:38:05
++++ b/Adafruit_LSM6DS.cpp	2026-10-17 12:38:05
+@@ -252,7 +252,9 @@
+ bool Adafruit_LSM6DS::getEvent(sensors_event_t *accel, sensors_event_t *gyro,
+                                sensors_event_t *temp) {
+   uint32_t t = millis();
+-  _read();
++  if (!_read()) {
++    return false;   // LOCAL PATCH: propagate I2C read failure; do not publish garbage
++  }
+ 
+   // use helpers to fill in the events
+   fillAccelEvent(accel, t);
+@@ -454,13 +456,22 @@
+  *     @brief  Updates the measurement data for all sensors simultaneously
+  */
+ /**************************************************************************/
+-void Adafruit_LSM6DS::_read(void) {
++// LOCAL PATCH: storage for the read-failure counter declared in the header.
++uint32_t Adafruit_LSM6DS::readFailures = 0;
++
++bool Adafruit_LSM6DS::_read(void) {
+   // get raw readings
+   Adafruit_BusIO_Register data_reg = Adafruit_BusIO_Register(
+       i2c_dev, spi_dev, ADDRBIT8_HIGH_TOREAD, LSM6DS_OUT_TEMP_L, 14);
+ 
+   uint8_t buffer[14];
+-  data_reg.read(buffer, 14);
++  // LOCAL PATCH: check read success. If the I2C read fails, bail without
++  // touching the class raw/scaled state so callers keep the previous
++  // good values (or can check getEvent() return).
++  if (!data_reg.read(buffer, 14)) {
++    readFailures++;
++    return false;
++  }
+ 
+   rawTemp = buffer[1] << 8 | buffer[0];
+   temperature = (rawTemp / temperature_sensitivity) + 25.0;
+@@ -518,6 +529,8 @@
+   accX = rawAccX * accel_scale * SENSORS_GRAVITY_STANDARD / 1000;
+   accY = rawAccY * accel_scale * SENSORS_GRAVITY_STANDARD / 1000;
+   accZ = rawAccZ * accel_scale * SENSORS_GRAVITY_STANDARD / 1000;
++
++  return true;   // LOCAL PATCH: signal successful read
+ }
+ 
+ /**************************************************************************/
+@@ -610,7 +623,7 @@
+ */
+ /**************************************************************************/
+ bool Adafruit_LSM6DS_Gyro::getEvent(sensors_event_t *event) {
+-  _theLSM6DS->_read();
++  if (!_theLSM6DS->_read()) return false;   // LOCAL PATCH
+   _theLSM6DS->fillGyroEvent(event, millis());
+ 
+   return true;
+@@ -645,7 +658,7 @@
+ */
+ /**************************************************************************/
+ bool Adafruit_LSM6DS_Accelerometer::getEvent(sensors_event_t *event) {
+-  _theLSM6DS->_read();
++  if (!_theLSM6DS->_read()) return false;   // LOCAL PATCH
+   _theLSM6DS->fillAccelEvent(event, millis());
+ 
+   return true;
+@@ -680,7 +693,7 @@
+ */
+ /**************************************************************************/
+ bool Adafruit_LSM6DS_Temp::getEvent(sensors_event_t *event) {
+-  _theLSM6DS->_read();
++  if (!_theLSM6DS->_read()) return false;   // LOCAL PATCH
+   _theLSM6DS->fillTempEvent(event, millis());
+ 
+   return true;
