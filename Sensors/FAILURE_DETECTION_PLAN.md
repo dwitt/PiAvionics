@@ -251,5 +251,11 @@ detect, time to recover, notes.)
   state 1, mask 03 throughout (a 2D fix still counts as a fix). 0x63/0x64/0x65 kept coming at 1 Hz, no gaps.
 - Replugged: satellites back to 14 to 15 within about 40 s. No intervention needed.
 - OK as is: degradation is visible in 0x65 and the module did not fail.
+
+**C1/C2, GPS module CAN cable unplugged (hot), then reconnected** (watched via the `?` report)
+- Unplugged: the bus went quiet and `?` went unanswered (two tries, 3 s apart): **frozen, like the AIR module**.
+  LED stayed green. (Assumed unterminated, same as AIR; not confirmed what the GPS CAN board has fitted.)
+- Reconnected: it answered `?` again at once (uptime 12798 s, continuous, no reset), frames back on the bus.
+- Summary of the CAN cable tests: AIR and GPS freeze in the send when pulled; IMU (termination fitted) does not.
 - Needed: act on getEvent() failure, detect the all-zero accel, mark gyro invalid, re-initialise the chip (begin and
   configure) about every 2 s while it is missing, and do not let the AHRS integrate stale gyro data.
