@@ -170,3 +170,11 @@ detect, time to recover, notes.)
 - Reconnected: first reading -16.9 C, heartbeat back to state 1, mask 0F within 0.5 s, value back to 22.3 C after about 6 s.
 - RTD summary: every lead pulled is detected through bit 3 (state 2) in about 3 s. Data on 0x2A is either frozen (RTD-,
   third wire) or a false -70 C (RTD+). After reconnect the OK bit comes back before the value is right (6 to 12 s).
+
+**A2, MAX31865 board pulled (hot), then reinserted** (RTD still on the board)
+- Pulled: OAT fell to -242.0 C (about 8 s slew) and stayed there at 5 Hz. **Heartbeat never changed: state 1, mask 0F
+  throughout. NOT DETECTED.** Probably the SPI bus reads all zeros with no chip, the firmware sees "raw 0, no fault"
+  as a good reading, and 0 converts to about -242 C.
+- Reinserted: value back to 22.2 C after about 8 s; heartbeat unchanged (never left OK).
+- Needed: reject RTD readings outside a believable range (and/or read back the MAX31865 configuration register) so the
+  missing chip clears bit 3 and sets state 2.
