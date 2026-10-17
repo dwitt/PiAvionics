@@ -119,7 +119,10 @@ made (see "Decisions recorded" at the end); nothing is built yet. Start at step 
 
 ## Order of work (each step testable on its own)
 
-0. **Decisions**: done (below). Still to do: sketch the annunciator and red-X look as a mock-up before coding the display.
+0. **Decisions**: done (below). Mock-up of the annunciator strip and red-X look: done and approved by David ("generally looks good"),
+   `EFIS/docs/mockups/annunciator_mockup.html`. Defaults to build: X stroke 7 px at 80% opacity; compact X (centre) over the heading
+   ribbon; annunciator text 24 px with a dark backing pill; red = PITOT, STATIC, NO AIR DATA, NO IMU, ATT FAIL; amber = OAT,
+   HDG GYRO, GPS NO DATA, MODULE RESTARTED (and AOA, IMU NO CAL); flash 5 s then steady.
 1. **Protocol** (YAML + docs): markers, 0x700. No code. **DONE 2026-10-17** (protocol 0.2.0): `invalid:` markers on the fields in the
    table above, `timeout_ms` on every message the EFIS watches (0x2B added at 1.5 s, same as OAT), notes with the interim behaviour,
    the heartbeat notes brought up to date, and the new planned message 0x700 EFIS_HEARTBEAT. The generator (1.1.0) adds an
