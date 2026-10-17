@@ -244,5 +244,12 @@ detect, time to recover, notes.)
   flag and the library aborts. In the aircraft only the two ends of the bus are terminated, so any middle module whose
   connector or wire fails ends up in exactly this state. The bounded send is therefore needed on every module regardless.
 - The same applies to a module whose neighbours on both sides are lost; test the fix with the resistor removed.
+
+**G1, GPS external antenna unplugged (hot), then replugged** (GPS_Module 1.0.3; fix on the bench at the start)
+- Unplugged: the wing fell back to its internal patch antenna and kept its fix. 0x65 satellite count went 14 to 4-6, the
+  accuracy field roughly tripled, once the fix type dropped to 2D (3 satellites, at about 55 s). Heartbeat unchanged:
+  state 1, mask 03 throughout (a 2D fix still counts as a fix). 0x63/0x64/0x65 kept coming at 1 Hz, no gaps.
+- Replugged: satellites back to 14 to 15 within about 40 s. No intervention needed.
+- OK as is: degradation is visible in 0x65 and the module did not fail.
 - Needed: act on getEvent() failure, detect the all-zero accel, mark gyro invalid, re-initialise the chip (begin and
   configure) about every 2 s while it is missing, and do not let the AHRS integrate stale gyro data.
