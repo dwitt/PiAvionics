@@ -34,7 +34,7 @@ Sensor modules broadcast their data on fixed IDs. The Pi EFIS listens, and sends
 |:--:|------|---------|-------------|------|:-----:|--------|
 | `0x019` | [TIME_SYNC](#0x019-time_sync) | GPS module | Pi EFIS | 1 s | 8 | ✅ Active |
 | `0x023` | [AHRS_CONTROL](#0x023-ahrs_control) | Pi EFIS | IMU / AHRS module | — | 8 | ⚪ Planned |
-| `0x028` | [AIR_DATA](#0x028-air_data) | AIR module | Pi EFIS, CAN display feather | 100 ms | 8 | 🟡 Partial |
+| `0x028` | [AIR_DATA](#0x028-air_data) | AIR module | Pi EFIS, CAN display feather | 100 ms | 8 | ✅ Active |
 | `0x029` | [AOA](#0x029-aoa) | AIR module | — | 200 ms | 8 | 🟡 Partial |
 | `0x02A` | [OAT](#0x02a-oat) | AIR module | Pi EFIS | 200 ms | 8 | ✅ Active |
 | `0x02B` | [STATIC_PRESSURE](#0x02b-static_pressure) | AIR module | Pi EFIS | 200 ms | 8 | ✅ Active |
@@ -130,13 +130,13 @@ Sensor modules broadcast their data on fixed IDs. The Pi EFIS listens, and sends
 | Received by | Pi EFIS, CAN display feather |
 | Rate | 100 ms |
 | Data length | 8 bytes |
-| Status | 🟡 Partial |
+| Status | ✅ Active |
 
 | Bytes | Field | Type | Unit | Description |
 |:-----:|-------|------|------|-------------|
 | 0-1 | `airspeed` | int16 | kt | Indicated airspeed from the pitot sensor |
 | 2-5 | `altitude` | int32 | ft | Pressure altitude using the QNH from 0x2E |
-| 6-7 | `vertical_speed` | int16 | ft/min | Not calculated yet; always 0 |
+| 6-7 | `vertical_speed` | int16 | ft/min | Climb rate from the static pressure, positive = climbing (3 s window, about 3 s lag, about +-40 ft/min at rest) |
 
 **Byte layout**
 
@@ -147,7 +147,7 @@ Sensor modules broadcast their data on fixed IDs. The Pi EFIS listens, and sends
 **Notes**
 
 - Altitude is a full 4-byte integer with no padding byte. The older Can Docs.md showed a 3-byte altitude and is wrong.
-- The AIR firmware never computes vertical speed (the value stays 0).
+- Vertical speed is computed by AIR_Module v1.0.21 and later from the low-passed static pressure (standard atmosphere, not QNH): the altitude change over the last 3 s, smoothed. It lags a real change in climb rate by about 3 s.
 
 **Code**
 

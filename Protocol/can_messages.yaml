@@ -128,16 +128,19 @@ messages:
     receivers: [efis, can_display]
     period_ms: 100
     dlc: 8
-    status: partial
+    status: active
     fields:
       - {bytes: "0-1", name: airspeed,       type: int16, unit: kt,     desc: Indicated airspeed from the pitot sensor}
       - {bytes: "2-5", name: altitude,       type: int32, unit: ft,     desc: Pressure altitude using the QNH from 0x2E}
-      - {bytes: "6-7", name: vertical_speed, type: int16, unit: ft/min, desc: "Not calculated yet; always 0"}
+      - {bytes: "6-7", name: vertical_speed, type: int16, unit: ft/min, desc: "Climb rate from the static pressure, positive = climbing (3 s window, about 3 s lag, about +-40 ft/min at rest)"}
     notes:
       - >
         Altitude is a full 4-byte integer with no padding byte. The older
         Can Docs.md showed a 3-byte altitude and is wrong.
-      - The AIR firmware never computes vertical speed (the value stays 0).
+      - >
+        Vertical speed is computed by AIR_Module v1.0.21 and later from the low-passed
+        static pressure (standard atmosphere, not QNH): the altitude change over the last
+        3 s, smoothed. It lags a real change in climb rate by about 3 s.
     code:
       sender: "AIR_Module.ino (CAN_AIR_MSG_ID)"
       receiver: "aio_server.py process_altitude_message, CAN_Feather.ino"

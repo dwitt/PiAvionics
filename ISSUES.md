@@ -135,6 +135,19 @@ Status: **Open**, **Monitoring** (fix applied, watching), **Fixed**.
 - Notes: the 4.7 Pa figure is a constant in the sketch (PITOT_NOISE_HPA); re-measure it if
   the sensor or tubing changes. The same idea could be applied to the static pressure.
 
+### 12. AIR module: vertical speed was never calculated
+- Found 2026-10-17: `verticalSpeed` in 0x28 was declared and sent but never set, so it
+  was always 0 (`previousStaticPressure` was saved and unused).
+- Fixed in AIR_Module v1.0.22: the pressure altitude of the low-passed static pressure
+  (before the smooth deadband, which would add 1-2 ft steps) is sampled every 100 ms into a
+  3 s ring buffer; rate = altitude now minus 3 s ago, smoothed (alpha 0.1 per 100 ms).
+- Measured: at rest mean -1 ft/min, std dev 17, range +-40 (a 1 s window gave std dev 50,
+  +-100: slope noise falls steeply with window length because the raw static pressure is
+  6 ft std dev in 3.3 ft steps). Lifting the module about 1 m gave +62 ft/min and
+  lowering it -46 ft/min, about 2 s after the motion, and the sign is right.
+- Limit: about 3 s lag and about +-40 ft/min resolution at rest. A faster VSI would need
+  a quieter pressure source or an accelerometer (the IMU) blended in.
+
 ### 7. GPS module needed an RP2040 reset to pick up a fix after a full repower
 - Old firmware set the GPS baud once at boot (9600 -> 115200), sent config commands
   once with no check, and hard-coded `gps_success = true`. After a full repower the

@@ -29,7 +29,7 @@
 /*****************************************************************************
  * Firmware version - increment the patch number on every change
  *****************************************************************************/
-#define VERSION "1.0.20"
+#define VERSION "1.0.22"
 
 // Set to 0 to run without the AOA sensor (Wire1, GPIO8/9). With 0, Wire1 is not
 // touched at all and a missing AOA sensor does not stop startup.
@@ -224,7 +224,35 @@ static float aoaFiltered = 0;            // degrees
 static int16_t qnh = 2992;         // inHg * 100
 static int16_t previous_qnh = qnh;
 
-static float staticPressureLowPassFiltered = 0;
+static float staticPressureLowPassFiltered = 0;   // hPa, after the low-pass, before the deadband
+
+// ----------------------------------------------------------------------------
+// Vertical speed (ft/min, positive = climbing)
+//
+// Source: the static pressure AFTER the low-pass but BEFORE the smooth deadband.
+// The deadband holds the output and then jumps 1-2 ft, which would show up as
+// spikes in ft/min. Measured at rest 2026-10-17: raw static pressure std dev is
+// 0.23 hPa (6 ft) in steps of 0.12 hPa (3.3 ft); after the low-pass it is about
+// 0.012 hPa (0.3 ft).
+//
+// Method: every VSI_SAMPLE_MS the pressure altitude of the low-passed pressure is
+// stored in a ring buffer holding VSI_WINDOW_SAMPLES samples (3 s). The rate is
+// the altitude now minus the altitude one window ago, divided by the window.
+// That rate is then smoothed with a low-pass (VSI_ALPHA). Expected at rest: about
+// +-15 ft/min. Expected response: ~1.5 s to show a real climb change (the 1 s
+// pressure low-pass plus the smoothing). The altitude uses the standard
+// atmosphere (1013.25 hPa); the QNH cancels out of a difference.
+// ----------------------------------------------------------------------------
+#define VSI_SAMPLE_MS        100     // how often an altitude sample is stored
+#define VSI_WINDOW_SAMPLES   30      // 30 x 100 ms = 3 s differencing window
+#define VSI_ALPHA            0.1f    // smoothing of the rate, per sample (~1 s)
+#define VSI_MAX_FPM          6000    // clamp to a sane range before packing into an int16
+
+static float vsiHistory[VSI_WINDOW_SAMPLES];
+static uint8_t vsiHistoryIndex = 0;
+static uint8_t vsiHistoryCount = 0;      // samples stored so far, up to VSI_WINDOW_SAMPLES
+static unsigned long vsiLastSampleMs = 0;
+static float vsiSmoothed = 0;            // ft/min
 
 #define SEA_LEVEL_DENSITY_ISA 1.225   // kg/m^3
 #define V_M_S_TO_KNOTS 1.9438444924406
@@ -763,6 +791,7 @@ void loop() {
     previousStaticPressure = sensorStaticPressure;
     sensorStaticPressure = ssc_pressure_event.pressure;
     staticPressureFiltered = StaticPressureLowPassFilter.update(sensorStaticPressure);
+    staticPressureLowPassFiltered = staticPressureFiltered;   // kept for the vertical speed
     //staticPressureFiltered = staticPressureButterworthLowPass.process(sensorStaticPressure);
     //staticPressureFiltered = staticPressureButterworthLowPass2.process(staticPressureFiltered);
     //staticPressureFiltered = staticPressureKalman.update(sensorStaticPressure);
@@ -812,6 +841,31 @@ void loop() {
       pow(staticPressureFiltered / 1013.25, 0.190263));
 
     altitude = static_cast<int32_t>(height);
+
+    // ------------------------------------------------------------------------
+    // Calculate the vertical speed (see the comment above vsiHistory)
+    // ------------------------------------------------------------------------
+
+    if (millis() - vsiLastSampleMs >= VSI_SAMPLE_MS) {
+      vsiLastSampleMs = millis();
+
+      float pressureAltitude = 145442.16f *
+        (1.0f - powf(staticPressureLowPassFiltered / 1013.25f, 0.190263f));
+
+      if (vsiHistoryCount < VSI_WINDOW_SAMPLES) {
+        // Not a full window yet (first second after start-up): report 0
+        vsiHistory[vsiHistoryIndex] = pressureAltitude;
+        vsiHistoryCount++;
+      } else {
+        // The slot about to be overwritten holds the altitude one window ago
+        float windowSeconds = VSI_WINDOW_SAMPLES * VSI_SAMPLE_MS / 1000.0f;
+        float rateFpm = (pressureAltitude - vsiHistory[vsiHistoryIndex]) / windowSeconds * 60.0f;
+        vsiHistory[vsiHistoryIndex] = pressureAltitude;
+        vsiSmoothed += VSI_ALPHA * (rateFpm - vsiSmoothed);
+        verticalSpeed = (int16_t)constrain(lroundf(vsiSmoothed), -VSI_MAX_FPM, VSI_MAX_FPM);
+      }
+      vsiHistoryIndex = (vsiHistoryIndex + 1) % VSI_WINDOW_SAMPLES;
+    }
 
     // ------------------------------------------------------------------------
     // Update the timestamps
