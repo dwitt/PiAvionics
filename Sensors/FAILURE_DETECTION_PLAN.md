@@ -145,3 +145,15 @@ Expected (after step 3) is what the new firmware should do; Today is filled in d
 
 (Add dated entries here as tests are run: test number, action, observed heartbeat lines, time to
 detect, time to recover, notes.)
+
+### 2026-10-17, Phase 1 (today's firmware: AIR 1.0.23)
+
+**A1, RTD- disconnected (hot), then reconnected** (Pi candump, 0x702 / 0x2A / 0x28)
+- Before: state 1, mask 0F, OAT 22.3 C.
+- Unplugged: OAT readings stopped varying; about 3 s later the heartbeat went to state 2, mask 07 (bit 3 clear).
+  0x2A kept being sent at 5 Hz, frozen at the last value (22.3 C), no warning in the data. 0x28 unaffected (about 10 Hz).
+- Reconnected: state 1, mask 0F within about 1 s. But 0x2A then sent bogus temperatures: 96.6 C, 74.4, 59.8, ... decaying
+  to 22.3 C over about 12 s, with a second dip of the heartbeat to state 2 for 0.8 s and a spike of 166.9 C and 313.5 C
+  on the bus (probably contact bounce while plugging in, passed through the OAT filter).
+- Findings: (1) stale OAT looks valid (marker will fix this later); (2) on recovery the OAT filter should be reset and
+  readings outside a sane RTD range rejected, otherwise bad values go out with the OK bit set for about 12 s.
