@@ -178,3 +178,15 @@ detect, time to recover, notes.)
 - Reinserted: value back to 22.2 C after about 8 s; heartbeat unchanged (never left OK).
 - Needed: reject RTD readings outside a believable range (and/or read back the MAX31865 configuration register) so the
   missing chip clears bit 3 and sets state 2.
+
+**C1/C2, AIR module CAN cable unplugged (hot), then reconnected** (watched via the USB `?` report and the LED)
+- Unplugged: the module stopped sending (last frame about 15 s after the capture started) and **stopped answering `?`
+  over USB** (tried twice, 8 s apart). USB still enumerated. LED stayed green (frozen). So the whole firmware loop is
+  blocked, not just the CAN output: no sensor processing, no status, no LED change.
+- Cause (read in the library): `Adafruit_MCP2515::endPacket()` loops `while (TXBnCTRL & TXREQ)` with no timeout; with
+  nobody to ACK the frame, the MCP2515 retries forever. Exits only on the TXERR flag. Same library on IMU and GPS, so
+  those very likely hang the same way (not yet tested).
+- Reconnected: the module resumed by itself (heartbeat 0x702 again within about 1 s of plugging in), uptime counter
+  continuous (11090 s, no reset), `?` answers again, no error frames seen on the bus. No power cycle needed.
+- Needed: bound the transmit wait (abort the TX request via TXBnCTRL after a few ms, count it, set LED amber/red,
+  keep the loop running), probably also use one-shot mode so a lost frame is not retried forever.
