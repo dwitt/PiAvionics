@@ -855,6 +855,22 @@ export class HSI {
     // -----------------------------------------------------------------------
     // Heading property — rotates the rose and updates the readout
     // -----------------------------------------------------------------------
+    /**
+     * Show, dim or hide everything that depends on the heading (compass rose, ground track,
+     * heading bug and course pointer). Hidden when the heading cannot be trusted, dimmed when
+     * it comes from the gyro only. The page puts a red X over the HSI.
+     * @param {boolean} show true to draw them
+     * @param {number} alpha opacity to draw them with (1 is normal)
+     */
+    setHeadingDisplay(show, alpha) {
+        const dependents = [this.roseContainer, this.trackContainer, this.bugContainer,
+                            this.courseContainer];
+        for (const container of dependents) {
+            container.visible = show;
+            container.alpha = alpha;
+        }
+    }
+
     set heading(value) {
         // Normalise to 0-360
         value = ((value % 360) + 360) % 360;

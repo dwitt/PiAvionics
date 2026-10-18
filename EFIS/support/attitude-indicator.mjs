@@ -125,6 +125,19 @@ export class AttitudeIndicator {
 
     /**
      * ***********************************************************************
+     * Setter for the failed state. When the attitude cannot be trusted the sky
+     * and ground, bank arc, roll triangle and slip/skid marker are removed, so
+     * no frozen horizon is ever drawn. The page puts a red X over the area.
+     * @param {boolean} isFailed
+     */
+    set failed(isFailed) {
+        this.rollContainer.visible = !isFailed;
+        this.triangleGraphics.visible = !isFailed;
+        this.slipSkidGraphics.visible = !isFailed;
+    }
+
+    /**
+     * ***********************************************************************
      * Setter for the pitch display
      * @param {number | undefined} newValue
      */

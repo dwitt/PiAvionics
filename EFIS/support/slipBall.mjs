@@ -28,6 +28,7 @@ export class SlipBallIndicator {
         this.indicatorSize = 3; // multiplier
 
         let slipBallContainer = new Container();
+        this.container = slipBallContainer;     // so the page can hide the ball when it cannot be trusted
 
         // Construct the inclinometer background
 

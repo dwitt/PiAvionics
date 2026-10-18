@@ -33,6 +33,9 @@ export class AltitudeDisplay extends DisplayRectangle {
         this.densityAltitudeValue = 0;
         this.displayItem = GPS;
 
+        // Set by the page: false shows --- instead of the value (the source cannot be trusted)
+        this.validity = { gps: true, pressure: true, density: true };
+
         // Set initial text values
         this.valueText.text = "0";
         this.unitText.text = "ft";
@@ -73,15 +76,18 @@ export class AltitudeDisplay extends DisplayRectangle {
 
     update() {
         if (this.displayItem == GPS) {
-            if (this.gpsAltitudeValue !== undefined) {
+            if (!this.validity.gps) {
+                this.valueText.text = "---";
+            }
+            else if (this.gpsAltitudeValue !== undefined && this.gpsAltitudeValue !== null) {
                 this.valueText.text = String(this.gpsAltitudeValue);
             }
         }
         else if (this.displayItem == PRESS) {
-            this.valueText.text = String(this.pressureAltitudeValue);
+            this.valueText.text = this.validity.pressure ? String(this.pressureAltitudeValue) : "---";
         } 
         else if (this.displayItem == DEN) {
-            this.valueText.text = String(this.densityAltitudeValue);
+            this.valueText.text = this.validity.density ? String(this.densityAltitudeValue) : "---";
         }
     }
 

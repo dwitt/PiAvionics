@@ -98,8 +98,23 @@ export class AltitudeWheel  {
         line.fill();
         line.stroke();
 
+        this.outline = line;        // kept so the whole wheel can be hidden
         app.stage.addChild(line);
 
+    }
+
+    /**
+     * Show or hide the whole wheel (outline, digits and units). The page hides it when the altitude
+     * cannot be trusted.
+     * @param {boolean} isVisible
+     */
+    set visible(isVisible) {
+        this.outline.visible = isVisible;
+        this.altUnits.visible = isVisible;
+        this.tensWheel.digitContainer.visible = isVisible;
+        this.hundredsWheel.digitContainer.visible = isVisible;
+        this.thousandsWheel.digitContainer.visible = isVisible;
+        this.tenThousandsWheel.digitContainer.visible = isVisible;
     }
 
     set value(newValue) {

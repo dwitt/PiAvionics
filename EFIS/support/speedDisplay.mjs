@@ -45,6 +45,9 @@ export class SpeedDisplay extends DisplayRectangle {
         this.speedOfSound = 0;
         this.displayItem = GS;
 
+        // Set by the page: false shows --- instead of the value (the source cannot be trusted)
+        this.validity = { gs: true, tas: true };
+
         // Set initial text values
         this.valueText.text = "0";
         this.unitText.text = "kts";
@@ -81,12 +84,20 @@ export class SpeedDisplay extends DisplayRectangle {
 
     update() {
         if (this.displayItem == GS) {
-            if (this.groundSpeedValue !== undefined) {
+            if (!this.validity.gs) {
+                this.valueText.text = "---";
+            }
+            else if (this.groundSpeedValue !== undefined && this.groundSpeedValue !== null) {
                 this.valueText.text = String(Math.round(this.groundSpeedValue));
             }
         }
         else if (this.displayItem == TAS) {
-            this.valueText.text = String(Math.round(this.trueAirSpeedValue));
+            if (!this.validity.tas) {
+                this.valueText.text = "---";
+            }
+            else {
+                this.valueText.text = String(Math.round(this.trueAirSpeedValue));
+            }
         }
     }
 

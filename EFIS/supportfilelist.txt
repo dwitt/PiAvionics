@@ -23,3 +23,7 @@ menuOverlay.mjs
 hsi.mjs
 routeOverlay.mjs
 orientationPanel.mjs
+instrumentStatus.mjs
+failureLook.mjs
+failureFlag.mjs
+annunciators.mjs

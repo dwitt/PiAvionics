@@ -33,6 +33,9 @@ export class TempTimeDisplay extends DisplayRectangle {
         this._timeMinute = 0;
 
         this._displayItem = TEMP;
+
+        // Set by the page: false shows --- instead of the temperature (the sensor cannot be trusted)
+        this.validity = { temperature: true };
         
         colour = "chartreuse";
 
@@ -80,7 +83,10 @@ export class TempTimeDisplay extends DisplayRectangle {
 
     update() {
         if (this._displayItem == TEMP) {
-            if (this._temperature !== undefined) {
+            if (!this.validity.temperature) {
+                this.valueText.text = "---";
+            }
+            else if (this._temperature !== undefined && this._temperature !== null) {
                 this.valueText.text = String(this._temperature);
             }
         }

@@ -77,6 +77,8 @@ export class TurnRateIndicator {
         container.addChild(tickGraphics);
         container.addChild(centerGraphics);
 
+        this.container = container;     // so the page can hide the indicator when it cannot be trusted
+
         app.stage.addChild(container);
     }
 

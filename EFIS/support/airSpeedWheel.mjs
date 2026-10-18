@@ -82,8 +82,22 @@ export class AirspeedWheel  {
         line.fill();
         line.stroke();
     
+        this.outline = line;        // kept so the whole wheel can be hidden
         app.stage.addChild(line);
     
+    }
+
+    /**
+     * Show or hide the whole wheel (outline, digits and units). The page hides it when the airspeed
+     * cannot be trusted.
+     * @param {boolean} isVisible
+     */
+    set visible(isVisible) {
+        this.outline.visible = isVisible;
+        this.IASunits.visible = isVisible;
+        this.airspeedOnesWheel.digitContainer.visible = isVisible;
+        this.airspeedTensWheel.digitContainer.visible = isVisible;
+        this.airspeedHundredsWheel.digitContainer.visible = isVisible;
     }
 
     set value(newValue){

@@ -40,12 +40,16 @@ import { MenuOverlay } from './menuOverlay.mjs';
 import { HSI } from './hsi.mjs';
 import { RouteOverlay } from './routeOverlay.mjs';
 import { OrientationPanel } from './orientationPanel.mjs';
+import { InstrumentStatus } from './instrumentStatus.mjs';
+import { FailureFlag } from './failureFlag.mjs';
+import { Annunciators } from './annunciators.mjs';
+import { FAILURE_LOOK } from './failureLook.mjs';
 
 
 
 // ----------------------------------------------------------------------------
 
-const VERSION = "0.3.0";
+const VERSION = "0.4.0";
 
 // Viewer mode: a page that is not the Pi's own display only watches. It sends
 // nothing to the server, ignores the encoder, and shows the QNH and brightness
@@ -66,6 +70,9 @@ const VIEW_ONLY = pageParams.get('view') === '1' || serverOverride !== null
 // the server has arrived the page sends nothing, so its defaults cannot overwrite them.
 var gotFirstMessage = false;
 var restoredFromServer = false;
+
+// What the server's facts mean for the display: which instruments can be trusted and what to announce
+const instrumentStatus = new InstrumentStatus();
 
 var CAN_QNH_PERIOD = 1000;      // time in milliseconds (1 second)
 // last_qnh stores QNH in inHg × 100 format (e.g., 2992 = 29.92 inHg)
@@ -170,6 +177,8 @@ if (VIEW_ONLY) {
 // --- HSI on the second canvas ---
 let hsiDiameter = Math.min(app2.screen.width, app2.screen.height) * 0.75;
 hsi = new HSI(app2, app2.screen.width / 2, app2.screen.height / 2, hsiDiameter);
+const hsiFlag = new FailureFlag(app2, app2.screen.width / 2 - hsiDiameter / 2,
+                                app2.screen.height / 2 - hsiDiameter / 2, hsiDiameter, hsiDiameter, 'HDG');
 
 // --- Route overlay and button ---
 function sendCommand(cmd) {
@@ -288,6 +297,16 @@ var attitudeIndicator,
     softButtons,
     menuOverlay,
     orientationPanel,
+    annunciators,
+    asiFlag,
+    altFlag,
+    vsiFlag,
+    attFlag,
+    hdgFlag,
+    turnFlag,
+    asiCover,
+    altCover,
+    vsiCover,
     hsi,
     magnetometerCalibrate,
     turnRateIndicator,
@@ -317,6 +336,7 @@ function RecieveWebSocketMessage(event) {
     // this will contain the data from the CAN bus
     dataObject = JSON.parse(event.data);
     gotFirstMessage = true;
+    instrumentStatus.messageReceived(Date.now());
 }
 
 
@@ -516,6 +536,28 @@ function setup() {
     // turnRateDebugText.position.set(10, app.screen.height - 60);
     // app.stage.addChild(turnRateDebugText);
 
+    // ------------------------------------------------------------------------
+    // Failure flags (red X), covers for failed tapes and the annunciator strip.
+    // They are created after the instruments so they are drawn over them.
+    // The area of each tape is the area of its ribbon (see the ribbons above).
+    // ------------------------------------------------------------------------
+    const tapeTop = 70;                 // the ribbons start 70 pixels from the top ...
+    const tapeHeight = y - 140;         // ... and are y - 140 pixels tall
+    asiCover = createCover(app, 0, tapeTop, 90, tapeHeight);
+    altCover = createCover(app, x - 125, tapeTop, 90, tapeHeight);
+    vsiCover = createCover(app, x - 35, 40, 35, y - 80);
+
+    asiFlag = new FailureFlag(app, 0, tapeTop, 90, tapeHeight, 'ASI');
+    altFlag = new FailureFlag(app, x - 125, tapeTop, 90, tapeHeight, 'ALT');
+    vsiFlag = new FailureFlag(app, x - 35, 40, 35, y - 80, '');
+    attFlag = new FailureFlag(app, 90, tapeTop, x - 90 - 125, tapeHeight, 'ATT');
+    hdgFlag = new FailureFlag(app, x / 2 - 60, 0, 120, 40, 'HDG');
+    turnFlag = new FailureFlag(app, x / 2 - 108, y - 19 - 8, 216, 16, '');
+
+    // The annunciators stack upward from just above the slip/skid ball (ball centre is 50 pixels
+    // from the bottom, ball and tube about 22 pixels tall)
+    annunciators = new Annunciators(app, y - 50 - 22);
+
     userInput.registerCallback(qnhDisplay);
     userInput.registerCallback(tempTimeDisplay);
     userInput.registerCallback(brightness);
@@ -535,15 +577,28 @@ function setup() {
 
 function DisplayUpdateLoop(delta) {
 
+    // Work out which instruments can be trusted from the server's facts. A value that cannot be
+    // trusted never reaches its instrument: the instrument is hidden or blanked and a red X is
+    // drawn over it (see instrumentStatus.mjs).
+    instrumentStatus.update(dataObject, Date.now());
+    const valid = instrumentStatus.valid;
+    updateFailureDisplay(instrumentStatus);
+
     // Data arrives in NED frame from Arduino, no corrections needed here
-    attitudeIndicator.pitch = dataObject.pitch;
-    attitudeIndicator.roll = dataObject.roll;
-    attitudeIndicator.accY = dataObject.accy;
-    attitudeIndicator.accZ = dataObject.accz;
+    if (valid.attitude) {
+        attitudeIndicator.pitch = dataObject.pitch;
+        attitudeIndicator.roll = dataObject.roll;
+    }
+    if (valid.acceleration) {
+        attitudeIndicator.accY = dataObject.accy;
+        attitudeIndicator.accZ = dataObject.accz;
+    }
     // attitudeIndicator.updateSlipSkid();
-    altitudeWheel.value = dataObject.altitude;
-    // //qnhDisplay.value = globalThis.qnh; // dataObject.qnh; // Don't update from json
-    altimeter_ribbon.value = dataObject.altitude;
+    if (valid.altitude) {
+        altitudeWheel.value = dataObject.altitude;
+        // //qnhDisplay.value = globalThis.qnh; // dataObject.qnh; // Don't update from json
+        altimeter_ribbon.value = dataObject.altitude;
+    }
     // //vsiDisplay.value = dataObject.vsi;
     // //testAirspeedDisplay.value = dataObject.airspeed;
     if (TEST_AIRSPEED_SWEEP) {
@@ -553,20 +608,26 @@ function DisplayUpdateLoop(delta) {
         if (testAirspeed <= 0) testAirspeedDir = 1;
         airspeedWheel.value = testAirspeed;
         airspeedRibbon.value = testAirspeed;
-    } else {
+    } else if (valid.airspeed) {
         airspeedWheel.value = dataObject.airspeed;
         airspeedRibbon.value = dataObject.airspeed;
     }
-    vsiIndicator.value = dataObject.vsi;
+    if (valid.vsi) {
+        vsiIndicator.value = dataObject.vsi;
+    }
     // Temporary test - uncomment to test VSI indicator
     // vsiIndicator.value = 500; // Test with 500 fpm climb
 
-    slipBallIndicator.accZ = dataObject.accz;
-    slipBallIndicator.accY = dataObject.accy;
-    slipBallIndicator.update();
+    if (valid.acceleration) {
+        slipBallIndicator.accZ = dataObject.accz;
+        slipBallIndicator.accY = dataObject.accy;
+        slipBallIndicator.update();
+    }
 
-    headingIndicator.value = dataObject.yaw;
-    hsi.heading = dataObject.yaw;
+    if (valid.heading) {
+        headingIndicator.value = dataObject.yaw;
+        hsi.heading = dataObject.yaw;
+    }
     if (dataObject.true_track !== undefined) {
         hsi.groundTrack = dataObject.true_track;
     }
@@ -612,7 +673,12 @@ function DisplayUpdateLoop(delta) {
     }
 
     // Update turn rate using spring-mass-damper model (simulates gyro inertia)
-    if (dataObject.turn_rate !== undefined) {
+    if (!valid.turnRate) {
+        // start again from zero when the turn rate comes back
+        smoothedTurnRate = 0.0;
+        turnRateVelocity = 0.0;
+    }
+    else if (dataObject.turn_rate !== undefined && dataObject.turn_rate !== null) {
         // dt from PixiJS ticker (seconds)
         var dt = delta.deltaMS / 1000.0;
 
@@ -640,6 +706,8 @@ function DisplayUpdateLoop(delta) {
         speedDisplay.differentialPressure = dataObject.differential_pressure;
         speedDisplay.indicatedTemperature = dataObject.oat;
     }
+    speedDisplay.validity.gs = valid.gps;
+    speedDisplay.validity.tas = valid.trueAirspeed;
     speedDisplay.update();
 
     if (dataObject.oat != null) {
@@ -649,6 +717,7 @@ function DisplayUpdateLoop(delta) {
         tempTimeDisplay.timeHour = dataObject.tm_hour;
         tempTimeDisplay.timeMinute = dataObject.tm_min;
     }
+    tempTimeDisplay.validity.temperature = valid.oat;
     tempTimeDisplay.update();
 
     altitudeDisplay.gpsAltitude = dataObject.gps_altitude;
@@ -658,6 +727,9 @@ function DisplayUpdateLoop(delta) {
     if (dataObject.oat != null) {
         altitudeDisplay.temperature = dataObject.oat;
     }
+    altitudeDisplay.validity.gps = valid.gps;
+    altitudeDisplay.validity.pressure = valid.staticPressure;
+    altitudeDisplay.validity.density = valid.densityAltitude;
     altitudeDisplay.update();
 
     //magnetometerCalibrate.plotPoint(dataObject.magx,dataObject.magy,dataObject.magz);
@@ -748,6 +820,59 @@ function DisplayUpdateLoop(delta) {
             myWebSocket.send("json" + json);}
     }
 
+}
+
+// ----------------------------------------------------------------------------
+// --- Failure display                                                       ---
+// ----------------------------------------------------------------------------
+
+/**
+ * Create a hidden rectangle that blanks a failed tape (airspeed, altitude)
+ */
+function createCover(app, x, y, width, height) {
+    const cover = new Graphics();
+    cover.rect(x, y, width, height);
+    cover.fill({ color: FAILURE_LOOK.coverColour });
+    cover.visible = false;
+    app.stage.addChild(cover);
+    return cover;
+}
+
+/**
+ * Show the failure flags, blank the failed instruments and draw the annunciators
+ * @param {InstrumentStatus} status what can be trusted and what to announce
+ */
+function updateFailureDisplay(status) {
+    const valid = status.valid;
+
+    attitudeIndicator.failed = !valid.attitude;
+    attFlag.shown = !valid.attitude;
+
+    asiCover.visible = !valid.airspeed;
+    airspeedWheel.visible = valid.airspeed;
+    asiFlag.shown = !valid.airspeed;
+    altCover.visible = !valid.altitude;
+    altitudeWheel.visible = valid.altitude;
+    altFlag.shown = !valid.altitude;
+
+    vsiIndicator.container.visible = valid.vsi;
+    vsiCover.visible = !valid.vsi;
+    vsiFlag.shown = !valid.vsi;
+
+    turnRateIndicator.container.visible = valid.turnRate;
+    turnFlag.shown = !valid.turnRate;
+
+    slipBallIndicator.container.visible = valid.acceleration;
+
+    // heading: the gyro-only heading stays visible but dimmed under its X, then is blanked
+    const heading = status.heading;
+    headingIndicator.headingContainer.visible = heading.show;
+    headingIndicator.headingContainer.alpha = heading.dim ? FAILURE_LOOK.headingDimAlpha : 1.0;
+    hdgFlag.shown = heading.flag;
+    hsi.setHeadingDisplay(heading.show, heading.dim ? FAILURE_LOOK.headingDimAlpha : 1.0);
+    hsiFlag.shown = heading.flag;
+
+    annunciators.update(status.annunciations, Date.now());
 }
 
 // ----------------------------------------------------------------------------
