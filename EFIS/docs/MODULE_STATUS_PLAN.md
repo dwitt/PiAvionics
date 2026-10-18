@@ -236,3 +236,26 @@ each module can be rolled back by reflashing.
 - **11. Division of work (2026-10-17).** The server tracks the data and sends facts (module states, named sensor flags, `valid`,
   `data_lost`, durations). The web page decides every presentation choice: wording, colours, order, flashing, how long a caution
   stays up, when the gyro-only heading is blanked, and the layout. The server does not produce display text.
+
+## Test log
+
+### 2026-10-18: server step A against the real modules (fault injection, `EFIS/tests/fault_run.py`)
+
+The real server code (`module_status.py`, `aio_server.py` 1.1.0) listened read-only on can0 on the Pi while each module fault was
+injected over USB (IMU_AHRS 1.0.15, AIR_Module 1.0.34, GPS_Module 1.0.8). What the EFIS side concluded:
+
+| Fault injected | Facts the EFIS side showed | Delay | Cleared |
+|---|---|---|---|
+| AIR pitot lost (`!P`) | air state 2; `sensors.pitot` false; invalid: airspeed, differential_pressure | under 1 s | within 1 s of `!p` |
+| AIR static lost (`!S`) | air state 2; `sensors.static` false; invalid: altitude, vsi, static_pressure | under 1 s | within 1 s |
+| AIR AOA lost (`!A`) | air state 2; `sensors.aoa` false; nothing invalid | under 1 s | within 1 s |
+| AIR OAT lost (`!O`) | air state 2; `sensors.oat` false; invalid: oat; `data_lost.oat` true for a few seconds (the AIR module stops sending 0x2A today; with the marker it will keep sending) | about 2 s | about 1 to 2 s |
+| IMU magnetometer lost (`!M`) | imu state 2; `sensors.magnetometer` false; nothing invalid; `heading_status.suspect` true with `gyro_seconds` counting | under 1 s | within 1 s |
+| IMU accel/gyro lost (`!G`) | imu state 3; `sensors.gyro_accel` false; invalid: attitude, heading, turn_rate, acceleration | under 1 s | within 1 s |
+| GPS silenced (`!N`) | gps state 2; `sensors.nmea` and `fix` false; invalid: gps_position | about 4.4 s (the module's own 5 s rule) | about 6 s after `!n` (the module finishes its baud probe first) |
+
+No fault produced a false `invalid` on an unrelated instrument, and every module returned to state 1 by itself.
+
+Finding for the display rules: while the GPS is silent, `data_lost.gps_status` flaps true/false about every 7 s, because the GPS
+module only sends 0x65 between its baud probes. `sensors.nmea` is false the whole time, so the rule "GPS NO DATA when `sensors.nmea`
+is false or the GPS is missing" is stable; the page should not use `data_lost.gps_status` alone for that caution.
