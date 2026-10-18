@@ -2,6 +2,20 @@
 
 Tell Claude: "Read RESUME.md and carry on."
 
+## Where things stand (end of 2026-10-18)
+- **On the Pi (all committed, git clean except David's untracked files):** server `aio_server.py` 1.6.3, `display_orientation.py` 1.0.1, `efis_heartbeat.py` 1.0.0,
+  `module_status.py` 2.0.0; page `efis-display.js` 0.7.1. Firmware: IMU_AHRS 1.0.16, AIR_Module 1.0.35, GPS_Module 1.0.9. The Pi is saved in landscape
+  (`~/EFIS/display_orientation.json`); server backups 1.2.1 to 1.6.2 are in `~/EFIS/backup_20261018_server120/`.
+- **Done this session (details in the paragraphs below and in ISSUES.md):** laptop viewers and `?pi=` layouts; the Menu orientation switch with a timed revert; the whole failure
+  display (red X flags, blanked tapes, annunciators above the slip ball, the Modules page with an EFIS row); the HSI following GPS and heading data; the module markers (AIR and
+  IMU) and the EFIS heartbeat 0x700; magnetic declination from the GPS module and magnetic courses (ISSUES #15); the log rotation (ISSUES #14); the sharper Pixi drawing; look
+  tweaks (wings, units, annunciator fit); Display 1 size fixes.
+- **GPS display (last thing done):** the HSI's GPS box is a touch button (contracted: `3D FIX` coloured by HDOP, a green `WAAS` when corrections are in use, and `VAR 10°W`;
+  expanded adds SAT, HDOP, VDOP); the track diamond is hidden below 10 kt (`TRACK_MIN_SPEED_KT` in `efis-display.js`). Confirmed by touch on the real Pi (ISSUES #16).
+- **Open:** (1) the moving test of the track diamond and course pointer (ISSUES #15); (2) the backup display, NOT built, David's design, then plan step 7 (the full system test
+  table, including pulling a module's CAN cable and closing the Pi page to see the heartbeat mask bits clear); (3) ISSUES #18, `piefis.service` ordering against `can0.service`;
+  (4) the AOA value is still always 0; (5) commands over CAN (ISSUES #9 steps 2 to 4: a command message, AIR zero, two-step reset; the Modules page is the natural home).
+
 ## State of the sensor modules: finished and committed
 Firmware on the boards (all flashed, healthy, committed): IMU_AHRS 1.0.16, AIR_Module 1.0.35, GPS_Module 1.0.9 (the IMU and AIR now send the invalid-data markers, 2026-10-18).
 Libraries: ModuleInfo 1.3.0, StatusLED 1.2.0, SensorHealth 1.0.0, MS4525DO 1.1.1, SSC 1.1.1, plus two locally patched
