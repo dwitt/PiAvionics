@@ -1,5 +1,5 @@
 #!/bin/sh
-wlr-randr --output DSI-1 --scale=1.25 &
+wlr-randr --output DSI-1 --scale=1.25 --transform "$(python3 /home/david/EFIS/display_orientation.py --transform 2>/dev/null || echo normal)" &
 # turn off pointer AFTER chromium is up (background)
 (
   # wait up to ~10 seconds for chromium to exist

@@ -1,6 +1,6 @@
 # Plan: switch the Pi's display between portrait and landscape from the Menu
 
-Written 2026-10-18. Nothing is built yet; decisions are at the end.
+Written 2026-10-18. Built, deployed and tested 2026-10-18; decisions and status are at the end.
 
 ## Goal
 
@@ -83,3 +83,31 @@ more than one press to take effect and to be saved, and a bad choice can never l
 4. **Which orientations.** Portrait and Landscape only, or also the flipped ones (portrait upside down, landscape rotated the
    other way) for different mounting positions?
 5. **Applying at boot.** Through `autostart` (suggested).
+
+## Decisions (David, 2026-10-18)
+
+1. Flow as proposed: choose, confirm, then a trial with "Keep?"; only Keep saves.
+2. Revert time 15 s.
+3. Refuse a change while flying (airspeed or ground speed above 30 kt).
+4. All four rotations: portrait, landscape, portrait flipped, landscape flipped (`wlr-randr` transforms normal, 90, 180, 270).
+5. Apply the saved orientation at boot through the compositor's `autostart`.
+
+## Status
+
+- **Built and deployed** (2026-10-18): `display_orientation.py` 1.0.1 (stdlib only), `aio_server.py` 1.3.0 (commands `orientation_request` /
+  `orientation_keep` / `orientation_revert` from the controller only, `display` facts in the JSON, `monitor_orientation` task),
+  page 0.3.0 (`orientationPanel.mjs`, an action row in `menuOverlay.mjs`, reload when the window changes between portrait and landscape
+  shape), `copytopiefis.sh` sends `display_orientation.py`. Saved setting: `~/EFIS/display_orientation.json`. Boot: the first line of
+  `~/.config/labwc/autostart` runs `wlr-randr ... --transform "$(python3 ~/EFIS/display_orientation.py --transform ...)"` (the previous
+  autostart is `autostart.bak_before_orientation`; the copy in `EFIS/linux/labwc/` was updated).
+- **Tests:** 27 unit tests of the module (`tests/test_display_orientation.py`, run anywhere; 14 deliberate breaks caught) and 4 server
+  glue tests (`tests/test_server_clients.py`; 5 breaks caught). A test rig on the Mac (fake server using the real module plus headless
+  Chrome driven over the DevTools protocol) checked the screens: choose, confirm, Keep (saved), no press (reverted after 15 s, nothing
+  saved) and refused at 60 kt ("Not while flying").
+- **On the Pi with David:** all four orientations tried, Revert and Keep, touch on every panel, the timeout revert, and a reboot with
+  landscape kept (comes up in landscape).
+- A test caught one real flaw in the module: a failed revert was retried at the next 0.2 s tick instead of after 5 s (fixed in 1.0.1).
+- Rollback: the previous server is `~/EFIS/backup_20261018_server120/aio_server_1.2.1.py`; delete `display_orientation.json` to return
+  to portrait; the previous autostart is `~/.config/labwc/autostart.bak_before_orientation`.
+- Viewers do not get the Orientation row (they cannot send commands anyway).
+

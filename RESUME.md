@@ -48,10 +48,13 @@ http://192.168.5.110:8080 on a laptop, or serve the EFIS files on the Mac and us
 `pixi-v8.6.6.mjs` to `pixi.mjs`, so a local test folder needs that name; `?view=1` forces viewer mode). A viewer shows the controller's QNH and
 brightness (`controller_state`) and a "VIEW ONLY" tag. A reloaded Pi page now starts from the server's remembered QNH/brightness instead of
 29.92/100 (page 0.2.2, tested on the Pi). Tested in Chrome from the Mac and Safari. The service's output is in `/var/log/piefis.log` (not the journal), see ISSUES #14.
-Display orientation (2026-10-18): the Pi can run portrait (native, default) or landscape (side by side) with working touch; see "Display
-orientation and touch on the Pi" in `EFIS/README.md` and the config copies in `EFIS/linux/labwc/`. Touch only needed `mapToOutput` in rc.xml;
-the rotation itself is a live `wlr-randr --transform 90` (not saved). David is seriously considering landscape for the aircraft panel; the
-display work should keep both layouts working (the page already switches layout by window shape).
+Display orientation (2026-10-18) is DONE, deployed and tested on the Pi: Menu > Orientation (choose, confirm, then a trial with Keep/Revert
+and a 15 s server-side revert; portrait, landscape and both flipped; refused above 30 kt; saved in `~/EFIS/display_orientation.json` and applied
+at boot by `~/.config/labwc/autostart`). `display_orientation.py` 1.0.1, `aio_server.py` 1.3.0, page 0.3.0. Plan, decisions, tests and rollback:
+`EFIS/docs/ORIENTATION_PLAN.md`; touch and rotation notes: "Display orientation and touch on the Pi" in `EFIS/README.md`; labwc config
+copies: `EFIS/linux/labwc/`. David is seriously considering landscape for the aircraft panel; the display work must keep both layouts working
+(the page picks its layout from the window shape and reloads when it changes). Bench note: all three modules are on the Pi's USB and restart
+whenever the Pi reboots (their uptimes reset); the GPS needs a few minutes to regain satellites. David is aware and says it is fine.
 Next: display step A (failure flags, annunciator strip built by the page from the facts using the rules table in the plan, module
 status page in the Menu, null guards, websocket-stall handling), then server step B (markers decoded, 0x700 heartbeat), the backup
 display, and last the module marker changes (server and display first so nothing draws 32767).

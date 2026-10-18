@@ -28,16 +28,20 @@ Design and decisions: `docs/MULTI_CLIENT_PLAN.md`.
 The Pi's screen (Raspberry Pi Touch Display 2, panel 720 x 1280, scale 1.25) runs the kiosk browser under the labwc compositor
 (`piefis-labwc.service`). Copies of its user config are in `linux/labwc/` (installed at `~/.config/labwc/`).
 
-- Portrait (normal) is the panel's native orientation and is what the Pi starts in. For a landscape (side by side) layout, as it would
-  look with the panel turned on its side, run on the Pi (the display session variables are needed over ssh):
-  `export XDG_RUNTIME_DIR=/run/piefis WAYLAND_DISPLAY=wayland-0`, then `wlr-randr --output DSI-1 --transform 90` (back with
-  `--transform normal`; use 270 if the picture is upside down), then reload the page with ctrl-shift-R. The page picks its layout when it loads.
-  The rotation is not saved: a reboot or a restart of `piefis-labwc` returns to portrait. To make landscape permanent, add the
-  `wlr-randr` line (with `--scale=1.25`) to `~/.config/labwc/autostart`.
+- **Switching from the Menu (page 0.3.0, server 1.3.0):** Menu, Orientation, choose Portrait, Landscape or a flipped version, press
+  Switch. The screen rotates and the page reloads in the matching layout, then asks "Keep ...? Reverting in 15 s". Keep saves it
+  (`~/EFIS/display_orientation.json`, applied at boot by the first line of `~/.config/labwc/autostart`); Revert, or pressing nothing,
+  goes back to the saved orientation. The countdown is kept by the server, so it reverts even if the touch or page is unusable. A change
+  is refused while airspeed or ground speed is above 30 kt, and only the Pi's own page can change it (viewers do not see the row).
+  Design and tests: `docs/ORIENTATION_PLAN.md`.
+- **By hand over ssh** (the display session variables are needed): `export XDG_RUNTIME_DIR=/run/piefis WAYLAND_DISPLAY=wayland-0`, then
+  `wlr-randr --output DSI-1 --transform 90` (`normal`, `90`, `180`, `270`), then reload the page. This is a trial only and is not saved.
+  To go back to portrait for good, delete `~/EFIS/display_orientation.json` and restart `piefis`.
+- The page picks its layout when it loads (portrait: stacked; landscape: side by side) and reloads itself when its window changes
+  between the two shapes (also on a laptop viewer).
 - Touch follows the rotation because `rc.xml` maps the panel to the output:
   `<touch deviceName="10-005d Goodix Capacitive TouchScreen" mapToOutput="DSI-1"/>`. Tested in portrait and landscape (2026-10-18).
   Do not also set a libinput `calibrationMatrix`: labwc already rotates mapped touches, so the matrix rotates them twice.
 - `rc.xml` must be one valid XML document with a `<labwc_config>` root. Several top-level elements are rejected as a parse error
   and labwc silently uses its defaults (see `sudo journalctl -u piefis-labwc | grep "rc.xml\|parser"`). Changes to the touch and
   input settings need `sudo systemctl restart piefis-labwc` (the display blanks for a few seconds); a `kill -HUP` reload did not apply them.
-
