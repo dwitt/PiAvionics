@@ -538,7 +538,7 @@ Sensor modules broadcast their data on fixed IDs. The Pi EFIS listens, sends QNH
 | 0-1 | `ground_speed` | int16 | kt | Whole knots |
 | 2-3 | `altitude` | int16 | ft | GPS altitude |
 | 4-5 | `true_track` | int16 | deg | Whole degrees; held at 0 below 2 kt |
-| 6-7 | `mag_track` | int16 | deg | True track corrected with WMM2025 declination. The EFIS ignores it |
+| 6-7 | `mag_track` | int16 | deg | True track corrected with WMM2025 declination, held at 0 below 2 kt. The EFIS uses this one for the HSI track diamond (the compass rose is magnetic) |
 
 **Byte layout**
 

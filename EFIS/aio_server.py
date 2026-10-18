@@ -1,7 +1,7 @@
 """ Asynchronous I/O based webserver to handle page and websocket"""
 # pyright: reportMissingImports=false
 
-VERSION = "1.3.0"
+VERSION = "1.4.0"
 
 import asyncio
 import ipaddress
@@ -98,7 +98,7 @@ SEESAW_EXPECTED_PRODUCT_ID = 4991  # Expected product ID for seesaw encoder
 # "data_lost"); the old fields keep their last value, so the current display (which cannot
 # handle null in most places) keeps working. Attitude and acceleration are cleared as before.
 # Set True once the display handles null/invalid values (display step A of MODULE_STATUS_PLAN.md).
-NULL_INVALID_VALUES = False
+NULL_INVALID_VALUES = True    # a value that cannot be trusted is sent as null (the page ignores it anyway)
 STATUS_UPDATE_PERIOD = 0.1  # seconds between status evaluations
 ORIENTATION_UPDATE_PERIOD = 0.2  # seconds between display orientation checks (trial timeout)
 
@@ -160,6 +160,7 @@ class AvionicsData:
         self.gps_speed = None
         self.gps_altitude = None
         self.true_track = None
+        self.mag_track = None        # GPS track corrected to magnetic with the module's WMM2025 declination (the HSI uses this one)
         self.gps_fix_quality = None  # 0=No fix, 1=GPS, 2=DGPS (WAAS)
         self.gps_fix_3d = None       # 1=No fix, 2=2D, 3=3D
         self.gps_satellites = None   # Number of satellites in use
@@ -890,7 +891,7 @@ async def process_gps2_message(msg, data, last_received_times):
         return False
     
     try:
-        (data.gps_speed, data.gps_altitude, data.true_track, _) = (
+        (data.gps_speed, data.gps_altitude, data.true_track, data.mag_track) = (
             struct.unpack("<hhhh", msg.data)
         )
         return True
@@ -1171,6 +1172,12 @@ def update_status(data, last_received_times, now):
             data.gps_speed = None
             data.gps_altitude = None
             data.true_track = None
+            data.mag_track = None
+            # the navigation worked out from the position
+            data.xtrack = None
+            data.dist = None
+            data.bearing = None
+            data.to_from = None
     return snapshot
 
 async def monitor_status(data, last_received_times):

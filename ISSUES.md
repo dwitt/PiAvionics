@@ -99,22 +99,23 @@ Status: **Open**, **Monitoring** (fix applied, watching), **Fixed**.
 - To do: add a `logrotate` rule for `/var/log/piefis.log`, and consider logging a repeated send error once (with a count) instead of
   on every attempt.
 
-### 15. HSI ground track diamond mixes a true track with a magnetic heading
+### 15. HSI ground track diamond mixes a true track with a magnetic heading (diamond fixed 2026-10-18, course pointer still open)
 - Found 2026-10-18 (David asked where the HSI heading comes from). The HSI rose is rotated by `dataObject.yaw`, the IMU module's
-  fused heading (CAN 0x48), which is a **magnetic** heading. The magenta track diamond is placed from `true_track`, the GPS module's
-  **true** track (CAN 0x64 bytes 4-5). Nothing in the server or the page corrects between the two (no declination anywhere in
-  `aio_server.py`, `efis-display.js` or `hsi.mjs`), so the diamond should be off by the local magnetic variation, which I expect to be
-  roughly 10 degrees west of north in David's area. Not measured: on the bench the GPS holds the track at 0 below 2 kt, so it needs a
-  moving test (drive or flight) to see the offset.
-- The GPS module already sends the fix: 0x64 bytes 6-7 is `mag_track` (true track corrected with the WMM2025 declination it computes every
-  60 s). `Protocol/can_messages.yaml` says "the EFIS ignores it"; `process_gps2_message` in `aio_server.py` unpacks it into a throwaway `_`.
-- To fix: the server keeps `mag_track` (unpack, add to `AvionicsData`, JSON) and the page gives it to `hsi.groundTrack` instead of
-  `true_track`; bump `aio_server.py`, add a glue test (0x64 frame in, `mag_track` out), and test on the road. Check the other uses of
-  the true track on the page and in the navigation code: `compute_navigation` (DTK, cross-track, bearing) works in true degrees from
-  the flight plan and GPS position, while the course pointer, heading bug and CRS box are compared with the magnetic heading, so the
-  desired track (`dtk`) may need the same correction (flight plan courses in `flightplan.py` need checking for true or magnetic).
-- Also decide what the display shows when the GPS has no declination yet (before its first fix `mag_track` would equal the true
-  track): the GPS module's declination is 0 until it has a position.
+  fused heading (CAN 0x48), which is a **magnetic** heading. The magenta track diamond was placed from `true_track`, the GPS module's
+  **true** track (CAN 0x64 bytes 4-5), with no correction, so it should have been off by the local magnetic variation (I expect roughly
+  10 degrees west of north in David's area; not measured, because on the bench the GPS holds the track at 0 below 2 kt).
+- **Fixed 2026-10-18 (server 1.4.0, page 0.5.5):** the server now keeps `mag_track` (0x64 bytes 6-7, the GPS module's true track
+  corrected with the WMM2025 declination it computes every 60 s) and the page gives it to the track diamond. Tests: the glue tests decode
+  it and clear it with the GPS. **Still to do: a moving test (drive or flight) to confirm the diamond now sits on the real track.**
+- **Still open: the desired track (DTK), cross-track, bearing and the course pointer.** `compute_navigation` in `flightplan.py`
+  works in **true** degrees (the bearing between waypoint coordinates), while the HSI rose, the course pointer and the CRS box are compared
+  with the magnetic heading, so the course pointer for a flight-plan leg is off by the declination. The EFIS does not know the declination:
+  the GPS module computes it but only sends the corrected track, which gives `declination = true - mag` only while moving above 2 kt (both
+  are held at 0 below that), with whole-degree rounding. Options: (a) the GPS module sends the declination (a field in 0x65 or the
+  heartbeat; needs a module change and flash); (b) the server remembers the last value derived while moving (rough, and unknown until the
+  first movement); (c) the server calculates WMM2025 itself. Prefer (a). Decide with the backup display work (server step B), which needs
+  the same number if it ever shows a course.
+- Also: before the GPS has a date and position its declination is 0, so `mag_track` equals the true track at first.
 
 ## Monitoring
 

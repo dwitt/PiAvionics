@@ -50,7 +50,7 @@ import { FAILURE_LOOK } from './failureLook.mjs';
 
 // ----------------------------------------------------------------------------
 
-const VERSION = "0.5.4";
+const VERSION = "0.5.5";
 
 // Viewer mode: a page that is not the Pi's own display only watches. It sends
 // nothing to the server, ignores the encoder, and shows the QNH and brightness
@@ -670,8 +670,10 @@ function DisplayUpdateLoop(delta) {
     // What the HSI shows from the GPS (ground speed and track, cross track, TO/FROM, the waypoint readout)
     // is only shown while the GPS position can be trusted; otherwise it is hidden or shows ---
     hsi.gpsValid = valid.gps;
-    if (valid.gps && dataObject.true_track !== undefined && dataObject.true_track !== null) {
-        hsi.groundTrack = dataObject.true_track;
+    // The compass rose is magnetic, so the track diamond uses the GPS module's magnetic track
+    // (true track corrected with its WMM2025 declination), not the true track (ISSUES.md #15)
+    if (valid.gps && dataObject.mag_track !== undefined && dataObject.mag_track !== null) {
+        hsi.groundTrack = dataObject.mag_track;
     }
     hsi.groundSpeed = (valid.gps && dataObject.gps_speed !== undefined) ? dataObject.gps_speed : null;
 

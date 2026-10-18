@@ -413,7 +413,7 @@ messages:
       - {bytes: "0-1", name: ground_speed, type: int16, unit: kt,  desc: Whole knots}
       - {bytes: "2-3", name: altitude,     type: int16, unit: ft,  desc: GPS altitude}
       - {bytes: "4-5", name: true_track,   type: int16, unit: deg, desc: "Whole degrees; held at 0 below 2 kt"}
-      - {bytes: "6-7", name: mag_track,    type: int16, unit: deg, desc: "True track corrected with WMM2025 declination. The EFIS ignores it"}
+      - {bytes: "6-7", name: mag_track,    type: int16, unit: deg, desc: "True track corrected with WMM2025 declination, held at 0 below 2 kt. The EFIS uses this one for the HSI track diamond (the compass rose is magnetic)"}
     notes:
       - Sent only while the GPS has a fix.
     code:
