@@ -248,6 +248,7 @@ export class HSI {
         this.headingText = new Text({ text: '000', style: style });
         this.headingText.anchor.set(0.5, 0.5);
         headingBox.addChild(this.headingText);
+        this.headingBox = headingBox;       // kept so the readout can be dimmed or blanked with the heading
 
         this.fixedContainer.addChild(headingBox);
     }
@@ -862,7 +863,7 @@ export class HSI {
     // -----------------------------------------------------------------------
     /**
      * Show, dim or hide everything that depends on the heading (compass rose, ground track,
-     * heading bug and course pointer). Hidden when the heading cannot be trusted, dimmed when
+     * heading bug, course pointer and the digital readout, which shows --- when hidden). Hidden when the heading cannot be trusted, dimmed when
      * it comes from the gyro only. The page puts a red X over the HSI.
      * @param {boolean} show true to draw them
      * @param {number} alpha opacity to draw them with (1 is normal)
@@ -875,6 +876,10 @@ export class HSI {
             container.alpha = alpha;
         }
         this.trackContainer.alpha = alpha;
+        this.headingBox.alpha = alpha;
+        if (!show) {
+            this.headingText.text = '---';      // never leave the last heading on the readout
+        }
         this._applyGpsVisibility();
     }
 
