@@ -1,0 +1,9 @@
+<?xml version="1.0"?>
+<labwc_config>
+  <keyboard>
+    <keybind key="A-W-h">
+      <action name="HideCursor"/>
+    </keybind>
+  </keyboard>
+  <touch deviceName="10-005d Goodix Capacitive TouchScreen" mapToOutput="DSI-1"/>
+</labwc_config>

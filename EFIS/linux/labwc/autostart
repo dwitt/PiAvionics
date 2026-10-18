@@ -1,0 +1,17 @@
+#!/bin/sh
+wlr-randr --output DSI-1 --scale=1.25 &
+# turn off pointer AFTER chromium is up (background)
+(
+  # wait up to ~10 seconds for chromium to exist
+  for i in $(seq 1 100); do
+    pgrep -x chromium >/dev/null && break
+    sleep 0.1
+  done
+
+  # give it a moment to create a window & get focus
+  sleep 1.0
+
+  # send the snap shortcut
+  wtype -M alt -M logo h -m logo -m alt
+) &
+

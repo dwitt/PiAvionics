@@ -48,6 +48,10 @@ http://192.168.5.110:8080 on a laptop, or serve the EFIS files on the Mac and us
 `pixi-v8.6.6.mjs` to `pixi.mjs`, so a local test folder needs that name; `?view=1` forces viewer mode). A viewer shows the controller's QNH and
 brightness (`controller_state`) and a "VIEW ONLY" tag. A reloaded Pi page now starts from the server's remembered QNH/brightness instead of
 29.92/100 (page 0.2.2, tested on the Pi). Tested in Chrome from the Mac and Safari. The service's output is in `/var/log/piefis.log` (not the journal), see ISSUES #14.
+Display orientation (2026-10-18): the Pi can run portrait (native, default) or landscape (side by side) with working touch; see "Display
+orientation and touch on the Pi" in `EFIS/README.md` and the config copies in `EFIS/linux/labwc/`. Touch only needed `mapToOutput` in rc.xml;
+the rotation itself is a live `wlr-randr --transform 90` (not saved). David is seriously considering landscape for the aircraft panel; the
+display work should keep both layouts working (the page already switches layout by window shape).
 Next: display step A (failure flags, annunciator strip built by the page from the facts using the rules table in the plan, module
 status page in the Menu, null guards, websocket-stall handling), then server step B (markers decoded, 0x700 heartbeat), the backup
 display, and last the module marker changes (server and display first so nothing draws 32767).
