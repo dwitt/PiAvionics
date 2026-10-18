@@ -50,7 +50,7 @@ import { FAILURE_LOOK } from './failureLook.mjs';
 
 // ----------------------------------------------------------------------------
 
-const VERSION = "0.5.1";
+const VERSION = "0.5.2";
 
 // Viewer mode: a page that is not the Pi's own display only watches. It sends
 // nothing to the server, ignores the encoder, and shows the QNH and brightness
@@ -931,8 +931,9 @@ function AircraftIndicator(app){
     let px3 = displayWidth/30;
 
     // The wings run from the gap at the centre (1.5 * px4) out to px1. The wing used to end at
-    // displayWidth/7; the wings are now shortened by WING_SHORTEN (a trial, 25% off the length).
-    const WING_SHORTEN = 0.25;
+    // displayWidth/7; the wings are now shortened by WING_SHORTEN (a trial: 0.25 first, then 0.33,
+    // about 5 pixels shorter again on the Pi's portrait canvas).
+    const WING_SHORTEN = 0.33;
     const wingInner = 1.5 * px4;
     let px1 = wingInner + (displayWidth/7 - wingInner) * (1 - WING_SHORTEN); // outside of large mark
 

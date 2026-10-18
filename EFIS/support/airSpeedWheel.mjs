@@ -44,7 +44,7 @@ export class AirspeedWheel  {
             style: this.style
             });
         this.IASunits.anchor.set(0,.2);
-        this.IASunits.position.set(x + airspeedWidth + 8,y);
+        this.IASunits.position.set(x + airspeedWidth + 8, y + 6);     // the units sit 6 pixels lower than the digits' centre
 
         app.stage.addChild(this.IASunits);
         app.stage.addChild(this.airspeedOnesWheel.digitContainer);
