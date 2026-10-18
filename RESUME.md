@@ -65,8 +65,11 @@ Display 2 (portrait and landscape) and checked Display 1 sizes (800x480 and 480x
 landscape` (Pi layouts), `?view=1`, `?server=host:port`, `?sharp=0`, and look overrides `xw xo fs labels` (see `EFIS/support/failureLook.mjs`).
 Test log: end of `EFIS/docs/MODULE_STATUS_PLAN.md`. Tools: `EFIS/tests/fake_feed.py` + `page_shots.py` (need aiohttp in a venv) and `node --test tests/js`.
 Page changes reach the Pi with rsync of `EFIS/support/*` then a reload (`wtype -M ctrl -M shift -k r -m shift -m ctrl` over ssh works).
-Next: ISSUES #15 (HSI track diamond uses the GPS true track with the IMU's magnetic heading; `mag_track` is sent but ignored) together with
-`NULL_INVALID_VALUES = True` as one server release; then server step B (markers decoded, 0x700 heartbeat), the backup display, and last the
+ISSUES #15 is fixed and deployed (server 1.5.0, page 0.5.5, GPS_Module 1.0.9 flashed): the track diamond uses `mag_track`, the GPS module sends
+its WMM2025 declination in 0x65 byte 3, and the server sends the desired track and bearing in magnetic degrees (held back until the declination is
+known); `NULL_INVALID_VALUES` is on (untrusted values are sent as null). A moving test of the diamond and course pointer is still to do.
+Previous servers are in `~/EFIS/backup_20261018_server120/` (1.2.1, 1.3.0, 1.4.0 copies).
+Next: server step B (markers decoded, 0x700 heartbeat), the backup display, and last the
 module marker changes (server and display first so nothing draws 32767).
 Other open items: AOA value on 0x29 is still always 0; command messages over CAN (ISSUES #9 steps 2 to 4).
 

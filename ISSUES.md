@@ -99,23 +99,23 @@ Status: **Open**, **Monitoring** (fix applied, watching), **Fixed**.
 - To do: add a `logrotate` rule for `/var/log/piefis.log`, and consider logging a repeated send error once (with a count) instead of
   on every attempt.
 
-### 15. HSI ground track diamond mixes a true track with a magnetic heading (diamond fixed 2026-10-18, course pointer still open)
+### 15. HSI ground track diamond and course pointer mixed true and magnetic (fixed 2026-10-18, one moving test left)
 - Found 2026-10-18 (David asked where the HSI heading comes from). The HSI rose is rotated by `dataObject.yaw`, the IMU module's
-  fused heading (CAN 0x48), which is a **magnetic** heading. The magenta track diamond was placed from `true_track`, the GPS module's
-  **true** track (CAN 0x64 bytes 4-5), with no correction, so it should have been off by the local magnetic variation (I expect roughly
-  10 degrees west of north in David's area; not measured, because on the bench the GPS holds the track at 0 below 2 kt).
-- **Fixed 2026-10-18 (server 1.4.0, page 0.5.5):** the server now keeps `mag_track` (0x64 bytes 6-7, the GPS module's true track
-  corrected with the WMM2025 declination it computes every 60 s) and the page gives it to the track diamond. Tests: the glue tests decode
-  it and clear it with the GPS. **Still to do: a moving test (drive or flight) to confirm the diamond now sits on the real track.**
-- **Still open: the desired track (DTK), cross-track, bearing and the course pointer.** `compute_navigation` in `flightplan.py`
-  works in **true** degrees (the bearing between waypoint coordinates), while the HSI rose, the course pointer and the CRS box are compared
-  with the magnetic heading, so the course pointer for a flight-plan leg is off by the declination. The EFIS does not know the declination:
-  the GPS module computes it but only sends the corrected track, which gives `declination = true - mag` only while moving above 2 kt (both
-  are held at 0 below that), with whole-degree rounding. Options: (a) the GPS module sends the declination (a field in 0x65 or the
-  heartbeat; needs a module change and flash); (b) the server remembers the last value derived while moving (rough, and unknown until the
-  first movement); (c) the server calculates WMM2025 itself. Prefer (a). Decide with the backup display work (server step B), which needs
-  the same number if it ever shows a course.
-- Also: before the GPS has a date and position its declination is 0, so `mag_track` equals the true track at first.
+  fused heading (CAN 0x48), which is a **magnetic** heading. The magenta track diamond was placed from the GPS's **true** track, and the
+  desired track (DTK) and bearing from `compute_navigation` (flightplan.py) are also **true** degrees, so the diamond and the flight-plan
+  course pointer were off by the local magnetic variation (David's area: -10 degrees, 10 West).
+- **Fixed 2026-10-18, track diamond (server 1.4.0, page 0.5.5):** the server keeps `mag_track` (0x64 bytes 6-7, the GPS module's true track
+  corrected with its WMM2025 declination) and the page gives it to the diamond.
+- **Fixed 2026-10-18, course pointer and bearing (GPS_Module 1.0.9, server 1.5.0):** the GPS module now sends its declination in 0x65 byte
+  3 (int8 whole degrees, East positive, 0x7F until calculated; it is calculated as soon as there is a fix and a date, then every minute).
+  The server decodes it (`gps_declination` in the JSON), converts the flight plan's desired track and bearing to magnetic (`magnetic = true -
+  declination`) and holds back dtk, bearing, cross-track and TO/FROM until the declination is known (the pointer then follows the CRS
+  setting). Protocol `Protocol/can_messages.yaml` and the generated docs updated (generator 1.2.0 accepts int8 markers).
+- Checked on the live system: with the GPS module on 1.0.9 the server reported a declination of -10, and the desired track changed from 15.3
+  (true) to 25.3 (magnetic) and the bearing from 332.1 to 342.1.
+- **Still to do:** a moving test (drive or flight) to see the track diamond and the course pointer agree with a compass. Before the GPS
+  module reflash the byte read 0 (declination 0, so no correction); modules older than 1.0.9 therefore get no correction, not a wrong one.
+- Idea for later: the backup display can read the same declination from 0x65 if it ever shows a course.
 
 ## Monitoring
 
