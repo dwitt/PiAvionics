@@ -1,6 +1,6 @@
 'use strict';
 
-export const VERSION = '1.0.0';
+export const VERSION = '1.1.0';
 
 /*****************************************************************************
  * How the failure flags (red X) and the annunciators look. Everything that
@@ -28,6 +28,7 @@ export const FAILURE_LOOK = {
 
     // ---- annunciators
     annunciatorFontSize: 19,                // text size                      (?fs=)
+    annunciatorMinFontSize: 13,             // on a narrow canvas the text shrinks to fit, but not below this
     annunciatorMaxLines: 4,                 // more than this are not shown (warnings come first)
     annunciatorBackAlpha: 0.78,             // dark pill behind each line
     annunciatorPadding: 10,                 // space left and right of the text inside the pill

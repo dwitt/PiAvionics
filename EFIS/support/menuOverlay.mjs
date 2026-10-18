@@ -25,7 +25,7 @@ export class MenuOverlay {
         const screenW = app.screen.width;
         const screenH = app.screen.height;
 
-        const boxWidth = 400;
+        const boxWidth = Math.min(400, screenW - 20);   // keeps a margin on a narrow canvas
         const rowHeight = 50;
         const padding = 10;
         const rowCount = toggleDefs.length + actionDefs.length + 2; // title + toggles + actions + close

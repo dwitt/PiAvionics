@@ -50,7 +50,7 @@ import { FAILURE_LOOK } from './failureLook.mjs';
 
 // ----------------------------------------------------------------------------
 
-const VERSION = "0.5.2";
+const VERSION = "0.5.3";
 
 // Viewer mode: a page that is not the Pi's own display only watches. It sends
 // nothing to the server, ignores the encoder, and shows the QNH and brightness
@@ -589,7 +589,8 @@ function setup() {
 
     // The annunciators stack upward from just above the slip/skid ball (ball centre is 50 pixels
     // from the bottom, ball and tube about 22 pixels tall)
-    annunciators = new Annunciators(app, y - 50 - 22);
+    // The widest line may use the space between the two tapes (90 pixels on the left, 125 on the right).
+    annunciators = new Annunciators(app, y - 50 - 22, x - 90 - 125);
 
     userInput.registerCallback(qnhDisplay);
     userInput.registerCallback(tempTimeDisplay);

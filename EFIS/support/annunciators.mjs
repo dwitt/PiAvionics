@@ -3,7 +3,7 @@ import { Container, Graphics, TextStyle, Text } from './pixi.mjs';
 import { FAILURE_LOOK } from './failureLook.mjs';
 import { WARNING } from './instrumentStatus.mjs';
 
-export const VERSION = '1.0.0';
+export const VERSION = '1.1.0';
 
 /*****************************************************************************
  * The annunciator strip: short red warnings and amber cautions stacked
@@ -16,10 +16,13 @@ export class Annunciators {
     /*************************************************************************
      * @param {object} app - PixiJS Application to draw on
      * @param {number} bottomY - y of the bottom of the lowest line
+     * @param {number} maxWidth - widest a line may be (the space between the tapes); the text of
+     *     the whole stack shrinks, down to annunciatorMinFontSize, if the widest line is wider
      *************************************************************************/
-    constructor(app, bottomY) {
+    constructor(app, bottomY, maxWidth) {
         this.app = app;
         this.bottomY = bottomY;
+        this.maxWidth = maxWidth;
 
         this.container = new Container();
         this.container.x = app.screen.width / 2;
@@ -77,23 +80,35 @@ export class Annunciators {
         this._lines = [];
         this.container.removeChildren();
 
-        const lineHeight = FAILURE_LOOK.annunciatorFontSize + FAILURE_LOOK.annunciatorLineGap;
+        // a TextStyle is shared by reference, so each line gets its own
+        const labels = items.map((item) => new Text({
+            text: item.text,
+            style: new TextStyle({
+                fontFamily: 'Tahoma',
+                fontSize: FAILURE_LOOK.annunciatorFontSize,
+                fontWeight: 'bold',
+                fill: item.level === WARNING ? FAILURE_LOOK.warningColour
+                                             : FAILURE_LOOK.cautionColour,
+            }),
+        }));
+
+        // shrink the whole stack so that the widest line fits the space between the tapes
+        let fontSize = FAILURE_LOOK.annunciatorFontSize;
+        const widest = labels.reduce((w, label) => Math.max(w, label.width), 0);
+        const room = this.maxWidth - 2 * FAILURE_LOOK.annunciatorPadding;
+        if (widest > room) {
+            fontSize = Math.max(FAILURE_LOOK.annunciatorMinFontSize,
+                                Math.floor(fontSize * room / widest));
+            for (const label of labels) label.style.fontSize = fontSize;
+        }
+
+        const lineHeight = fontSize + FAILURE_LOOK.annunciatorLineGap;
         const top = -items.length * lineHeight;
 
         items.forEach((item, index) => {
             const centreY = top + index * lineHeight + lineHeight / 2;
 
-            // a TextStyle is shared by reference, so each line gets its own
-            const label = new Text({
-                text: item.text,
-                style: new TextStyle({
-                    fontFamily: 'Tahoma',
-                    fontSize: FAILURE_LOOK.annunciatorFontSize,
-                    fontWeight: 'bold',
-                    fill: item.level === WARNING ? FAILURE_LOOK.warningColour
-                                                 : FAILURE_LOOK.cautionColour,
-                }),
-            });
+            const label = labels[index];
             label.anchor.set(0.5, 0.5);
             label.position.set(0, centreY);
 
