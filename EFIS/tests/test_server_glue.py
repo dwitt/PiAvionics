@@ -1,7 +1,7 @@
 """Runs the real aio_server handlers and receive loop with a fake CAN reader.
 Needs the server's own libraries (aiohttp, python-can, ...), so it is skipped where they are not
 installed (for example on the Mac) and is run on the Pi:  python3 -m unittest discover -s tests -v"""
-VERSION = "1.2.0"
+VERSION = "1.3.0"
 
 import asyncio
 import json
@@ -52,6 +52,18 @@ def ahrs_frame(yaw=900, pitch=20, roll=-30, turn=0):
 
 def oat_frame(oat=228):
     return FakeMsg(0x2A, struct.pack("<hBBBBBB", oat, 0, 0, 0, 0, 0, 0))
+
+
+def pressure_frame(static=9420, temperature=22, differential=620):
+    return FakeMsg(0x2B, struct.pack("<hbhbbb", static, temperature, differential, 0, 0, 0))
+
+
+def accel_frame(x=10, y=-20, z=981, calibration=3):
+    return FakeMsg(0x49, struct.pack("<hhhh", x, y, z, calibration))
+
+
+MARKER16 = 0x7FFF
+MARKER32 = 0x7FFFFFFF
 
 
 def gps_speed_frame(speed=112, altitude=2410, true_track=2, mag_track=352):
@@ -232,6 +244,128 @@ class ServerGlueTests(unittest.TestCase):
         self.data.xtrack = 0.4
         srv.update_status(self.data, self.times, time.monotonic())
         self.assertEqual(self.data.xtrack, 0.4)
+
+    # --- invalid-data markers (protocol 0.2.0): a marker is never shown as a number ---
+
+    def send(self, *frames):
+        run_loop(self.data, self.times, list(frames))
+        srv.update_status(self.data, self.times, time.monotonic())
+
+    def test_no_marker_in_a_healthy_run(self):
+        self.healthy()
+        run_loop(self.data, self.times, [pressure_frame(), accel_frame()])
+        srv.update_status(self.data, self.times, time.monotonic())
+        self.assertEqual(self.data._markers, set())
+        self.assertEqual(self.data.accz, 981)
+        self.assertEqual(self.data.static_pressure, 9420)
+
+    def test_airspeed_marker_gives_none_and_an_invalid_airspeed_only(self):
+        self.healthy()
+        self.send(air_frame(airspeed=MARKER16, altitude=2400, vsi=150))
+        self.assertIsNone(self.data.airspeed)
+        self.assertFalse(self.data.valid["airspeed"])
+        self.assertEqual(self.data.altitude, 2400)
+        self.assertEqual(self.data.vsi, 150)
+        self.assertTrue(self.data.valid["altitude"])
+        self.assertTrue(self.data.valid["vsi"])
+
+    def test_altitude_and_vertical_speed_markers(self):
+        self.healthy()
+        self.send(air_frame(airspeed=112, altitude=MARKER32, vsi=MARKER16))
+        self.assertIsNone(self.data.altitude)                     # never 2147483647
+        self.assertIsNone(self.data.vsi)                          # never 32767
+        self.assertFalse(self.data.valid["altitude"])
+        self.assertFalse(self.data.valid["vsi"])
+        self.assertTrue(self.data.valid["airspeed"])
+        self.assertEqual(self.data.airspeed, 112)
+
+    def test_a_marker_clears_when_a_normal_frame_arrives(self):
+        self.healthy()
+        self.send(air_frame(airspeed=MARKER16))
+        self.assertFalse(self.data.valid["airspeed"])
+        self.send(air_frame(airspeed=95))
+        self.assertTrue(self.data.valid["airspeed"])
+        self.assertEqual(self.data.airspeed, 95)
+        self.assertEqual(self.data._markers, set())
+
+    def test_marker_makes_the_value_invalid_even_with_the_heartbeat_saying_ok(self):
+        self.healthy(air_mask=0x0F)
+        self.send(air_frame(airspeed=MARKER16))
+        self.assertTrue(self.data.modules["air"]["sensors"]["pitot"])
+        self.assertFalse(self.data.valid["airspeed"])
+
+    def test_oat_marker(self):
+        self.healthy()
+        self.send(oat_frame(oat=MARKER16))
+        self.assertIsNone(self.data.oat)                          # never 3276.7
+        self.assertFalse(self.data.valid["oat"])
+        self.send(oat_frame(oat=228))
+        self.assertEqual(self.data.oat, 22.8)
+        self.assertTrue(self.data.valid["oat"])
+
+    def test_pressure_markers(self):
+        self.healthy()
+        self.send(pressure_frame(static=MARKER16, differential=620))
+        self.assertIsNone(self.data.static_pressure)
+        self.assertFalse(self.data.valid["static_pressure"])
+        self.assertEqual(self.data.differential_pressure, 620)
+        self.assertTrue(self.data.valid["differential_pressure"])
+        self.send(pressure_frame(static=9420, differential=MARKER16))
+        self.assertIsNone(self.data.differential_pressure)
+        self.assertFalse(self.data.valid["differential_pressure"])
+        self.assertTrue(self.data.valid["static_pressure"])
+
+    def test_heading_marker_blanks_the_heading_but_not_the_attitude(self):
+        self.healthy()
+        self.send(ahrs_frame(yaw=MARKER16, pitch=20, roll=-30, turn=5))
+        self.assertIsNone(self.data.yaw)                          # never 3276.7
+        self.assertFalse(self.data.valid["heading"])
+        self.assertFalse(self.data.heading_status["valid"])
+        self.assertTrue(self.data.valid["attitude"])
+        self.assertEqual((self.data.pitch, self.data.roll), (2.0, -3.0))
+
+    def test_heading_marker_with_the_magnetometer_lost_is_not_a_gyro_heading(self):
+        self.healthy(imu_mask=0x05)
+        self.send(ahrs_frame(yaw=MARKER16))
+        self.assertFalse(self.data.valid["heading"])
+        self.assertFalse(self.data.heading_status["suspect"])
+        self.assertIsNone(self.data.heading_status["gyro_seconds"])
+
+    def test_pitch_or_roll_marker_makes_the_attitude_invalid(self):
+        self.healthy()
+        self.send(ahrs_frame(yaw=900, pitch=MARKER16, roll=-30))
+        self.assertIsNone(self.data.pitch)
+        self.assertFalse(self.data.valid["attitude"])
+        self.assertTrue(self.data.valid["heading"])
+        self.send(ahrs_frame(yaw=900, pitch=20, roll=MARKER16))
+        self.assertIsNone(self.data.roll)
+        self.assertFalse(self.data.valid["attitude"])
+        self.send(ahrs_frame(yaw=900, pitch=20, roll=-30))
+        self.assertTrue(self.data.valid["attitude"])
+
+    def test_turn_rate_marker(self):
+        self.healthy()
+        self.send(ahrs_frame(turn=MARKER16))
+        self.assertIsNone(self.data.turn_rate)
+        self.assertFalse(self.data.valid["turn_rate"])
+        self.assertTrue(self.data.valid["attitude"])
+
+    def test_accel_marker_on_any_axis_makes_the_acceleration_invalid(self):
+        self.healthy()
+        for axis, frame in (("accx", accel_frame(x=MARKER16)), ("accy", accel_frame(y=MARKER16)),
+                            ("accz", accel_frame(z=MARKER16))):
+            self.send(accel_frame())                              # a normal frame first
+            self.assertTrue(self.data.valid["acceleration"])
+            self.send(frame)
+            self.assertIsNone(getattr(self.data, axis), axis)
+            self.assertFalse(self.data.valid["acceleration"], axis)
+
+    def test_markers_make_values_invalid_with_the_blanking_gate_off_too(self):
+        srv.NULL_INVALID_VALUES = False
+        self.healthy()
+        self.send(air_frame(airspeed=MARKER16))
+        self.assertIsNone(self.data.airspeed)                     # a marker is never kept as a number
+        self.assertFalse(self.data.valid["airspeed"])
 
     def test_monitor_status_task_updates_and_sleeps(self):
         self.healthy()

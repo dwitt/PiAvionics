@@ -1,7 +1,7 @@
 """ Asynchronous I/O based webserver to handle page and websocket"""
 # pyright: reportMissingImports=false
 
-VERSION = "1.5.0"
+VERSION = "1.6.0"
 
 import asyncio
 import ipaddress
@@ -101,6 +101,28 @@ SEESAW_EXPECTED_PRODUCT_ID = 4991  # Expected product ID for seesaw encoder
 NULL_INVALID_VALUES = True    # a value that cannot be trusted is sent as null (the page ignores it anyway)
 STATUS_UPDATE_PERIOD = 0.1  # seconds between status evaluations
 DECLINATION_UNKNOWN = 0x7F  # GPS status byte 3 until the GPS module has calculated the declination
+
+# Invalid-data markers (Protocol/can_messages.yaml, protocol 0.2.0): a module sends this value in a field
+# when it cannot give a reading. No real value ever reaches it.
+MARKER_INT16 = 0x7FFF
+MARKER_INT32 = 0x7FFFFFFF
+
+# Which instrument's validity a field with a marker makes false
+MARKER_INSTRUMENT = {
+    "airspeed": "airspeed",
+    "altitude": "altitude",
+    "vertical_speed": "vsi",
+    "oat": "oat",
+    "static_pressure": "static_pressure",
+    "differential_pressure": "differential_pressure",
+    "heading": "heading",
+    "pitch": "attitude",
+    "roll": "attitude",
+    "turn_rate": "turn_rate",
+    "accel_x": "acceleration",
+    "accel_y": "acceleration",
+    "accel_z": "acceleration",
+}
 ORIENTATION_UPDATE_PERIOD = 0.2  # seconds between display orientation checks (trial timeout)
 
 # Display clients (EFIS/docs/MULTI_CLIENT_PLAN.md). The page served to this computer's own browser
@@ -202,6 +224,7 @@ class AvionicsData:
         self.direct_to_active = False  # True when Direct-To navigation is active
         # Internal (not serialized to JSON)
         self._flight_plan = None  # FlightPlan instance
+        self._markers = set()      # names of the fields that carry an invalid-data marker in their latest frame
         self._dtk_true = None      # desired track and bearing as worked out from the flight plan, in TRUE degrees;
         self._bearing_true = None  # update_status() sends them as dtk and bearing in magnetic degrees
         self._status = module_status.StatusTracker(time.monotonic())  # heartbeats and validity
@@ -651,6 +674,20 @@ async def get_index(request):
 # --- CAN Message Processing Helper Functions                                 ---
 # -----------------------------------------------------------------------------
 
+def decode_field(data, name, raw, marker=MARKER_INT16, divisor=1):
+    """The value of one field of a CAN message, or None when the module sent the invalid-data marker.
+
+    The raw value is compared with the marker before any scaling, so a marker is never shown as 32767 or
+    3276.7. The names of the fields that carry a marker are kept in data._markers (a field's entry is replaced
+    by every frame, so the marker clears when a normal frame arrives); update_status() turns them into
+    invalid instruments."""
+    if raw == marker:
+        data._markers.add(name)
+        return None
+    data._markers.discard(name)
+    return raw / divisor if divisor != 1 else raw
+
+
 def validate_message_length(msg, expected_length, message_name):
     """Validate CAN message data length
     
@@ -686,12 +723,12 @@ async def process_altitude_message(msg, data, last_received_times):
     if not validate_message_length(msg, 8, "altitude"):
         return False
     
-    # Calculate altitude manually (may be used for validation/debugging)
-    data.altitude = msg.data[2] | (msg.data[3]<<8) | (msg.data[4]<<16) | (msg.data[5]<<24)
-    
     try:
         # struct.unpack for altitude is here - unpacks airspeed (h), altitude (l), vsi (h)
-        (data.airspeed, data.altitude, data.vsi) = struct.unpack("<hlh", msg.data)
+        (airspeed, altitude, vsi) = struct.unpack("<hlh", msg.data)
+        data.airspeed = decode_field(data, "airspeed", airspeed)
+        data.altitude = decode_field(data, "altitude", altitude, MARKER_INT32)
+        data.vsi = decode_field(data, "vertical_speed", vsi)
         if DEBUG:
             print(data.vsi, data.airspeed)
         return True
@@ -718,9 +755,9 @@ async def process_static_pressure_message(msg, data, last_received_times):
         (static_pressure, temperature, differential_pressure, _, _, _) = (
             struct.unpack("<hbhbbb", msg.data)
         )
-        data.static_pressure = static_pressure
+        data.static_pressure = decode_field(data, "static_pressure", static_pressure)
         data.temperature = temperature
-        data.differential_pressure = differential_pressure
+        data.differential_pressure = decode_field(data, "differential_pressure", differential_pressure)
         return True
     except struct.error as e:
         if DEBUG_CAN:
@@ -733,7 +770,7 @@ async def process_oat_message(msg, data, last_received_times):
         return False
     try:
         (oat_raw, humidity, _, _, _, _, _) = struct.unpack("<hBBBBBB", msg.data)
-        data.oat = oat_raw / 10.0  # Convert from °C × 10 to °C
+        data.oat = decode_field(data, "oat", oat_raw, divisor=10.0)  # Convert from °C × 10 to °C
         return True
     except struct.error as e:
         if DEBUG_CAN:
@@ -786,16 +823,14 @@ async def process_ahrs_orient_message(msg, data, last_received_times):
         return False
     
     try:
-        (data.yaw, data.pitch, data.roll, data.turn_rate) = (
-            struct.unpack("<hhhh", msg.data)
-        )
+        (yaw, pitch, roll, turn_rate) = struct.unpack("<hhhh", msg.data)
         # Data received from Arduino already converted from sensor native frame (NWU)
         # to aircraft standard (NED). Only scaling needed here.
         # AHRS values are sent as 10x actual value, divide by AHRS_SCALING_FACTOR
-        data.yaw = data.yaw / AHRS_SCALING_FACTOR
-        data.pitch = data.pitch / AHRS_SCALING_FACTOR
-        data.roll = data.roll / AHRS_SCALING_FACTOR
-        data.turn_rate = data.turn_rate / AHRS_SCALING_FACTOR
+        data.yaw = decode_field(data, "heading", yaw, divisor=AHRS_SCALING_FACTOR)
+        data.pitch = decode_field(data, "pitch", pitch, divisor=AHRS_SCALING_FACTOR)
+        data.roll = decode_field(data, "roll", roll, divisor=AHRS_SCALING_FACTOR)
+        data.turn_rate = decode_field(data, "turn_rate", turn_rate, divisor=AHRS_SCALING_FACTOR)
         last_received_times[CAN_MSG_ID.AHRS_ORIENT.value] = time.monotonic()
         return True
     except struct.error as e:
@@ -821,9 +856,10 @@ async def process_ahrs_accel_message(msg, data, last_received_times):
         return False
     
     try:
-        (data.accx, data.accy, data.accz, data.calib) = (
-            struct.unpack("<hhhh", msg.data)
-        )
+        (accx, accy, accz, data.calib) = struct.unpack("<hhhh", msg.data)
+        data.accx = decode_field(data, "accel_x", accx)
+        data.accy = decode_field(data, "accel_y", accy)
+        data.accz = decode_field(data, "accel_z", accz)
         last_received_times[CAN_MSG_ID.AHRS_ACCEL.value] = time.monotonic()
         return True
     except struct.error as e:
@@ -1149,6 +1185,12 @@ def update_status(data, last_received_times, now):
     """
     snapshot = data._status.evaluate(now, last_received_times)
     valid = snapshot["valid"]
+
+    # A field that carries the invalid-data marker is not valid, whatever the heartbeat's sensor bits say
+    for field in data._markers:
+        valid[MARKER_INSTRUMENT[field]] = False
+    if not valid["heading"]:
+        snapshot["heading"] = dict(snapshot["heading"], valid=False, suspect=False, gyro_seconds=None)
 
     data.modules = snapshot["modules"]
     data.valid = valid
