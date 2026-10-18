@@ -6,11 +6,13 @@
 <title>EFIS failure display mock-up</title>
 <!--
   Mock-up of the failure display described in EFIS/docs/MODULE_STATUS_PLAN.md:
-  red X over a failed instrument, annunciator strip under the heading ribbon,
+  red X over a failed instrument, annunciator strip at the bottom just above the slip/skid ball,
   gyro-only heading under a dimmed red X. Plain canvas, no libraries, nothing is
   connected to the EFIS. The instruments are simplified drawings in the same
   places as efis-display.js puts them (primary canvas 720 x 640, Pi Touch Display 2).
-  Open the file in a browser. VERSION 1.0.0
+  The canvas is in the Pi's physical pixels: 720 x 640 is the 576 x 512 CSS pixel canvas the page sees
+  (compositor scale 1.25), so a 24 px label here is about 19 CSS px in efis-display.js.
+  Open the file in a browser. VERSION 1.1.0 (annunciators moved to the bottom, slip/skid ball drawn)
 -->
 <style>
   :root { --bg:#16181c; --panel:#20242a; --text:#e8eaed; --muted:#9aa0a8; --accent:#4da3ff; }
@@ -36,7 +38,7 @@
 <div class="wrap">
   <div>
     <canvas id="c" width="720" height="640"></canvas>
-    <p class="note">Primary EFIS canvas, 720 x 640 (top half of the portrait Pi Touch Display 2). Drawn simplified; positions follow efis-display.js.</p>
+    <p class="note">Primary EFIS canvas, 720 x 640 physical pixels (576 x 512 CSS px, the top half of the portrait Pi Touch Display 2). Drawn simplified; positions follow efis-display.js. Annunciators sit at the bottom, just above the slip/skid ball.</p>
   </div>
 
   <div>
@@ -221,17 +223,30 @@ function drawHeading(r) {
   }
 }
 
+// Bottom of the annunciator stack: just above the slip/skid ball (top of the ball's bar is at y = 562)
+const ANNUNCIATOR_BOTTOM = 552;
+
+function drawSlipBall() {
+  g.fillStyle = 'rgba(20,22,26,0.88)'; rr(W / 2 - 90, 562, 180, 28, 14); g.fill();
+  g.strokeStyle = '#8a929c'; g.lineWidth = 1.5; g.stroke();
+  g.strokeStyle = '#fff'; g.lineWidth = 2;
+  for (const dx of [-12, 12]) { g.beginPath(); g.moveTo(W / 2 + dx, 564); g.lineTo(W / 2 + dx, 588); g.stroke(); }
+  g.fillStyle = '#c9ced4'; g.beginPath(); g.arc(W / 2, 576, 10, 0, Math.PI * 2); g.fill();
+}
+
 function drawAnnunciators(r, now) {
   const items = [...r.warn.map(t => ({t, c:'#ff3b30'})), ...r.caut.map(t => ({t, c:'#ffb000'}))];
   const seen = new Set(items.map(i => i.t));
   for (const k of Object.keys(firstSeen)) if (!seen.has(k)) delete firstSeen[k];
   const lh = look.fs + 8;
-  items.slice(0, 4).forEach((it, idx) => {
+  const shown = items.slice(0, 4);
+  const top = ANNUNCIATOR_BOTTOM - shown.length * lh;      // the stack grows upward from just above the ball
+  shown.forEach((it, idx) => {
     if (!(it.t in firstSeen)) firstSeen[it.t] = now;
     const age = (now - firstSeen[it.t]) / 1000;
     const flashing = age < 5;
     const on = !flashing || (Math.floor(age * 3) % 2 === 0);
-    const y = 62 + idx * lh;
+    const y = top + idx * lh + lh / 2;
     g.font = `bold ${look.fs}px ${FONT}`;
     const w = g.measureText(it.t).width + 26;
     g.fillStyle = on ? 'rgba(0,0,0,0.78)' : 'rgba(0,0,0,0.25)';
@@ -262,7 +277,8 @@ function draw(now) {
   readoutBox(0, 575, 90, 25, 'OAT', '22.8', r.v.oat);
   readoutBox(W - 125, 575, 90, 25, 'QNH', '30.36', true, '#6ae0ff');
 
-  // turn rate (bottom centre)
+  // slip/skid ball, then the turn rate bar below it (bottom centre)
+  drawSlipBall();
   g.fillStyle = 'rgba(20,22,26,0.88)'; rr(W / 2 - 110, H - 34, 220, 30, 6); g.fill();
   g.strokeStyle = '#fff'; g.lineWidth = 2;
   for (const dx of [-80, 0, 80]) { g.beginPath(); g.moveTo(W / 2 + dx, H - 30); g.lineTo(W / 2 + dx, H - 20); g.stroke(); }

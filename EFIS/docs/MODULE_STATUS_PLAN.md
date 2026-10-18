@@ -114,7 +114,7 @@ The page receives the facts above and owns every presentation choice.
    stops updating and hides its numbers, except the gyro-only heading, which stays visible and dimmed under the X until the page
    decides to blank it (5 minutes, decision 1). Instruments: attitude indicator (also hides sky/ground), airspeed tape,
    altimeter, VSI, heading ribbon/HSI, turn rate, OAT readout, GPS readouts. Look as in the approved mock-up.
-2. An **annunciator strip** at top centre, built by the page from the facts. Rules (the page may refine them):
+2. An **annunciator strip** at the bottom centre, just above the slip/skid ball (moved from the top on 2026-10-18, decision 4), built by the page from the facts. Rules (the page may refine them):
 
 | Text | Level | Shown when |
 |---|---|---|
@@ -130,7 +130,7 @@ The page receives the facts above and owns every presentation choice.
 | GPS NO DATA | caution | `modules.gps.missing` or `data_lost.gps_status` or `sensors.nmea` false |
 | MODULE RESTARTED | caution | any module `restarted_age` below 8 s |
 
-   Warnings first, then cautions; a new entry flashes for 5 s then stays steady (decision 4); the page times the flash and
+   Warnings first (top of the stack), then cautions; the stack grows upward from just above the ball; a new entry flashes for 5 s then stays steady (decision 4); the page times the flash and
    the restart caution itself. "No fix" is information only, not an annunciation.
 3. **Module status page** from the Menu (decision 5): the `modules` facts as a table.
 4. Replace the start-up defaults of 0 with "no data" (red X) until the first valid message arrives.
@@ -156,7 +156,7 @@ The page receives the facts above and owns every presentation choice.
 
 0. **Decisions**: done (below). Mock-up of the annunciator strip and red-X look: done and approved by David ("generally looks good"),
    `EFIS/docs/mockups/annunciator_mockup.html`. Defaults to build: X stroke 7 px at 80% opacity; compact X (centre) over the heading
-   ribbon; annunciator text 24 px with a dark backing pill; red = PITOT, STATIC, NO AIR DATA, NO IMU, ATT FAIL; amber = OAT,
+   ribbon; annunciator text 24 px (physical; about 19 CSS px) with a dark backing pill; red = PITOT, STATIC, NO AIR DATA, NO IMU, ATT FAIL; amber = OAT,
    HDG GYRO, GPS NO DATA, MODULE RESTARTED (and AOA, IMU NO CAL); flash 5 s then steady.
 1. **Protocol** (YAML + docs): markers, 0x700. No code. **DONE 2026-10-17** (protocol 0.2.0): `invalid:` markers on the fields in the
    table above, `timeout_ms` on every message the EFIS watches (0x2B added at 1.5 s, same as OAT), notes with the interim behaviour,
@@ -218,8 +218,9 @@ each module can be rolled back by reflashing.
   value exists but is untrusted (only the gyro-only heading today) the value stays visible and dimmed under the X. Where there
   is no value at all (a marker, a lost module, a timeout) the instrument is blank under the X. To confirm with David.
 - **3. Attitude failure (2026-10-17).** The sky and ground are removed and a large red X is shown. No frozen horizon is ever drawn.
-- **4. Annunciators (2026-10-17).** Shown at top centre, just under the heading ribbon: red warnings first, amber cautions below,
-  2 to 3 short lines. A new caution or warning flashes for about 5 seconds, then stays steady.
+- **4. Annunciators (2026-10-17, position changed 2026-10-18).** Shown at bottom centre, just above the slip/skid ball (David moved them from
+  just under the heading ribbon): red warnings first (top of the stack), amber cautions below, 2 to 4 short lines growing upward. A new
+  caution or warning flashes for about 5 seconds, then stays steady. The mock-up (1.1.0) shows it; the stack covers the lower pitch ladder.
 - **5. Module status page (2026-10-17).** A read-only page opened from the existing Menu (Menu, then Modules): IMU, AIR, GPS and the
   EFIS with version, state, which sensors are up, uptime and last heard. Later a natural home for the CAN commands (ISSUES #9).
 - **6. OAT when lost (2026-10-17).** The AIR module keeps sending 0x2A with the 0x7FFF marker, so the EFIS can tell "OAT sensor failed"
