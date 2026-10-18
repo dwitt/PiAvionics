@@ -1,7 +1,7 @@
 """ Asynchronous I/O based webserver to handle page and websocket"""
 # pyright: reportMissingImports=false
 
-VERSION = "1.6.2"
+VERSION = "1.6.3"
 
 import asyncio
 import ipaddress
@@ -104,6 +104,7 @@ STATUS_UPDATE_PERIOD = 0.1  # seconds between status evaluations
 EFIS_HEARTBEAT_PERIOD = 1.0         # seconds between EFIS heartbeats (CAN 0x700)
 EFIS_HEARTBEAT_SEND_TIMEOUT = 0.05  # a send that cannot complete gives up after this long (seconds)
 EFIS_HEARTBEAT_LOG_PERIOD = 60.0    # failed sends are reported at most this often, with a count
+QNH_SEND_LOG_PERIOD = 60.0          # the same for the QNH message to the AIR module
 DECLINATION_UNKNOWN = 0x7F  # GPS status byte 3 until the GPS module has calculated the declination
 
 # Invalid-data markers (Protocol/can_messages.yaml, protocol 0.2.0): a module sends this value in a field
@@ -158,6 +159,25 @@ AHRS_SCALING_FACTOR = 10
 # *****************************************************************************
 # *** CLASS for Avionics Data                                               ***
 # *****************************************************************************
+
+class RepeatedErrorReporter:
+    """Prints an error that keeps happening without filling the log: the first time at once, then at most once
+    every `period` seconds with how many happened since (nothing acknowledging the Pi's CAN frames once logged
+    366,000 lines, ISSUES.md #14)."""
+
+    def __init__(self, label, period):
+        self.label = label
+        self.period = period
+        self.count = 0
+        self.last_report = None
+
+    def report(self, error, now):
+        self.count += 1
+        if self.last_report is None or now - self.last_report >= self.period:
+            print(f"{self.label}: {self.count} send failure(s) since the last report, last: {error}", flush=True)
+            self.count = 0
+            self.last_report = now
+
 
 class AvionicsData:
     """Class to store all the avionics data received over the CAN bus."""
@@ -262,6 +282,7 @@ class MyWebSocketResponse:
         self.can_bus = None
         self.data = None
         self.last_qnh = None
+        self.qnh_send_errors = RepeatedErrorReporter("QNH send", QNH_SEND_LOG_PERIOD)
         self.orientation = None     # display_orientation.DisplayOrientation, set in main()
         self._orientation_tasks = set()   # keeps the orientation commands from being garbage collected
         self.can_qnh_timestamp = int(time.monotonic_ns() / 1000000)
@@ -558,7 +579,7 @@ class MyWebSocketResponse:
                     if DEBUG_CAN:
                         print(f"Message sent on {self.can_bus.channel_info}")
                 except Exception as e:
-                    print(f"Error sending CAN message: {e}")
+                    self.qnh_send_errors.report(e, time.monotonic())
             else:
                 if DEBUG_CAN:
                     print("CAN bus not available, cannot send QNH message")
@@ -1287,8 +1308,7 @@ async def send_efis_heartbeat(data, bus, heartbeat):
         bus: the python-can bus, or None (the facts are still published)
         heartbeat: efis_heartbeat.EfisHeartbeat
     """
-    failures = 0
-    last_report = None
+    send_errors = RepeatedErrorReporter("EFIS heartbeat", EFIS_HEARTBEAT_LOG_PERIOD)
     while True:
         now = time.monotonic()
         controllers = (data.clients or {}).get("controller", 0)
@@ -1299,11 +1319,7 @@ async def send_efis_heartbeat(data, bus, heartbeat):
                 bus.send(can.Message(arbitration_id=can_id, data=payload, is_extended_id=False),
                          timeout=EFIS_HEARTBEAT_SEND_TIMEOUT)
             except (can.CanError, OSError) as error:
-                failures += 1
-                if last_report is None or now - last_report >= EFIS_HEARTBEAT_LOG_PERIOD:
-                    print(f"EFIS heartbeat: {failures} send failure(s) since the last report, last: {error}", flush=True)
-                    failures = 0
-                    last_report = now
+                send_errors.report(error, now)
         await asyncio.sleep(EFIS_HEARTBEAT_PERIOD)
 
 

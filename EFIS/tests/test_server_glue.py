@@ -1,7 +1,7 @@
 """Runs the real aio_server handlers and receive loop with a fake CAN reader.
 Needs the server's own libraries (aiohttp, python-can, ...), so it is skipped where they are not
 installed (for example on the Mac) and is run on the Pi:  python3 -m unittest discover -s tests -v"""
-VERSION = "1.5.0"
+VERSION = "1.6.0"
 
 import asyncio
 import contextlib
@@ -467,6 +467,36 @@ class ServerGlueTests(unittest.TestCase):
         lines = [line for line in output.splitlines() if line.strip()]
         self.assertGreaterEqual(len(lines), 2)
         self.assertLess(len(lines), 8)
+
+    # --- repeated send errors must not fill the log (ISSUES.md #14) ---
+
+    def test_repeated_error_reporter_prints_once_then_counts(self):
+        reporter = srv.RepeatedErrorReporter("QNH send", 60)
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            reporter.report("No buffer space available", 0.0)           # the first one at once
+            reporter.report("No buffer space available", 10.0)
+            reporter.report("No buffer space available", 59.9)
+            reporter.report("No buffer space available", 60.0)          # a minute later: reported with the count
+            reporter.report("No buffer space available", 61.0)
+        lines = output.getvalue().splitlines()
+        self.assertEqual(len(lines), 2)
+        self.assertEqual(lines[0], "QNH send: 1 send failure(s) since the last report, last: No buffer space available")
+        self.assertIn("3 send failure(s)", lines[1])                    # the three since the first report
+        reporter.report("again", 130.0)                                  # (prints: the period is over again)
+
+    def test_failed_qnh_sends_are_reported_once_not_every_time(self):
+        import can
+        handler = srv.MyWebSocketResponse()
+        handler.backlight = None
+        handler.can_bus = FakeBus(error=can.CanError("No buffer space available"))
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            for qnh in range(2900, 2930):                                # a different QNH each time, so each one is sent
+                handler.process_qnh(qnh)
+        lines = [line for line in output.getvalue().splitlines() if "QNH send" in line]
+        self.assertEqual(len(lines), 1)                                  # thirty failures, one line
+        self.assertIn("No buffer space available", lines[0])
 
     def test_monitor_status_task_updates_and_sleeps(self):
         self.healthy()
