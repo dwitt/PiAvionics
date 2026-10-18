@@ -128,3 +128,9 @@ Step 1 and 2 alone make a laptop safe to use (it will show the data, but with it
   controller replaces the old one but viewers stay; viewer limit; disconnects clean up; a stuck client does not slow the others and is
   dropped; address classification. Four deliberate breaks of the code (viewers allowed to command, no viewer limit, controllers not
   replaced, default QNH on route commands) were each caught.
+- **Step 3 built** (`efis-display.js` 0.2.1, not yet deployed or tried in a browser): viewer mode when the page is not on
+  localhost / 127.0.0.1 / [::1], or with `?view=1`, or with `?server=host:port` (which also points the websocket at another EFIS
+  server). A viewer sends nothing (`sendCommand` and the QNH/brightness send are skipped), skips the encoder, takes QNH and
+  brightness from `controller_state`, and shows an amber "VIEW ONLY" tag in the top left of the HSI canvas.
+  Test from the Mac: serve the EFIS folder with the Pi's `pixi.mjs` name (copytopiefis.sh renames `pixi-v8.6.6.mjs`), then open
+  `http://127.0.0.1:8099/?server=192.168.5.110:8080`.

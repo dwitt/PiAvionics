@@ -44,6 +44,21 @@ import { RouteOverlay } from './routeOverlay.mjs';
 
 // ----------------------------------------------------------------------------
 
+const VERSION = "0.2.1";
+
+// Viewer mode: a page that is not the Pi's own display only watches. It sends
+// nothing to the server, ignores the encoder, and shows the QNH and brightness
+// the Pi's page reports in controller_state. The server enforces this too (it
+// ignores commands from anything but the local browser).
+//   ?view=1            force viewer mode
+//   ?server=host:port  take the data from another EFIS server (implies viewer)
+// Plan: EFIS/docs/MULTI_CLIENT_PLAN.md
+const pageParams = new URLSearchParams(location.search);
+const serverOverride = pageParams.get('server');
+const LOCAL_HOSTNAMES = ['localhost', '127.0.0.1', '[::1]'];
+const VIEW_ONLY = pageParams.get('view') === '1' || serverOverride !== null
+                  || !LOCAL_HOSTNAMES.includes(location.hostname);
+
 var CAN_QNH_PERIOD = 1000;      // time in milliseconds (1 second)
 // last_qnh stores QNH in inHg × 100 format (e.g., 2992 = 29.92 inHg)
 var last_qnh = 2992;            // default qnh (29.92 inHg × 100)
@@ -107,12 +122,24 @@ await app2.init({width: width,
 document.body.appendChild(app.canvas);
 document.body.appendChild(app2.canvas);
 
+// "VIEW ONLY" tag in the top left corner of the second canvas
+if (VIEW_ONLY) {
+    const viewTag = new Text({
+        text: "VIEW ONLY",
+        style: new TextStyle({fontFamily: 'Tahoma', fontSize: 16, fontWeight: 'bold',
+                              fill: 0xFFB000})
+    });
+    viewTag.position.set(6, 4);
+    app2.stage.addChild(viewTag);
+}
+
 // --- HSI on the second canvas ---
 let hsiDiameter = Math.min(app2.screen.width, app2.screen.height) * 0.75;
 hsi = new HSI(app2, app2.screen.width / 2, app2.screen.height / 2, hsiDiameter);
 
 // --- Route overlay and button ---
 function sendCommand(cmd) {
+    if (VIEW_ONLY) return;
     if (myWebSocket.readyState == 1) {
         myWebSocket.send("json" + JSON.stringify(cmd));
     }
@@ -163,7 +190,7 @@ dataObject.magz = 0.0;
 // --- objects.                                                             ---
 // ----------------------------------------------------------------------------
 
-var webSocketURL = "ws://" + location.host + "/ws";
+var webSocketURL = "ws://" + (serverOverride || location.host) + "/ws";
 var myWebSocket;
 const WEBSOCKET_RECONNECT_MS = 1000;    // delay between reconnect attempts
 
@@ -584,6 +611,14 @@ function DisplayUpdateLoop(delta) {
 
     //magnetometerCalibrate.plotPoint(dataObject.magx,dataObject.magy,dataObject.magz);
     
+    // Viewer: show the Pi's QNH and brightness; do not run the encoder or send anything
+    if (VIEW_ONLY) {
+        const cs = dataObject.controller_state;
+        if (cs && typeof cs.qnh === 'number') qnhDisplay.value = cs.qnh;
+        if (cs && typeof cs.brightness === 'number') brightness.value = cs.brightness;
+        return;
+    }
+
     // // Process any change in the user input encoder
     userInput.processState(dataObject.position, dataObject.pressed)
 
