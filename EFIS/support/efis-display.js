@@ -50,7 +50,7 @@ import { FAILURE_LOOK } from './failureLook.mjs';
 
 // ----------------------------------------------------------------------------
 
-const VERSION = "0.5.3";
+const VERSION = "0.5.4";
 
 // Viewer mode: a page that is not the Pi's own display only watches. It sends
 // nothing to the server, ignores the encoder, and shows the QNH and brightness
@@ -194,7 +194,12 @@ if (VIEW_ONLY) {
 }
 
 // --- HSI on the second canvas ---
-let hsiDiameter = Math.min(app2.screen.width, app2.screen.height) * 0.75;
+// The rose is 75% of the smaller side of the canvas, but the heading box above it and the ground
+// speed and waypoint lines below it need about 120 pixels of height between them, which matters on a
+// short canvas (400 pixels tall on a Pi Touch Display 1 in portrait).
+const HSI_TEXT_ROOM = 120;
+let hsiDiameter = Math.min(Math.min(app2.screen.width, app2.screen.height) * 0.75,
+                           app2.screen.height - HSI_TEXT_ROOM);
 hsi = new HSI(app2, app2.screen.width / 2, app2.screen.height / 2, hsiDiameter);
 const hsiFlag = new FailureFlag(app2, app2.screen.width / 2 - hsiDiameter / 2,
                                 app2.screen.height / 2 - hsiDiameter / 2, hsiDiameter, hsiDiameter, 'HDG');

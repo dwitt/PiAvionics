@@ -14,7 +14,7 @@ screen orientation facts come from the real display_orientation.py with a preten
     curl 'localhost:8097/control?airspeed=60'        fake airspeed (for the orientation lock)
 
 tests/page_shots.py drives a headless Chrome through the scenarios and saves a screenshot of each.
-VERSION 1.2.0"""
+VERSION 1.3.0"""
 import argparse
 import asyncio
 import copy
@@ -164,6 +164,8 @@ def main():
             "yaw": 90, "accy": 0.02, "accz": 1.0, "turn_rate": 1.5, "oat": 22, "static_pressure": 9420,
             "differential_pressure": 620, "gps_speed": 112, "gps_altitude": 2410, "true_track": 92,
             "gps_fix_quality": 2, "gps_satellites": 11, "gps_hdop": 0.9, "gps_vdop": 1.2,
+            # navigation to a waypoint (computed by the real server from the flight plan and GPS position)
+            "wpt_id": "CYFD", "dist": 12.3, "dtk": 92, "xtrack": 0.4, "to_from": "TO",
             "controller_state": None, "display": orientation.facts(), "position": 0, "pressed": False,
         }
         data.update(facts)
