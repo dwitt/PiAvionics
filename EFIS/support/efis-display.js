@@ -50,7 +50,7 @@ import { FAILURE_LOOK } from './failureLook.mjs';
 
 // ----------------------------------------------------------------------------
 
-const VERSION = "0.4.3";
+const VERSION = "0.4.4";
 
 // Viewer mode: a page that is not the Pi's own display only watches. It sends
 // nothing to the server, ignores the encoder, and shows the QNH and brightness
@@ -58,7 +58,9 @@ const VERSION = "0.4.3";
 // ignores commands from anything but the local browser).
 //   ?view=1            force viewer mode
 //   ?server=host:port  take the data from another EFIS server (implies viewer)
-//   ?pi=1              lay the page out at the size of the Pi's own screen (below)
+//   ?pi=true           lay the page out at the size of the Pi's own screen, portrait (below)
+//   ?pi=portrait       the same, portrait: 576 x 1024, canvases stacked
+//   ?pi=landscape      the Pi's screen turned: 1024 x 576, canvases side by side
 // Plan: EFIS/docs/MULTI_CLIENT_PLAN.md
 const pageParams = new URLSearchParams(location.search);
 const serverOverride = pageParams.get('server');
@@ -102,10 +104,13 @@ var testAirspeedDir = 1;
 
 // The Pi's screen is 720 x 1280 pixels with the compositor scaled 1.25 (labwc autostart,
 // wlr-randr --scale=1.25), so the kiosk browser window is 576 x 1024 CSS pixels.
-// ?pi=1 uses that size in any browser window, for an accurate view of the Pi's layout.
+// ?pi=true or ?pi=portrait uses that size in any browser window, for an accurate view of the Pi's
+// layout; ?pi=landscape uses the screen turned on its side (1024 x 576).
 const PI_SCREEN_W = 576;
 const PI_SCREEN_H = 1024;
-const USE_PI_SIZE = pageParams.get('pi') === '1';
+const piParam = pageParams.get('pi');
+const USE_PI_SIZE = piParam === 'true' || piParam === 'portrait' || piParam === 'landscape';
+const PI_LANDSCAPE = piParam === 'landscape';
 
 // The layout (stacked or side by side) is chosen once at load, so reload when the window changes shape:
 // the Pi's screen turning (Menu, Orientation) or a laptop window being resized.
@@ -120,8 +125,8 @@ if (!USE_PI_SIZE) {
     });
 }
 
-const screenW = USE_PI_SIZE ? PI_SCREEN_W : window.innerWidth;
-const screenH = USE_PI_SIZE ? PI_SCREEN_H : window.innerHeight;
+const screenW = USE_PI_SIZE ? (PI_LANDSCAPE ? PI_SCREEN_H : PI_SCREEN_W) : window.innerWidth;
+const screenH = USE_PI_SIZE ? (PI_LANDSCAPE ? PI_SCREEN_W : PI_SCREEN_H) : window.innerHeight;
 
 let width = screenW;
 let height = screenH;
@@ -158,7 +163,11 @@ await app2.init({width: width,
 document.body.appendChild(app.canvas);
 document.body.appendChild(app2.canvas);
 if (USE_PI_SIZE) {
-    // Stack the canvases (primary above the HSI) like the Pi's portrait screen, even in a wide window
+    // Keep the Pi's arrangement whatever the window size: stacked (primary above the HSI) in portrait,
+    // side by side in landscape
+    document.body.style.display = 'flex';
+    document.body.style.flexDirection = PI_LANDSCAPE ? 'row' : 'column';
+    document.body.style.alignItems = 'flex-start';       // keep each canvas at its own size
     app.canvas.style.display = 'block';
     app2.canvas.style.display = 'block';
 }

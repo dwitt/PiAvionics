@@ -53,7 +53,7 @@ more than one press to take effect and to be saved, and a bad choice can never l
 
 - An Orientation row in the Menu, the choice and confirm panels, the Keep/Revert panel with a 15 s countdown, all drawn by the page.
 - On the server's `display.orientation` changing, or a `reload` message, the page reloads itself (`location.reload()`).
-- Viewers and `?pi=1` ignore all of this (a viewer shows the orientation as information only).
+- Viewers and `?pi=true` / `?pi=portrait` / `?pi=landscape` ignore all of this (a viewer shows the orientation as information only).
 - Version bumps as usual.
 
 ### Tests

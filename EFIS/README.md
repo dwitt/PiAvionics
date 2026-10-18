@@ -12,8 +12,9 @@ The server accepts more than one display page. The page on the Pi itself (localh
 control the aircraft. Any other page is a read-only viewer (up to 4) and cannot change anything.
 
 - On a laptop on the same network open `http://pi-efis.local:8080` (or `http://192.168.5.110:8080`). A "VIEW ONLY" tag shows in the lower left of the HSI and
-  the QNH and brightness follow the Pi's. The page sizes itself to the window. Add `?pi=1` (`http://pi-efis.local:8080/?pi=1`) to lay it out at the
-  size of the Pi's own screen (576 x 1024 CSS pixels: 720 x 1280 at the compositor's 1.25 scale) whatever the window size.
+  the QNH and brightness follow the Pi's. The page sizes itself to the window. To see the Pi's own layout whatever the window size, add `?pi=` with:
+  `true` or `portrait` (576 x 1024 CSS pixels, canvases stacked: the Pi's 720 x 1280 panel at the compositor's 1.25 scale) or
+  `landscape` (1024 x 576, side by side: the same panel turned), for example `http://pi-efis.local:8080/?pi=landscape`.
 - To try page changes with the live data without deploying: serve the EFIS folder on the computer (the Pi renames `support/pixi-v8.6.6.mjs`
   to `support/pixi.mjs`, so the folder needs that name too) and open `http://127.0.0.1:<port>/?server=192.168.5.110:8080`. `?view=1` forces
   viewer mode.

@@ -6,7 +6,8 @@ screen orientation facts come from the real display_orientation.py with a preten
 
     python3 -m venv venv && venv/bin/pip install aiohttp          (once, anywhere with Python)
     venv/bin/python tests/fake_feed.py [--port 8097]
-    open http://localhost:8097/?pi=1         (localhost is treated as the controller page)
+    open http://localhost:8097/?pi=true      (localhost is treated as the controller page;
+                                              ?pi=landscape for the turned screen)
 
     curl 'localhost:8097/scenario?name=pitot'        choose a scenario (list: /scenario)
     curl 'localhost:8097/stall'  and  /resume        stop / restart the data (data link down)

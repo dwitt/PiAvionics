@@ -9,7 +9,7 @@ export const VERSION = '1.0.0';
  * physical pixels).
  *
  * For quick tries without deploying, a page can override a value from the
- * address, for example  ?pi=1&xw=8&xo=70&fs=22  (see the names below).
+ * address, for example  ?pi=true&xw=8&xo=70&fs=22  (see the names below).
  ****************************************************************************/
 
 export const FAILURE_LOOK = {
