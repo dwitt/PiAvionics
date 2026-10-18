@@ -13,7 +13,7 @@ screen orientation facts come from the real display_orientation.py with a preten
     curl 'localhost:8097/control?airspeed=60'        fake airspeed (for the orientation lock)
 
 tests/page_shots.py drives a headless Chrome through the scenarios and saves a screenshot of each.
-VERSION 1.1.0"""
+VERSION 1.2.0"""
 import argparse
 import asyncio
 import copy
@@ -135,6 +135,13 @@ SCENARIOS = {
 }
 
 
+# Extra values a scenario changes in the data itself (not in the facts)
+SCENARIO_DATA = {
+    # a receiver with no fix still reports its status: fix quality 0 and a few satellites
+    "gps_nofix": {"gps_fix_quality": 0, "gps_satellites": 3, "gps_hdop": 9.9, "gps_vdop": 9.9},
+}
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--port", type=int, default=8097)
@@ -159,6 +166,7 @@ def main():
             "controller_state": None, "display": orientation.facts(), "position": 0, "pressed": False,
         }
         data.update(facts)
+        data.update(SCENARIO_DATA.get(state["scenario"], {}))
         return data
 
     async def ws_handler(request):

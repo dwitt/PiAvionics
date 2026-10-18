@@ -1,6 +1,6 @@
 'use strict';
 
-export const VERSION = '1.1.0';
+export const VERSION = '1.2.0';
 
 /*****************************************************************************
  * The server tracks the facts (module heartbeats, which values can be trusted,
@@ -23,7 +23,7 @@ export const CAUTION = 'caution';           // amber
 // The instruments the display can mark as failed. The names are used by efis-display.js.
 const INSTRUMENTS = [
     'airspeed', 'altitude', 'vsi', 'oat', 'attitude', 'heading', 'turnRate',
-    'acceleration', 'gps', 'staticPressure', 'trueAirspeed', 'densityAltitude'
+    'acceleration', 'gps', 'gpsStatus', 'staticPressure', 'trueAirspeed', 'densityAltitude'
 ];
 
 /**
@@ -110,6 +110,11 @@ export class InstrumentStatus {
         const airSensors = air.sensors || {};
         const imuSensors = imu.sensors || {};
         const gpsSensors = gps.sensors || {};
+
+        // The GPS receiver's own status (fix type, satellites, HDOP, VDOP) is good while the module is
+        // present and has NMEA data, even with no fix: it then says "No Fix" and 0 satellites.
+        // (The server's data_lost.gps_status is not used: the module only sends it between baud probes.)
+        this.valid.gpsStatus = gps.present === true && gps.missing !== true && gpsSensors.nmea !== false;
 
         if (air.missing === true || lost.air_data === true) {
             warnings.push('NO AIR DATA');

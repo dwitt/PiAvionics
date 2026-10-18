@@ -360,3 +360,31 @@ test('describeModule: sensors in order with their state, and a restart note', ()
     const imu = describeModule('imu', goodFacts().modules.imu);
     assert.deepEqual(imu.sensors.map((s) => s.label), ['GYRO/ACCEL', 'MAG', 'CAL']);
 });
+
+test('GPS receiver status is trusted while the module is present with NMEA, even with no fix', () => {
+    let f = goodFacts();
+    assert.equal(evaluate(f).valid.gpsStatus, true);
+
+    f = goodFacts();
+    f.modules.gps.sensors.fix = false;
+    f.valid.gps_position = false;
+    const s = evaluate(f);
+    assert.equal(s.valid.gpsStatus, true);       // "No Fix" and 0 satellites are real information
+    assert.equal(s.valid.gps, false);
+});
+
+test('GPS receiver status is not trusted when the module is missing, silent or not heard', () => {
+    let f = goodFacts();
+    f.modules.gps = { present: false, missing: true, state: null, restarted_age: null, sensors: null };
+    assert.equal(evaluate(f).valid.gpsStatus, false);
+
+    f = goodFacts();
+    f.modules.gps.sensors.nmea = false;
+    assert.equal(evaluate(f).valid.gpsStatus, false);
+
+    f = goodFacts();
+    f.modules.gps = { present: false, missing: false, state: null, restarted_age: null, sensors: null };   // start-up grace
+    assert.equal(evaluate(f).valid.gpsStatus, false);
+
+    assert.equal(new InstrumentStatus().valid.gpsStatus, false);       // before any data
+});

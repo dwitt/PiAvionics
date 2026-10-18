@@ -23,6 +23,8 @@ export class HSI {
         this._lastEncoderValue = 0;
         this._courseDeviation = 0;   // cross-track error in NM
         this._toFrom = null;         // "TO", "FROM", or null
+        this._headingShown = true;   // false when the heading cannot be trusted (see setHeadingDisplay)
+        this._gpsValid = true;       // false when the GPS data cannot be trusted (see gpsValid)
         this._cdiFullScaleNM = 2;    // full-scale CDI deflection in NM
         this._desiredTrack = null;   // DTK from flight plan (overrides CRS knob)
         this._waypointDistance = null;
@@ -819,7 +821,10 @@ export class HSI {
     // -----------------------------------------------------------------------
     set toFrom(value) {
         this._toFrom = value;
-        if (value === 'TO') {
+        if (!this._gpsValid) {
+            this.toIndicator.visible = false;
+            this.fromIndicator.visible = false;
+        } else if (value === 'TO') {
             this.toIndicator.visible = true;
             this.fromIndicator.visible = false;
         } else if (value === 'FROM') {
@@ -863,12 +868,34 @@ export class HSI {
      * @param {number} alpha opacity to draw them with (1 is normal)
      */
     setHeadingDisplay(show, alpha) {
-        const dependents = [this.roseContainer, this.trackContainer, this.bugContainer,
-                            this.courseContainer];
+        this._headingShown = show;
+        const dependents = [this.roseContainer, this.bugContainer, this.courseContainer];
         for (const container of dependents) {
             container.visible = show;
             container.alpha = alpha;
         }
+        this.trackContainer.alpha = alpha;
+        this._applyGpsVisibility();
+    }
+
+    // -----------------------------------------------------------------------
+    // GPS validity — hides what only makes sense with a GPS position
+    // -----------------------------------------------------------------------
+    /**
+     * Set by the page: false when the GPS position or speed cannot be trusted (module missing, no
+     * data, no fix). The ground track diamond, the cross track bar and the TO/FROM triangles are then
+     * hidden; the page passes null for the ground speed and the waypoint readout.
+     * @param {boolean} isValid
+     */
+    set gpsValid(isValid) {
+        this._gpsValid = isValid;
+        this._applyGpsVisibility();
+    }
+
+    _applyGpsVisibility() {
+        this.trackContainer.visible = this._headingShown && this._gpsValid;
+        this.cdiBar.visible = this._gpsValid;
+        this.toFrom = this._toFrom;     // shows or hides the TO/FROM triangles for the current state
     }
 
     set heading(value) {

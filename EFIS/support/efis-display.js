@@ -50,7 +50,7 @@ import { FAILURE_LOOK } from './failureLook.mjs';
 
 // ----------------------------------------------------------------------------
 
-const VERSION = "0.4.1";
+const VERSION = "0.4.2";
 
 // Viewer mode: a page that is not the Pi's own display only watches. It sends
 // nothing to the server, ignores the encoder, and shows the QNH and brightness
@@ -643,35 +643,41 @@ function DisplayUpdateLoop(delta) {
         headingIndicator.value = dataObject.yaw;
         hsi.heading = dataObject.yaw;
     }
-    if (dataObject.true_track !== undefined) {
+    // What the HSI shows from the GPS (ground speed and track, cross track, TO/FROM, the waypoint readout)
+    // is only shown while the GPS position can be trusted; otherwise it is hidden or shows ---
+    hsi.gpsValid = valid.gps;
+    if (valid.gps && dataObject.true_track !== undefined && dataObject.true_track !== null) {
         hsi.groundTrack = dataObject.true_track;
     }
-    if (dataObject.gps_speed !== undefined) {
-        hsi.groundSpeed = dataObject.gps_speed;
-    }
-    if (dataObject.gps_fix_quality !== undefined) {
+    hsi.groundSpeed = (valid.gps && dataObject.gps_speed !== undefined) ? dataObject.gps_speed : null;
+
+    // The GPS receiver's own status box (fix type, satellites, HDOP, VDOP) follows the module and its NMEA data
+    if (valid.gpsStatus && dataObject.gps_fix_quality !== undefined) {
         hsi.gpsFixQuality = dataObject.gps_fix_quality;
         hsi.gpsSatellites = dataObject.gps_satellites;
         hsi.gpsHdop = dataObject.gps_hdop;
         hsi.gpsVdop = dataObject.gps_vdop;
+    } else {
+        hsi.gpsFixQuality = null;
+        hsi.gpsSatellites = null;
+        hsi.gpsHdop = null;
+        hsi.gpsVdop = null;
     }
-    if (dataObject.xtrack !== undefined && dataObject.xtrack !== null) {
+    if (valid.gps && dataObject.xtrack !== undefined && dataObject.xtrack !== null) {
         hsi.courseDeviation = dataObject.xtrack;
     }
-    if (dataObject.to_from !== undefined && dataObject.to_from !== null) {
-        hsi.toFrom = dataObject.to_from;
-    }
+    hsi.toFrom = (valid.gps && dataObject.to_from !== undefined) ? dataObject.to_from : null;
     if (dataObject.dtk !== undefined && dataObject.dtk !== null) {
         hsi.desiredTrack = dataObject.dtk;
     } else {
         hsi.desiredTrack = null;
     }
-    if (dataObject.dist !== undefined && dataObject.dist !== null) {
+    if (valid.gps && dataObject.dist !== undefined && dataObject.dist !== null) {
         hsi.waypointDistance = dataObject.dist;
     } else {
         hsi.waypointDistance = null;
     }
-    if (dataObject.wpt_id !== undefined && dataObject.wpt_id !== null) {
+    if (valid.gps && dataObject.wpt_id !== undefined && dataObject.wpt_id !== null) {
         hsi.waypointId = dataObject.wpt_id;
     } else {
         hsi.waypointId = null;
