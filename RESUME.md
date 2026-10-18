@@ -33,12 +33,18 @@ gyro-only heading stays under a red X for 5 minutes then blanks; red X look; att
 annunciators at top centre under the heading ribbon (flash 5 s on first appearance); module status page from the Menu; OAT sends
 the 0x7FFF marker; GPS frames stay stopped (EFIS timeout); timeouts 0.5 s / 1.5 s / 3.5 s; MODULE RESTARTED caution; EFIS
 heartbeat 0x700 with a mask of healthy modules plus display connected.
-Step 1 (protocol 0.2.0: markers, timeouts, 0x700 in `Protocol/can_messages.yaml`, docs regenerated) is DONE and committed.
-The annunciator/red-X mock-up (`EFIS/docs/mockups/annunciator_mockup.html`) is approved. Decision 11: the server only tracks facts and the web page decides presentation. Server step A is BUILT and unit-tested
-(`EFIS/module_status.py`, `aio_server.py` 1.1.0, `EFIS/tests/`) but NOT deployed to the live EFIS (fault-injection run against the real modules DONE 2026-10-18 and passed (see the test log in the plan; driver `EFIS/tests/fault_run.py`). DEPLOYED to the live Pi EFIS 2026-10-18 (backup of the old files in ~/EFIS/backup_20261018/). Still to do: display step A, server step B (markers, 0x700), backup display, and last the module marker changes
-(server and display first so nothing draws 32767).
-Other open items: AOA value on 0x29 is still always 0; command messages over CAN (ISSUES #9 steps 2 to 4); ISSUES #2
-(`monitor_timeout` busy loop) is fixed by the plan.
+Done: protocol 0.2.0 (markers, timeouts, 0x700 in `Protocol/can_messages.yaml`, docs regenerated); the annunciator/red-X mock-up
+(`EFIS/docs/MODULE_STATUS_PLAN.md`, `EFIS/docs/mockups/annunciator_mockup.html`, approved); and server step A.
+Decision 11: the server only tracks facts and the web page decides presentation.
+Server step A (`EFIS/module_status.py`, `aio_server.py` 1.1.0, tests in `EFIS/tests/`) passed a fault-injection run against the real
+modules on 2026-10-18 and is DEPLOYED to the live Pi EFIS (old files saved in `~/EFIS/backup_20261018/` for rollback: copy back and
+`sudo systemctl restart piefis`). It adds `modules`, `valid`, `data_lost`, `heading_status`, `system_state` to the JSON; the current
+display ignores them. Do not connect a test client to the live server's websocket (it holds one, for the display); use
+`EFIS/tests/live_check.py` (CAN only). Use `~/EFIS/venv/bin/python` on the Pi, not the system python3.
+Next: display step A (failure flags, annunciator strip built by the page from the facts using the rules table in the plan, module
+status page in the Menu, null guards, websocket-stall handling), then server step B (markers decoded, 0x700 heartbeat), the backup
+display, and last the module marker changes (server and display first so nothing draws 32767).
+Other open items: AOA value on 0x29 is still always 0; command messages over CAN (ISSUES #9 steps 2 to 4).
 
 Watch the bus from the Pi:
 `ssh david@pi-efis.local` then
