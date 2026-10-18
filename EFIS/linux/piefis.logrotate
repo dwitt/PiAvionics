@@ -1,0 +1,12 @@
+# Log rotation for the EFIS server's output. Install on the Pi with:
+#     sudo cp ~/EFIS/linux/piefis.logrotate /etc/logrotate.d/piefis
+# (copytruncate because systemd keeps the file open: piefis.service uses StandardOutput=append:/var/log/piefis.log)
+/var/log/piefis.log {
+    size 5M
+    rotate 4
+    compress
+    delaycompress
+    missingok
+    notifempty
+    copytruncate
+}

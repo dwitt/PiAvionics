@@ -96,12 +96,18 @@ Status: **Open**, **Monitoring** (fix applied, watching), **Fixed**.
   Not built yet: the backup display (CAN_Display) status row and per-field markers; David will design it next.
 
 ### 14. `/var/log/piefis.log` has no rotation and grows without limit
-- Found 2026-10-18: the file is 33 MB (the service writes its output there: `StandardOutput=append:/var/log/piefis.log`). In the last 20,000
-  lines, 18,643 were `Error sending CAN message: Failed to transmit: No buffer space available [Error Code 105]` (plus some
-  `No such device or address`), from earlier times when nothing on the bus acknowledged the Pi's QNH frames. Since the restart on
-  2026-10-18 there are none and `can0` is ERROR-ACTIVE.
-- To do: add a `logrotate` rule for `/var/log/piefis.log`, and consider logging a repeated send error once (with a count) instead of
-  on every attempt.
+- Found 2026-10-18: the file is 33 MB, 369,835 lines (the service writes its output there: `StandardOutput=append:/var/log/piefis.log`). 366,280
+  of those lines are `Error sending CAN message: Failed to transmit: No buffer space available [Error Code 105]`, one per second for days when nothing on the
+  bus acknowledged the Pi's QNH frames; the last one is about 1,000 lines from the end, so it stopped long ago (can0 is ERROR-ACTIVE and the modules
+  acknowledge). `logrotate` is installed and its timer runs daily, but nothing is configured for this file.
+- Done 2026-10-18 (server 1.6.3, committed, deploy with the next restart): a failed QNH send is now reported once and then at most once a minute with a
+  count (`RepeatedErrorReporter`, shared with the EFIS heartbeat), so the same fault can never fill the log again. Tests: 2, with 4 deliberate breaks caught.
+- Ready, not yet installed on the Pi: `EFIS/linux/piefis.logrotate` (rotate at 5 MB, keep 4, compress, `copytruncate` because systemd holds the file open).
+  Install: `sudo cp ~/EFIS/linux/piefis.logrotate /etc/logrotate.d/piefis`. A dry run (`logrotate -d`) read it correctly and showed the current file would be
+  rotated at the next daily run.
+- Also found: `piefis.service` has `DefaultDependencies=false` and `After=network.target` only, no ordering against `can0.service`, so at a reboot or restart the CAN
+  interface can go down first and the server prints about 40 long tracebacks (`Error receiving: Network is down`). Optional fix: `After=can0.service`, `Wants=can0.service` and
+  dropping `DefaultDependencies=false` (changes boot ordering a little, so test with a reboot). The deployed unit equals the repo copy `EFIS/linux/piefis.service`.
 
 ### 15. HSI ground track diamond and course pointer mixed true and magnetic (fixed 2026-10-18, one moving test left)
 - Found 2026-10-18 (David asked where the HSI heading comes from). The HSI rose is rotated by `dataObject.yaw`, the IMU module's
