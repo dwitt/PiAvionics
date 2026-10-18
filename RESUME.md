@@ -55,13 +55,19 @@ at boot by `~/.config/labwc/autostart`). `display_orientation.py` 1.0.1, `aio_se
 copies: `EFIS/linux/labwc/`. David is seriously considering landscape for the aircraft panel; the display work must keep both layouts working
 (the page picks its layout from the window shape and reloads when it changes). Bench note: all three modules are on the Pi's USB and restart
 whenever the Pi reboots (their uptimes reset); the GPS needs a few minutes to regain satellites. David is aware and says it is fine.
-Display step A (2026-10-18) is built and DEPLOYED (page 0.4.0), and David watched all seven faults on the real display ("It all looked good"):
-red-X flags, blanked tapes, dimmed gyro heading, `---` readouts, annunciators above the slip/skid ball, NO DATA link state. See the test
-log at the end of `EFIS/docs/MODULE_STATUS_PLAN.md`; look settings live in `EFIS/support/failureLook.mjs`; the Mac tools `EFIS/tests/fake_feed.py`
-and `page_shots.py` play every scenario. Page changes reach the Pi with rsync of `EFIS/support/*` then a reload (`wtype -M ctrl -M shift -k r
--m shift -m ctrl` over ssh works).
-Next: the module status page in the Menu, a closer look at the HSI under failures, then `NULL_INVALID_VALUES = True`; then server step B
-(markers decoded, 0x700 heartbeat), the backup display, and last the module marker changes (server and display first so nothing draws 32767).
+Display step A (2026-10-18) is built and DEPLOYED (page 0.5.4), and David watched all seven faults on the real display ("It all looked good"):
+red-X flags, blanked tapes, dimmed gyro heading, `---` readouts, annunciators above the slip/skid ball, NO DATA link state, the Menu >
+Modules status page, and the HSI's GPS box, ground speed, track, CDI, TO/FROM, waypoint line and heading readout all follow the data
+(blank when the GPS or heading is lost). Later the same day: Pixi now draws at the device pixel ratio (sharper; `?sharp=0` for the old way),
+the wings are 33% shorter (`WING_SHORTEN`) and the kts/ft units 6 px lower, the annunciator text shrinks to fit between the tapes on a narrow
+canvas, the Menu keeps a margin, and the HSI rose leaves room for the waypoint line on a short canvas. David is happy with the displays at
+Display 2 (portrait and landscape) and checked Display 1 sizes (800x480 and 480x800) in Safari and Chrome. Page options: `?pi=true|portrait|
+landscape` (Pi layouts), `?view=1`, `?server=host:port`, `?sharp=0`, and look overrides `xw xo fs labels` (see `EFIS/support/failureLook.mjs`).
+Test log: end of `EFIS/docs/MODULE_STATUS_PLAN.md`. Tools: `EFIS/tests/fake_feed.py` + `page_shots.py` (need aiohttp in a venv) and `node --test tests/js`.
+Page changes reach the Pi with rsync of `EFIS/support/*` then a reload (`wtype -M ctrl -M shift -k r -m shift -m ctrl` over ssh works).
+Next: ISSUES #15 (HSI track diamond uses the GPS true track with the IMU's magnetic heading; `mag_track` is sent but ignored) together with
+`NULL_INVALID_VALUES = True` as one server release; then server step B (markers decoded, 0x700 heartbeat), the backup display, and last the
+module marker changes (server and display first so nothing draws 32767).
 Other open items: AOA value on 0x29 is still always 0; command messages over CAN (ISSUES #9 steps 2 to 4).
 
 Watch the bus from the Pi:
