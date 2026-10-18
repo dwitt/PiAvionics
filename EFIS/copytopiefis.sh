@@ -22,6 +22,7 @@ rsync index.html "$user"@"$destination_server":"$piefis_main_dir"index.html
 rsync aio_server.py "$user"@"$destination_server":"$piefis_main_dir"aio_server.py
 rsync flightplan.py "$user"@"$destination_server":"$piefis_main_dir"flightplan.py
 rsync module_status.py "$user"@"$destination_server":"$piefis_main_dir"module_status.py
+rsync display_orientation.py "$user"@"$destination_server":"$piefis_main_dir"display_orientation.py
 
 # Read the support files line by line
 while IFS= read -r line || [[ -n "$line" ]]; do

@@ -39,12 +39,13 @@ import { SoftButtons } from './softButtons.mjs';
 import { MenuOverlay } from './menuOverlay.mjs';
 import { HSI } from './hsi.mjs';
 import { RouteOverlay } from './routeOverlay.mjs';
+import { OrientationPanel } from './orientationPanel.mjs';
 
 
 
 // ----------------------------------------------------------------------------
 
-const VERSION = "0.2.5";
+const VERSION = "0.3.0";
 
 // Viewer mode: a page that is not the Pi's own display only watches. It sends
 // nothing to the server, ignores the encoder, and shows the QNH and brightness
@@ -97,6 +98,19 @@ var testAirspeedDir = 1;
 const PI_SCREEN_W = 576;
 const PI_SCREEN_H = 1024;
 const USE_PI_SIZE = pageParams.get('pi') === '1';
+
+// The layout (stacked or side by side) is chosen once at load, so reload when the window changes shape:
+// the Pi's screen turning (Menu, Orientation) or a laptop window being resized.
+const loadedLandscape = window.innerWidth > window.innerHeight;
+if (!USE_PI_SIZE) {
+    let reloadTimer = null;
+    window.addEventListener('resize', () => {
+        clearTimeout(reloadTimer);
+        reloadTimer = setTimeout(() => {
+            if ((window.innerWidth > window.innerHeight) !== loadedLandscape) location.reload();
+        }, 400);
+    });
+}
 
 const screenW = USE_PI_SIZE ? PI_SCREEN_W : window.innerWidth;
 const screenH = USE_PI_SIZE ? PI_SCREEN_H : window.innerHeight;
@@ -273,6 +287,7 @@ var attitudeIndicator,
     userInput,
     softButtons,
     menuOverlay,
+    orientationPanel,
     hsi,
     magnetometerCalibrate,
     turnRateIndicator,
@@ -453,7 +468,22 @@ function setup() {
         },
     ];
 
-    menuOverlay = new MenuOverlay(app, toggleDefs);
+    // Screen orientation (portrait / landscape): a row in the Menu opens the panels. Only the
+    // controller (the Pi's own page) can change it, so viewers do not get the row.
+    const actionDefs = [];
+    if (!VIEW_ONLY) {
+        orientationPanel = new OrientationPanel(app, sendCommand);
+        actionDefs.push({
+            label: "Orientation",
+            getValue: () => {
+                const o = dataObject.display && dataObject.display.orientation;
+                return o ? o.replace('_', ' ') : '...';
+            },
+            action: () => orientationPanel.show(),
+        });
+    }
+
+    menuOverlay = new MenuOverlay(app, toggleDefs, actionDefs);
 
     const menuCallback = {
         addContainer() {
@@ -632,6 +662,9 @@ function DisplayUpdateLoop(delta) {
 
     //magnetometerCalibrate.plotPoint(dataObject.magx,dataObject.magy,dataObject.magz);
     
+    // The server's orientation facts drive the choose / confirm / Keep panels (controller only)
+    if (orientationPanel) orientationPanel.update(dataObject.display);
+
     // Controller, first pass after a (re)load: adopt the server's remembered values
     if (!VIEW_ONLY && !restoredFromServer) {
         if (!gotFirstMessage) return;       // nothing to send until we know them

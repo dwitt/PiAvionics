@@ -11,12 +11,16 @@ export class MenuOverlay {
     /*************************************************************************
      * @param {object} app - PixiJS Application
      * @param {Array} toggleDefs - Array of {label, getState(), setState(val)}
+     * @param {Array} actionDefs - Optional array of {label, getValue(), action()}: rows that show
+     *     a value and run an action when pressed (the menu is closed first)
      *************************************************************************/
-    constructor(app, toggleDefs) {
+    constructor(app, toggleDefs, actionDefs = []) {
         this.app = app;
         this.toggleDefs = toggleDefs;
+        this.actionDefs = actionDefs;
         this.visible = false;
         this.stateTexts = [];
+        this.actionTexts = [];
 
         const screenW = app.screen.width;
         const screenH = app.screen.height;
@@ -24,7 +28,7 @@ export class MenuOverlay {
         const boxWidth = 400;
         const rowHeight = 50;
         const padding = 10;
-        const rowCount = toggleDefs.length + 2; // title + toggles + close
+        const rowCount = toggleDefs.length + actionDefs.length + 2; // title + toggles + actions + close
         const boxHeight = rowCount * rowHeight + 2 * padding;
         const boxX = (screenW - boxWidth) / 2;
         const boxY = (screenH - boxHeight) / 2;
@@ -88,8 +92,15 @@ export class MenuOverlay {
             menuBox.addChild(row);
         }
 
+        // --- Action rows (after the toggles) ---
+        for (let i = 0; i < actionDefs.length; i++) {
+            const rowY = padding + (toggleDefs.length + 1 + i) * rowHeight;
+            menuBox.addChild(this.createActionRow(
+                actionDefs[i], rowInset, rowY, rowWidth, rowHeight - 6, i));
+        }
+
         // --- Close row ---
-        const closeY = padding + (toggleDefs.length + 1) * rowHeight;
+        const closeY = padding + (toggleDefs.length + actionDefs.length + 1) * rowHeight;
         const closeRow = this.createCloseRow(
             rowInset, closeY, rowWidth, rowHeight - 6
         );
@@ -147,6 +158,43 @@ export class MenuOverlay {
         return row;
     }
 
+    createActionRow(def, x, y, width, height, index) {
+        const row = new Container();
+        row.position.set(x, y);
+
+        const rowBg = new Graphics();
+        rowBg.fillStyle = { color: 0x333333, alpha: 0.9 };
+        rowBg.roundRect(0, 0, width, height, 4);
+        rowBg.fill();
+        row.addChild(rowBg);
+
+        const label = new Text({
+            text: def.label,
+            style: new TextStyle({ fontFamily: 'Tahoma', fontSize: 20, fill: 0xbbbbbb }),
+        });
+        label.anchor.set(0, 0.5);
+        label.position.set(15, height / 2);
+        row.addChild(label);
+
+        const valueText = new Text({
+            text: def.getValue() + '  >',
+            style: new TextStyle({ fontFamily: 'Tahoma', fontSize: 20, fill: 0x00ffff }),
+        });
+        valueText.anchor.set(1, 0.5);
+        valueText.position.set(width - 15, height / 2);
+        row.addChild(valueText);
+        this.actionTexts[index] = { text: valueText, def: def };
+
+        row.eventMode = 'static';
+        row.cursor = 'pointer';
+        row.on('pointerdown', (e) => {
+            e.stopPropagation();
+            this.hide();
+            def.action();
+        });
+        return row;
+    }
+
     createCloseRow(x, y, width, height) {
         const row = new Container();
         row.position.set(x, y);
@@ -189,6 +237,9 @@ export class MenuOverlay {
         // Refresh all toggle states
         for (let i = 0; i < this.stateTexts.length; i++) {
             this.updateStateText(i);
+        }
+        for (const entry of this.actionTexts) {
+            entry.text.text = entry.def.getValue() + '  >';
         }
         this.app.stage.addChild(this.overlay);
         this.visible = true;
