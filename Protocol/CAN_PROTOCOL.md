@@ -568,25 +568,26 @@ Sensor modules broadcast their data on fixed IDs. The Pi EFIS listens, sends QNH
 | Status | ✅ Active |
 | Treated as lost after | 3.5 s without a message |
 
-| Bytes | Field | Type | Unit | Description |
-|:-----:|-------|------|------|-------------|
-| 0 | `fix_quality` | uint8 |  | 0 = no fix, 1 = GPS, 2 = DGPS (WAAS) |
-| 1 | `fix_type` | uint8 |  | 1 = no fix, 2 = 2D, 3 = 3D |
-| 2 | `satellites` | uint8 | count | Satellites used in the fix |
-| 3 | `reserved` | uint8 |  | Always 0 (free for a probe/diagnostic code) |
-| 4-5 | `hdop` | int16 | raw × 0.01 | Horizontal dilution of precision |
-| 6-7 | `vdop` | int16 | raw × 0.01 | Vertical dilution of precision |
+| Bytes | Field | Type | Unit | Description | Invalid marker |
+|:-----:|-------|------|------|-------------|-------------|
+| 0 | `fix_quality` | uint8 |  | 0 = no fix, 1 = GPS, 2 = DGPS (WAAS) | — |
+| 1 | `fix_type` | uint8 |  | 1 = no fix, 2 = 2D, 3 = 3D | — |
+| 2 | `satellites` | uint8 | count | Satellites used in the fix | — |
+| 3 | `declination` | int8 | deg | Magnetic declination at the GPS position from the module's WMM2025 calculation, whole degrees, East positive (magnetic = true - declination). 0x7F until the module has calculated it (first fix with a date). Held at the last value when the fix is lost | `0x07F` |
+| 4-5 | `hdop` | int16 | raw × 0.01 | Horizontal dilution of precision | — |
+| 6-7 | `vdop` | int16 | raw × 0.01 | Vertical dilution of precision | — |
 
 **Byte layout**
 
 | Byte | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 |
 |------|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
-| Field | `fix_quality` | `fix_type` | `satellites` | `reserved` | `hdop` (1/2) | `hdop` (2/2) | `vdop` (1/2) | `vdop` (2/2) |
+| Field | `fix_quality` | `fix_type` | `satellites` | `declination` | `hdop` (1/2) | `hdop` (2/2) | `vdop` (1/2) | `vdop` (2/2) |
 
 **Notes**
 
 - Sent every second whether or not there is a fix, so the display can show "No Fix".
 - Also a good "GPS module is alive" indicator.
+- The declination (byte 3, added in GPS_Module 1.0.9; it was a reserved byte that always read 0) lets the EFIS and the backup display convert true courses to magnetic. The EFIS hides the flight-plan course until it is known.
 
 **Code**
 

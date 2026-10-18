@@ -1,7 +1,7 @@
 """Tests of the multi-client websocket handling in aio_server.py (EFIS/docs/MULTI_CLIENT_PLAN.md).
 Needs the server's libraries, so it is skipped where they are missing. On the Pi:
     ~/EFIS/venv/bin/python -m unittest discover -s tests -v"""
-VERSION = "1.1.0"
+VERSION = "1.1.1"
 
 import asyncio
 import json
@@ -159,7 +159,13 @@ class ClientTests(unittest.IsolatedAsyncioTestCase):
         await controller.send_str('json{"qnh": 3010, "brightness": 40}')
         await asyncio.sleep(0.2)
         self.assertEqual(self.handler.last_qnh, 3010)
+        # messages already queued for the viewer were sent before the controller's setting arrived:
+        # read on until one carries it
         message = await self.receive_json(viewer)
+        for _ in range(100):
+            if message["controller_state"] is not None:
+                break
+            message = await self.receive_json(viewer)
         self.assertEqual(message["controller_state"], {"qnh": 3010, "brightness": 40})
         await controller.close()
         await viewer.close()

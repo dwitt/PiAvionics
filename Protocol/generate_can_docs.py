@@ -21,7 +21,7 @@ from pathlib import Path
 
 import yaml
 
-VERSION = "1.1.0"
+VERSION = "1.2.0"
 
 HERE = Path(__file__).resolve().parent
 PI_YAML = HERE / "can_messages.yaml"
@@ -167,7 +167,7 @@ def validate_pi(doc):
                 used[i] = f.get("name")
             inv = f.get("invalid")
             if inv is not None:
-                limit = {"int16": 0x7FFF, "int32": 0x7FFFFFFF}.get(f.get("type"))
+                limit = {"int8": 0x7F, "int16": 0x7FFF, "int32": 0x7FFFFFFF}.get(f.get("type"))
                 if limit is None or inv != limit:
                     errors.append(f"{label}: field {f.get('name')} invalid marker {inv!r} "
                                   f"must be {hx(limit) if limit else 'n/a'} for type {f.get('type')}")

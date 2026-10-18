@@ -1,7 +1,7 @@
 """ Asynchronous I/O based webserver to handle page and websocket"""
 # pyright: reportMissingImports=false
 
-VERSION = "1.4.0"
+VERSION = "1.5.0"
 
 import asyncio
 import ipaddress
@@ -100,6 +100,7 @@ SEESAW_EXPECTED_PRODUCT_ID = 4991  # Expected product ID for seesaw encoder
 # Set True once the display handles null/invalid values (display step A of MODULE_STATUS_PLAN.md).
 NULL_INVALID_VALUES = True    # a value that cannot be trusted is sent as null (the page ignores it anyway)
 STATUS_UPDATE_PERIOD = 0.1  # seconds between status evaluations
+DECLINATION_UNKNOWN = 0x7F  # GPS status byte 3 until the GPS module has calculated the declination
 ORIENTATION_UPDATE_PERIOD = 0.2  # seconds between display orientation checks (trial timeout)
 
 # Display clients (EFIS/docs/MULTI_CLIENT_PLAN.md). The page served to this computer's own browser
@@ -166,6 +167,7 @@ class AvionicsData:
         self.gps_satellites = None   # Number of satellites in use
         self.gps_hdop = None         # Horizontal dilution of precision
         self.gps_vdop = None         # Vertical dilution of precision
+        self.gps_declination = None  # magnetic declination from the GPS module, whole degrees, East + (None until it has one)
         self.magx = None
         self.magy = None
         self.magz = None
@@ -200,6 +202,8 @@ class AvionicsData:
         self.direct_to_active = False  # True when Direct-To navigation is active
         # Internal (not serialized to JSON)
         self._flight_plan = None  # FlightPlan instance
+        self._dtk_true = None      # desired track and bearing as worked out from the flight plan, in TRUE degrees;
+        self._bearing_true = None  # update_status() sends them as dtk and bearing in magnetic degrees
         self._status = module_status.StatusTracker(time.monotonic())  # heartbeats and validity
         self._modules_ok_mask = 0  # bit 0 AIR, 1 IMU, 2 GPS seen healthy (for the EFIS heartbeat 0x700)
 
@@ -852,8 +856,8 @@ async def process_gps1_message(msg, data, last_received_times):
         if data._flight_plan is not None:
             nav = compute_navigation(latitude, longitude, data._flight_plan)
             if nav:
-                data.dtk = nav['dtk']
-                data.bearing = nav['bearing']
+                data._dtk_true = nav['dtk']          # true degrees; update_status() converts to magnetic
+                data._bearing_true = nav['bearing']
                 data.xtrack = nav['xtrack']
                 data.dist = nav['dist']
                 data.to_from = nav['to_from']
@@ -867,6 +871,7 @@ async def process_gps1_message(msg, data, last_received_times):
                           f"BRG={nav['bearing']} XTK={nav['xtrack']} "
                           f"DST={nav['dist']} {nav['to_from']}")
             else:
+                data._dtk_true = data._bearing_true = None
                 data.dtk = data.bearing = data.xtrack = None
                 data.dist = data.to_from = data.wpt_id = data.route_name = None
 
@@ -915,9 +920,12 @@ async def process_gps3_message(msg, data, last_received_times):
         return False
 
     try:
-        (fq, fq3d, sats, _, hdop_raw, vdop_raw) = (
-            struct.unpack("<BBBBhh", msg.data)
+        (fq, fq3d, sats, declination, hdop_raw, vdop_raw) = (
+            struct.unpack("<BBBbhh", msg.data)
         )
+        # byte 3: magnetic declination in whole degrees, East positive; 0x7F = not calculated yet
+        # (modules before GPS_Module 1.0.9 sent 0 here, which reads as a declination of 0)
+        data.gps_declination = None if declination == DECLINATION_UNKNOWN else declination
         data.gps_fix_quality = fq
         data.gps_fix_3d = fq3d
         data.gps_satellites = sats
@@ -1123,6 +1131,14 @@ async def process_can_messages(reader, data, last_received_times):
         
         await asyncio.sleep(0)  # let another process run
     
+def to_magnetic(true_degrees, declination):
+    """Convert true degrees to magnetic: magnetic = true - declination (declination East positive).
+    None if either is unknown."""
+    if true_degrees is None or declination is None:
+        return None
+    return round((true_degrees - declination) % 360, 1)
+
+
 def update_status(data, last_received_times, now):
     """Judge the module heartbeats and data freshness and store the result in `data`.
 
@@ -1178,6 +1194,19 @@ def update_status(data, last_received_times, now):
             data.dist = None
             data.bearing = None
             data.to_from = None
+
+    # The flight plan courses are worked out in true degrees but the HSI is magnetic, so the desired track and
+    # bearing are sent as magnetic once the GPS module has told us the declination (ISSUES.md #15). Until then
+    # there is no usable course, so the navigation that goes with it (cross-track, TO/FROM) is held back too.
+    # (The leg's course does not depend on the position, but the bearing to the waypoint does.)
+    data.dtk = to_magnetic(data._dtk_true, data.gps_declination)
+    if NULL_INVALID_VALUES and not valid["gps_position"]:
+        data.bearing = None
+    else:
+        data.bearing = to_magnetic(data._bearing_true, data.gps_declination)
+    if data._dtk_true is not None and data.gps_declination is None:
+        data.xtrack = None
+        data.to_from = None
     return snapshot
 
 async def monitor_status(data, last_received_times):

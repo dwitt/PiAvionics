@@ -17,7 +17,7 @@
 #include "XYZgeomag.hpp"         // WMM2025 magnetic declination (nhz2/XYZgeomag)
 #include "src/ModuleInfo/ModuleInfo.h"        // USB product name, startup log and '?' report
 
-#define VERSION "1.0.8"
+#define VERSION "1.0.9"
 
 ModuleInfo moduleInfo("GPS_Module", VERSION, __DATE__, __TIME__);
 
@@ -93,6 +93,7 @@ static int16_t gpsAltitude = 0;      // CANbus Data: feet
 static int16_t trueTrack = 0;        // CANbus Data: degrees
 static int16_t trackMag = 0;         // CANbus Data: degrees
 static float   magDeclination = 0;  // Magnetic declination from WMM2025 (East +, West -)
+static bool    magDeclinationValid = false;   // true once it has been calculated for a real position and date
 
 // Time data
 static uint8_t gpsYear = 0;
@@ -130,6 +131,15 @@ float computeMagDeclination(float lat, float lon, float altMetres,
   geomag::Vector mag = geomag::GeoMag(dyear, pos, geomag::WMM2025);
   geomag::Elements elem = geomag::magField2Elements(mag, lat, lon);
   return elem.declination;
+}
+
+// ----------------------------------------------------------------------------
+// The magnetic declination as sent in byte 3 of the GPS status message (0x65):
+// whole degrees, East positive, 0x7F until it has been calculated.
+// ----------------------------------------------------------------------------
+uint8_t declinationByte() {
+  if (!magDeclinationValid) return 0x7F;
+  return (uint8_t)(int8_t)lroundf(magDeclination);
 }
 
 // ----------------------------------------------------------------------------
@@ -565,10 +575,12 @@ void loop() {
     // Compute magnetic declination from WMM2025 (throttled — declination
     // changes negligibly over minutes, but the computation is expensive on
     // the M0+ with no hardware FPU and was starving the serial buffer)
-    if (gpsHasDate && (millis() - lastWmmCompute > WMM_COMPUTE_INTERVAL)) {
+    // The first calculation is made as soon as there is a fix and a date, then every minute.
+    if (gpsHasDate && (!magDeclinationValid || millis() - lastWmmCompute > WMM_COMPUTE_INTERVAL)) {
       magDeclination = computeMagDeclination(
         gps.latitudeDegrees, gps.longitudeDegrees, gps.altitude,
         gpsYear, gpsMonth, gpsDay);
+      magDeclinationValid = true;
       lastWmmCompute = millis();
     }
 
@@ -693,7 +705,7 @@ void loop() {
     canGps3Data[0] = gps.fixquality;      // 0=No fix, 1=GPS, 2=DGPS (WAAS)
     canGps3Data[1] = gps.fixquality_3d;   // 1=No fix, 2=2D, 3=3D
     canGps3Data[2] = gps.satellites;       // Number of satellites in use
-    canGps3Data[3] = 0;                    // Reserved
+    canGps3Data[3] = declinationByte();    // Magnetic declination, whole degrees, East +; 0x7F = not calculated yet
 
     // HDOP and VDOP as int16 × 100 (e.g. 1.2 → 120)
     int16_t hdop = (int16_t)(gps.HDOP * 100);

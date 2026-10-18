@@ -1,7 +1,7 @@
 """Runs the real aio_server handlers and receive loop with a fake CAN reader.
 Needs the server's own libraries (aiohttp, python-can, ...), so it is skipped where they are not
 installed (for example on the Mac) and is run on the Pi:  python3 -m unittest discover -s tests -v"""
-VERSION = "1.1.0"
+VERSION = "1.2.0"
 
 import asyncio
 import json
@@ -62,8 +62,9 @@ def gps_position_frame(latitude=43384272, longitude=-80104167):
     return FakeMsg(0x63, struct.pack("<ll", latitude, longitude))
 
 
-def gps_status_frame(fix_quality=2, fix_type=3, satellites=12):
-    return FakeMsg(0x65, struct.pack("<BBBBhh", fix_quality, fix_type, satellites, 0, 90, 130))
+def gps_status_frame(fix_quality=2, fix_type=3, satellites=12, declination=-10):
+    # byte 3 is the magnetic declination, whole degrees, East positive (0x7F = not calculated yet)
+    return FakeMsg(0x65, struct.pack("<BBBbhh", fix_quality, fix_type, satellites, declination, 90, 130))
 
 
 def run_loop(data, times, msgs):
@@ -155,13 +156,13 @@ class ServerGlueTests(unittest.TestCase):
         self.healthy(gps_mask=0x00)                               # GPS module present but no NMEA
         run_loop(self.data, self.times, [gps_position_frame(), gps_speed_frame()])
         self.data.xtrack, self.data.dist, self.data.bearing, self.data.to_from = 0.4, 12.3, 91.0, "TO"
-        self.data.dtk, self.data.wpt_id = 92, "CYFD"
+        self.data._dtk_true, self.data._bearing_true, self.data.wpt_id = 92.0, 91.0, "CYFD"
         srv.update_status(self.data, self.times, time.monotonic())
         self.assertFalse(self.data.valid["gps_position"])
         for name in ("latitude", "longitude", "gps_speed", "gps_altitude", "true_track", "mag_track",
                      "xtrack", "dist", "bearing", "to_from"):
             self.assertIsNone(getattr(self.data, name), name)
-        self.assertEqual(self.data.dtk, 92)                       # the leg's course does not depend on the position
+        self.assertEqual(self.data.dtk, 102.0)                    # the leg's course does not depend on the position (declination -10)
         self.assertEqual(self.data.wpt_id, "CYFD")
 
     def test_gps_with_a_fix_keeps_position_speed_track_and_navigation(self):
@@ -175,6 +176,62 @@ class ServerGlueTests(unittest.TestCase):
         self.assertEqual(self.data.true_track, 2)
         self.assertEqual((self.data.xtrack, self.data.dist, self.data.to_from), (0.4, 12.3, "TO"))
         self.assertEqual(self.data.latitude, 43384272)
+
+    # --- magnetic declination from the GPS module and the courses converted to magnetic (ISSUES.md #15) ---
+
+    def test_declination_is_decoded_from_the_gps_status_message(self):
+        run_loop(self.data, self.times, [gps_status_frame(declination=-10)])
+        self.assertEqual(self.data.gps_declination, -10)
+        run_loop(self.data, self.times, [gps_status_frame(declination=7)])
+        self.assertEqual(self.data.gps_declination, 7)
+        run_loop(self.data, self.times, [gps_status_frame(declination=0)])
+        self.assertEqual(self.data.gps_declination, 0)             # a real declination of zero is not "unknown"
+        run_loop(self.data, self.times, [gps_status_frame(declination=0x7F)])
+        self.assertIsNone(self.data.gps_declination)               # 0x7F = not calculated yet
+        json.dumps({k: v for k, v in self.data.__dict__.items() if not k.startswith("_")})
+
+    def test_true_to_magnetic(self):
+        self.assertEqual(srv.to_magnetic(92.0, -10), 102.0)        # west declination: magnetic is larger
+        self.assertEqual(srv.to_magnetic(92.0, 10), 82.0)
+        self.assertEqual(srv.to_magnetic(5.0, 10), 355.0)          # wraps below 0
+        self.assertEqual(srv.to_magnetic(350.0, -20), 10.0)        # and above 360
+        self.assertEqual(srv.to_magnetic(92.3, -10), 102.3)
+        self.assertEqual(srv.to_magnetic(0.0, 0), 0.0)
+        self.assertIsNone(srv.to_magnetic(None, -10))
+        self.assertIsNone(srv.to_magnetic(92.0, None))
+
+    def test_flight_plan_courses_are_sent_in_magnetic_degrees(self):
+        srv.NULL_INVALID_VALUES = True
+        self.healthy()                                             # declination -10 from the status frame
+        run_loop(self.data, self.times, [gps_position_frame(), gps_speed_frame()])
+        self.data._dtk_true, self.data._bearing_true = 92.0, 95.5
+        self.data.xtrack, self.data.to_from, self.data.dist, self.data.wpt_id = 0.4, "TO", 12.3, "CYFD"
+        srv.update_status(self.data, self.times, time.monotonic())
+        self.assertEqual(self.data.dtk, 102.0)
+        self.assertEqual(self.data.bearing, 105.5)
+        self.assertEqual((self.data.xtrack, self.data.to_from, self.data.dist), (0.4, "TO", 12.3))
+
+    def test_navigation_is_held_back_until_the_declination_is_known(self):
+        srv.NULL_INVALID_VALUES = True
+        run_loop(self.data, self.times, [
+            heartbeat(1, 1, 0x07), heartbeat(2, 1, 0x0F), heartbeat(3, 1, 0x03),
+            air_frame(), ahrs_frame(), oat_frame(), gps_status_frame(declination=0x7F),
+            gps_position_frame(), gps_speed_frame(),
+        ])
+        self.data._dtk_true, self.data._bearing_true = 92.0, 95.5
+        self.data.xtrack, self.data.to_from, self.data.dist, self.data.wpt_id = 0.4, "TO", 12.3, "CYFD"
+        srv.update_status(self.data, self.times, time.monotonic())
+        self.assertIsNone(self.data.gps_declination)
+        self.assertIsNone(self.data.dtk)                           # no usable course yet ...
+        self.assertIsNone(self.data.bearing)
+        self.assertIsNone(self.data.xtrack)                        # ... so no cross-track or TO/FROM either
+        self.assertIsNone(self.data.to_from)
+        self.assertEqual((self.data.dist, self.data.wpt_id), (12.3, "CYFD"))
+        # and with no flight plan there is nothing to hold back
+        self.data._dtk_true = self.data._bearing_true = None
+        self.data.xtrack = 0.4
+        srv.update_status(self.data, self.times, time.monotonic())
+        self.assertEqual(self.data.xtrack, 0.4)
 
     def test_monitor_status_task_updates_and_sleeps(self):
         self.healthy()

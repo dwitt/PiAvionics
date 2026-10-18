@@ -433,12 +433,14 @@ messages:
       - {bytes: "0", name: fix_quality, type: uint8, desc: "0 = no fix, 1 = GPS, 2 = DGPS (WAAS)"}
       - {bytes: "1", name: fix_type,    type: uint8, desc: "1 = no fix, 2 = 2D, 3 = 3D"}
       - {bytes: "2", name: satellites,  type: uint8, unit: count, desc: Satellites used in the fix}
-      - {bytes: "3", name: reserved,    type: uint8, desc: "Always 0 (free for a probe/diagnostic code)"}
+      - {bytes: "3", name: declination, type: int8,  unit: deg, invalid: 0x7F, desc: "Magnetic declination at the GPS position from the module's WMM2025 calculation, whole degrees, East positive (magnetic = true - declination). 0x7F until the module has calculated it (first fix with a date). Held at the last value when the fix is lost"}
       - {bytes: "4-5", name: hdop, type: int16, scale: 0.01, desc: Horizontal dilution of precision}
       - {bytes: "6-7", name: vdop, type: int16, scale: 0.01, desc: Vertical dilution of precision}
     notes:
       - Sent every second whether or not there is a fix, so the display can show "No Fix".
       - Also a good "GPS module is alive" indicator.
+      - The declination (byte 3, added in GPS_Module 1.0.9; it was a reserved byte that always read 0) lets the EFIS and the backup
+        display convert true courses to magnetic. The EFIS hides the flight-plan course until it is known.
     code:
       sender: "GPS_Module.ino (CAN_GPS3_MSG_ID)"
       receiver: "aio_server.py process_gps3_message"
