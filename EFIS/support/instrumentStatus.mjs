@@ -1,6 +1,6 @@
 'use strict';
 
-export const VERSION = '1.2.0';
+export const VERSION = '1.3.0';
 
 /*****************************************************************************
  * The server tracks the facts (module heartbeats, which values can be trusted,
@@ -195,6 +195,45 @@ export function formatAge(seconds) {
     if (seconds < 10) return seconds.toFixed(1) + ' s';
     if (seconds < 100) return Math.round(seconds) + ' s';
     return Math.round(seconds / 60) + ' min';
+}
+
+/**
+ * Work out what to show about the EFIS itself (the server's own heartbeat) on the module status page.
+ * @param {object} efis dataObject.efis: {version, state, mask, uptime, display_clients} (may be undefined)
+ * @returns {object} the same shape as describeModule()
+ */
+export function describeEfis(efis) {
+    const known = efis !== null && efis !== undefined;
+    let state = 'UNKNOWN';
+    let level = 'unknown';
+    if (known && efis.state === 1) {
+        state = 'OK';
+        level = 'ok';
+    } else if (known && efis.state === 2) {
+        state = 'DEGRADED';
+        level = CAUTION;
+    } else if (known && efis.state === 3) {
+        state = 'NO DISPLAY';
+        level = CAUTION;
+    }
+    const mask = known ? efis.mask : null;
+    const bit = (b) => (mask === null ? null : (mask & b) !== 0);
+    return {
+        state: state,
+        level: level,
+        version: known && efis.version ? 'v' + efis.version : '--',
+        uptime: known && efis.uptime !== null && efis.uptime !== undefined
+                ? 'up ' + formatDuration(efis.uptime) : 'up --',
+        heard: known ? 'this server' : 'no data',
+        restarted: '',
+        // what the EFIS itself sees: the three modules healthy, and a display page connected
+        sensors: [
+            { key: 'air', label: 'AIR', ok: bit(0x01) },
+            { key: 'imu', label: 'IMU', ok: bit(0x02) },
+            { key: 'gps', label: 'GPS', ok: bit(0x04) },
+            { key: 'display', label: 'DISPLAY', ok: bit(0x08) },
+        ],
+    };
 }
 
 /**

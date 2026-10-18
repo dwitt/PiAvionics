@@ -50,7 +50,7 @@ import { FAILURE_LOOK } from './failureLook.mjs';
 
 // ----------------------------------------------------------------------------
 
-const VERSION = "0.5.6";
+const VERSION = "0.6.0";
 
 // Viewer mode: a page that is not the Pi's own display only watches. It sends
 // nothing to the server, ignores the encoder, and shows the QNH and brightness
@@ -787,7 +787,7 @@ function DisplayUpdateLoop(delta) {
     if (orientationPanel) orientationPanel.update(dataObject.display);
 
     // The module status page (when it is open)
-    modulePanel.update(dataObject.modules);
+    modulePanel.update(dataObject.modules, dataObject.efis);
 
     // Controller, first pass after a (re)load: adopt the server's remembered values
     if (!VIEW_ONLY && !restoredFromServer) {

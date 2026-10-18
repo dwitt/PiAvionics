@@ -14,7 +14,7 @@ screen orientation facts come from the real display_orientation.py with a preten
     curl 'localhost:8097/control?airspeed=60'        fake airspeed (for the orientation lock)
 
 tests/page_shots.py drives a headless Chrome through the scenarios and saves a screenshot of each.
-VERSION 1.3.2"""
+VERSION 1.4.0"""
 import argparse
 import asyncio
 import copy
@@ -131,9 +131,23 @@ SCENARIOS = {
     "mag": mag, "mag_blank": lambda f: mag(f, 301.0),
     "imu_cal": lambda f: f["modules"]["imu"]["sensors"].update({"calibration": False}),
     "gps_lost": gps_lost, "gps_nofix": gps_nofix,
-    "airmod": airmod, "imumod": imumod, "restart": restart, "several": several,
+    "airmod": airmod, "imumod": imumod, "restart": restart, "several": several, "efis_nodisplay": lambda f: None,
     "all_air_imu": lambda f: (airmod(f), imumod(f)),
 }
+
+
+def efis_facts(facts, scenario):
+    """The server's own heartbeat as the real server would work it out from the module facts."""
+    ok = {name: facts["modules"][name]["present"] and facts["modules"][name]["state"] == 1
+          for name in ("air", "imu", "gps")}
+    mask = (1 if ok["air"] else 0) | (2 if ok["imu"] else 0) | (4 if ok["gps"] else 0)
+    state = 1 if mask == 7 else 2
+    display = scenario != "efis_nodisplay"
+    if display:
+        mask |= 8
+    else:
+        state = 3
+    return {"version": "1.6.1", "state": state, "mask": mask, "uptime": 3725, "display_clients": 1 if display else 0}
 
 
 # Extra values a scenario changes in the data itself (not in the facts)
@@ -169,6 +183,7 @@ def main():
             "controller_state": None, "display": orientation.facts(), "position": 0, "pressed": False,
         }
         data.update(facts)
+        data["efis"] = efis_facts(facts, state["scenario"])
         data.update(SCENARIO_DATA.get(state["scenario"], {}))
         return data
 

@@ -3,7 +3,7 @@
 //     node --test tests/js
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { InstrumentStatus, WARNING, CAUTION, describeModule, formatDuration, formatAge }
+import { InstrumentStatus, WARNING, CAUTION, describeModule, describeEfis, formatDuration, formatAge }
     from '../../support/instrumentStatus.mjs';
 
 // What the server sends when everything is healthy (the shape of module_status.py's facts)
@@ -387,4 +387,29 @@ test('GPS receiver status is not trusted when the module is missing, silent or n
     assert.equal(evaluate(f).valid.gpsStatus, false);
 
     assert.equal(new InstrumentStatus().valid.gpsStatus, false);       // before any data
+});
+
+// ---- EFIS row on the module status page
+
+test('describeEfis: all well', () => {
+    const d = describeEfis({ version: '1.6.1', state: 1, mask: 15, uptime: 3725, display_clients: 1 });
+    assert.deepEqual([d.state, d.level, d.version, d.uptime, d.heard], ['OK', 'ok', 'v1.6.1', 'up 1:02:05', 'this server']);
+    assert.deepEqual(d.sensors.map((s) => [s.label, s.ok]),
+                     [['AIR', true], ['IMU', true], ['GPS', true], ['DISPLAY', true]]);
+});
+
+test('describeEfis: a module missing and no display', () => {
+    const d = describeEfis({ version: '1.6.1', state: 2, mask: 0x05, uptime: 10, display_clients: 0 });
+    assert.deepEqual([d.state, d.level], ['DEGRADED', CAUTION]);
+    assert.deepEqual(d.sensors.map((s) => s.ok), [true, false, true, false]);
+    const none = describeEfis({ version: '1.6.1', state: 3, mask: 0x07, uptime: 99, display_clients: 0 });
+    assert.deepEqual([none.state, none.level], ['NO DISPLAY', CAUTION]);
+});
+
+test('describeEfis: an older server sends nothing', () => {
+    for (const efis of [undefined, null]) {
+        const d = describeEfis(efis);
+        assert.deepEqual([d.state, d.level, d.version, d.uptime, d.heard], ['UNKNOWN', 'unknown', '--', 'up --', 'no data']);
+        assert.ok(d.sensors.every((s) => s.ok === null));
+    }
 });
