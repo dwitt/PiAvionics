@@ -1,7 +1,7 @@
 """ Asynchronous I/O based webserver to handle page and websocket"""
 # pyright: reportMissingImports=false
 
-VERSION = "1.2.1"
+VERSION = "1.3.0"
 
 import asyncio
 import ipaddress
@@ -18,6 +18,7 @@ import can #pylint: disable=import-error
 from enum import Enum
 from flightplan import FlightPlan, compute_navigation
 import module_status
+import display_orientation
 
 #import board #pylint: disable=import-error
 from adafruit_extended_bus import ExtendedI2C as I2C
@@ -99,6 +100,7 @@ SEESAW_EXPECTED_PRODUCT_ID = 4991  # Expected product ID for seesaw encoder
 # Set True once the display handles null/invalid values (display step A of MODULE_STATUS_PLAN.md).
 NULL_INVALID_VALUES = False
 STATUS_UPDATE_PERIOD = 0.1  # seconds between status evaluations
+ORIENTATION_UPDATE_PERIOD = 0.2  # seconds between display orientation checks (trial timeout)
 
 # Display clients (EFIS/docs/MULTI_CLIENT_PLAN.md). The page served to this computer's own browser
 # (the Pi's kiosk Chromium) is the controller: its commands are processed. Any other page is a
@@ -182,6 +184,7 @@ class AvionicsData:
         self.system_state = None    # 1 all modules OK, 2 otherwise (for the EFIS heartbeat)
         self.controller_state = None  # last qnh / brightness the controlling page sent, for viewer pages
         self.clients = None         # {"controller": n, "viewers": n} connected display pages
+        self.display = None         # screen orientation, saved setting and any trial (display_orientation.py)
         # The web page decides what to show (wording, colours, flashing) from these facts.
         # Navigation (computed from flight plan + GPS position)
         self.dtk = None         # desired track (degrees)
@@ -226,6 +229,8 @@ class MyWebSocketResponse:
         self.can_bus = None
         self.data = None
         self.last_qnh = None
+        self.orientation = None     # display_orientation.DisplayOrientation, set in main()
+        self._orientation_tasks = set()   # keeps the orientation commands from being garbage collected
         self.can_qnh_timestamp = int(time.monotonic_ns() / 1000000)
         # Initialize backlight with error handling
         self.backlight = None
@@ -439,6 +444,15 @@ class MyWebSocketResponse:
                     self.data._flight_plan.cancel_direct_to()
                     self.data.direct_to_active = False
 
+                # Display orientation commands from the Menu (only the controller's messages get here)
+                if self.orientation is not None:
+                    if 'orientation_request' in dict_object:
+                        self._start_orientation(self.orientation_request(dict_object['orientation_request']))
+                    if dict_object.get('orientation_keep', False):
+                        self._start_orientation(self.orientation_keep())
+                    if dict_object.get('orientation_revert', False):
+                        self._start_orientation(self.orientation_revert())
+
             except (KeyError, ValueError, TypeError) as e:
                 # Data not received or invalid format, ignore it
                 if DEBUG:
@@ -447,6 +461,31 @@ class MyWebSocketResponse:
             # If we didn't get valid JSON data, just ignore it
             if DEBUG:
                 print(f"Error decoding JSON message: {e}")
+
+    def _start_orientation(self, coroutine):
+        """Run an orientation command in the background (the message handler is not async)"""
+        try:
+            task = asyncio.get_running_loop().create_task(coroutine)
+        except RuntimeError:        # no running loop (not expected in the server)
+            coroutine.close()
+            return
+        self._orientation_tasks.add(task)
+        task.add_done_callback(self._orientation_tasks.discard)
+
+    async def orientation_request(self, name):
+        """Start a trial of a new screen orientation (refused while flying or when already trying one)"""
+        speeds = (self.data.airspeed if self.data is not None else None,
+                  self.data.gps_speed if self.data is not None else None)
+        ok, reason = await self.orientation.request(name, speeds)
+        print(f"Display orientation trial of {name}: " + ("started" if ok else f"refused ({reason})"), flush=True)
+
+    async def orientation_keep(self):
+        if await self.orientation.keep():
+            print(f"Display orientation {self.orientation.saved} kept and saved", flush=True)
+
+    async def orientation_revert(self):
+        if await self.orientation.revert():
+            print(f"Display orientation trial reverted to {self.orientation.saved}", flush=True)
 
     def process_qnh(self, qnh):
         """Determine if qnh needs to be sent on the can bus based on
@@ -1149,6 +1188,15 @@ async def monitor_status(data, last_received_times):
         update_status(data, last_received_times, time.monotonic())
         await asyncio.sleep(STATUS_UPDATE_PERIOD)
 
+async def monitor_orientation(data, orientation):
+    """Apply the saved screen orientation at start, then every ORIENTATION_UPDATE_PERIOD seconds end a trial
+    that ran out of time and publish the orientation facts for the pages (display_orientation.py)."""
+    await orientation.start()
+    while True:
+        await orientation.tick()
+        data.display = orientation.facts()
+        await asyncio.sleep(ORIENTATION_UPDATE_PERIOD)
+
 # -----------------------------------------------------------------------------
 # --- Send regular updates to the client using json                         ---
 # -----------------------------------------------------------------------------
@@ -1482,6 +1530,10 @@ async def main():
     
     web_socket_response.data = avionics_data
 
+    # Screen orientation (portrait / landscape): the saved setting and the Menu's trial with a timed revert
+    orientation = display_orientation.DisplayOrientation(display_orientation.run_wlr_randr)
+    web_socket_response.orientation = orientation
+
     # -------------------------------------------------------------------------
     # --- create a dictionary to keep track of when CAN messages are
     # --- received. 
@@ -1498,6 +1550,7 @@ async def main():
         monitor_status(avionics_data, last_received_times),
         send_json(web_socket_response, avionics_data),
         monitor_flight_plan(avionics_data),
+        monitor_orientation(avionics_data, orientation),
     #    read_input(encoder, button, avionics_data)
     ]
     

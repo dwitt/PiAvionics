@@ -1,12 +1,13 @@
 """Tests of the multi-client websocket handling in aio_server.py (EFIS/docs/MULTI_CLIENT_PLAN.md).
 Needs the server's libraries, so it is skipped where they are missing. On the Pi:
     ~/EFIS/venv/bin/python -m unittest discover -s tests -v"""
-VERSION = "1.0.0"
+VERSION = "1.1.0"
 
 import asyncio
 import json
 import os
 import sys
+import tempfile
 import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
@@ -47,6 +48,15 @@ class ClientTests(unittest.IsolatedAsyncioTestCase):
         self.handler.backlight = None               # never touch the real backlight
         self.handler.data = srv.AvionicsData()
         self.data = self.handler.data
+        # screen orientation: a fake runner records the rotations, the saved file is in a temp folder
+        self.rotations = []
+
+        async def fake_runner(transform):
+            self.rotations.append(transform)
+            return True
+        self.tmp = tempfile.TemporaryDirectory()
+        self.orientation_file = os.path.join(self.tmp.name, "display_orientation.json")
+        self.handler.orientation = srv.display_orientation.DisplayOrientation(fake_runner, self.orientation_file)
         self.app = web.Application()
         self.app.add_routes([web.get("/ws", self.handler.handler)])
         self.server = TestServer(self.app)
@@ -62,6 +72,7 @@ class ClientTests(unittest.IsolatedAsyncioTestCase):
             pass
         await self.session.close()
         await self.server.close()
+        self.tmp.cleanup()
         srv.JSON_UPDATE_RATE, srv.CLIENT_SEND_TIMEOUT, srv.MAX_VIEWERS = self.saved
 
     async def connect(self, role="controller"):
@@ -71,6 +82,56 @@ class ClientTests(unittest.IsolatedAsyncioTestCase):
         msg = await ws.receive(timeout=timeout)
         self.assertEqual(msg.type, aiohttp.WSMsgType.TEXT)
         return json.loads(msg.data)
+
+    # --- screen orientation commands (display_orientation.py) ---
+
+    async def test_controller_can_start_keep_and_revert_an_orientation_trial(self):
+        controller = await self.connect("controller")
+        await controller.send_str('json{"orientation_request": "landscape"}')
+        await asyncio.sleep(0.2)
+        self.assertEqual(self.rotations, ["90"])
+        self.assertEqual(self.handler.orientation.trial["orientation"], "landscape")
+        self.assertFalse(os.path.exists(self.orientation_file))     # a trial saves nothing
+        await controller.send_str('json{"orientation_keep": true}')
+        await asyncio.sleep(0.2)
+        self.assertEqual(self.handler.orientation.saved, "landscape")
+        self.assertTrue(os.path.exists(self.orientation_file))
+        await controller.send_str('json{"orientation_request": "portrait"}')
+        await asyncio.sleep(0.2)
+        await controller.send_str('json{"orientation_revert": true}')
+        await asyncio.sleep(0.2)
+        self.assertEqual(self.rotations, ["90", "normal", "90"])
+        self.assertEqual(self.handler.orientation.current, "landscape")
+        await controller.close()
+
+    async def test_viewer_cannot_change_the_orientation(self):
+        viewer = await self.connect("viewer")
+        await viewer.send_str('json{"orientation_request": "landscape", "orientation_keep": true}')
+        await asyncio.sleep(0.2)
+        self.assertEqual(self.rotations, [])
+        self.assertIsNone(self.handler.orientation.trial)
+        await viewer.close()
+
+    async def test_orientation_change_is_refused_when_flying(self):
+        controller = await self.connect("controller")
+        self.data.airspeed = 60
+        await controller.send_str('json{"orientation_request": "landscape"}')
+        await asyncio.sleep(0.2)
+        self.assertEqual(self.rotations, [])
+        self.assertEqual(self.handler.orientation.facts()["refused"]["reason"], "airborne")
+        self.data.airspeed = 0
+        self.data.gps_speed = 45
+        await controller.send_str('json{"orientation_request": "landscape"}')
+        await asyncio.sleep(0.2)
+        self.assertEqual(self.rotations, [])                        # ground speed counts too
+        await controller.close()
+
+    async def test_a_route_command_does_not_touch_the_orientation(self):
+        controller = await self.connect("controller")
+        await controller.send_str('json{"qnh": 3010, "brightness": 40, "active_leg": 1}')
+        await asyncio.sleep(0.2)
+        self.assertEqual(self.rotations, [])
+        await controller.close()
 
     async def test_two_clients_both_receive_and_neither_is_dropped(self):
         a = await self.connect("controller")
