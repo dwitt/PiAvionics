@@ -50,7 +50,7 @@ import { FAILURE_LOOK } from './failureLook.mjs';
 
 // ----------------------------------------------------------------------------
 
-const VERSION = "0.5.5";
+const VERSION = "0.5.6";
 
 // Viewer mode: a page that is not the Pi's own display only watches. It sends
 // nothing to the server, ignores the encoder, and shows the QNH and brightness
@@ -683,11 +683,13 @@ function DisplayUpdateLoop(delta) {
         hsi.gpsSatellites = dataObject.gps_satellites;
         hsi.gpsHdop = dataObject.gps_hdop;
         hsi.gpsVdop = dataObject.gps_vdop;
+        hsi.gpsDeclination = dataObject.gps_declination;
     } else {
         hsi.gpsFixQuality = null;
         hsi.gpsSatellites = null;
         hsi.gpsHdop = null;
         hsi.gpsVdop = null;
+        hsi.gpsDeclination = null;
     }
     if (valid.gps && dataObject.xtrack !== undefined && dataObject.xtrack !== null) {
         hsi.courseDeviation = dataObject.xtrack;

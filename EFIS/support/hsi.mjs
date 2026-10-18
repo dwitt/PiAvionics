@@ -606,7 +606,7 @@ export class HSI {
         const screenY = this.app.screen.height / 2;
         const margin = 10;
         const boxWidth = 120;
-        const boxHeight = 82;
+        const boxHeight = 100;      // five lines: fix type, SAT, HDOP, VDOP, VAR
         const pad = 8;
         const lineHeight = 18;
 
@@ -678,6 +678,19 @@ export class HSI {
         this._gpsVdopText.position.set(boxWidth / 2 - pad, startY + lineHeight * 3);
         gpsBox.addChild(this._gpsVdopText);
 
+        // Line 5: VAR, the magnetic variation (declination) the GPS module calculated, for example 10°W
+        const varLabel = new Text({ text: 'VAR', style: labelStyle });
+        varLabel.anchor.set(0, 0.5);
+        varLabel.position.set(-boxWidth / 2 + pad, startY + lineHeight * 4);
+        gpsBox.addChild(varLabel);
+
+        this._gpsVarText = new Text({ text: '--', style: new TextStyle({
+            fontFamily: 'Tahoma', fontSize: 14, fill: 0xbbbbbb,
+        })});
+        this._gpsVarText.anchor.set(1, 0.5);
+        this._gpsVarText.position.set(boxWidth / 2 - pad, startY + lineHeight * 4);
+        gpsBox.addChild(this._gpsVarText);
+
         this.fixedContainer.addChild(gpsBox);
     }
 
@@ -715,6 +728,17 @@ export class HSI {
         } else {
             this._gpsHdopText.text = '--';
             this._gpsHdopText.style.fill = 0xbbbbbb;
+        }
+    }
+
+    /**
+     * Magnetic declination in whole degrees, East positive (null if the GPS module has not given one)
+     */
+    set gpsDeclination(v) {
+        if (v === null || v === undefined) {
+            this._gpsVarText.text = '--';
+        } else {
+            this._gpsVarText.text = Math.abs(v) + '°' + (v < 0 ? 'W' : (v > 0 ? 'E' : ''));
         }
     }
 
