@@ -136,7 +136,7 @@ Status: **Open**, **Monitoring** (fix applied, watching), **Fixed**.
   cyan below 3, yellow below 5, red above), yellow for 2D, red for no fix, grey dashes when the GPS is lost. "DGPS" is no longer the headline: the word `WAAS` sits
   on the same line, green when the module reports differential (WAAS) corrections and dim when it does not (page 0.7.1; David's idea, replacing a DIFF row in the
   expanded view). (My claim that the chip's DGPS flag is "unreliable" was withdrawn: today's DGPS looked normal.)
-- Checked at the Display 2 portrait size with the fake feed (contracted, expanded, poor fix, 2D, no fix, GPS lost). Not yet checked by touch on the real Pi.
+- Checked at the Display 2 portrait size with the fake feed (contracted, expanded, poor fix, 2D, no fix, GPS lost). David confirmed on the real Pi 2026-10-18: the touch expands and contracts it, and WAAS shows green (the module reports WAAS corrections in use).
 
 ### 17. A thin red X drawn across the display when a module sent a marker (fixed 2026-10-18)
 - Found 2026-10-18 by David while the modules' invalid-data markers were first tested (the pitot fault on the AIR module): "an extra X is drawn
