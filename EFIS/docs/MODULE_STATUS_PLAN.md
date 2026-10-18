@@ -288,3 +288,17 @@ the display, so do not connect a test client to the live server; use `tests/live
   `NULL_INVALID_VALUES = True` in the server (the page already ignores untrusted values). Server step B, the backup display and the modules'
   markers follow as listed above.
 
+### 2026-10-18: server step B and the module markers (plan steps 4 and 6) done
+
+- Server step B (details and test log in `SERVER_STEP_B_PLAN.md`): markers decoded, EFIS heartbeat 0x700 on the bus, the Modules page EFIS row.
+- Plan step 6: **AIR_Module 1.0.35 and IMU_AHRS 1.0.16 send the markers** (David: only the Pi EFIS receives them, the backup display is not built). Checked on the real bus
+  with `candump` while injecting faults: pitot lost gave `FF 7F` in the airspeed field of 0x28 and in the differential pressure of 0x2B; static lost gave `FF FF FF 7F` altitude,
+  `FF 7F` vertical speed and `FF 7F` static pressure; OAT lost kept the 0x2A frame coming with `FF 7F`; accel/gyro lost gave `FF 7F` in all four fields of 0x48 and the three
+  accelerations of 0x49; a lost magnetometer sent no marker (the gyro-only heading stayed a number). In each case the server's data showed `None` and exactly the right
+  instrument invalid, and everything restored cleanly.
+- Found on the way and fixed (ISSUES #17): a marker nulls its value at once but `valid` was re-evaluated every 0.1 s, so a null still flagged valid reached the old built-in
+  bad-data X's in `Ribbon` and `AttitudeIndicator` (a thin red X across the display). Server 1.6.2 reapplies the markers before each send; page 0.6.1 never treats a null as valid.
+  David confirmed the pitot and accel/gyro faults then looked right.
+- Still to do from the plan: step 5, the backup display (not built; David will design it), and step 7, the full system test table (every fault and the expected result on the EFIS
+  and the backup display, including stopping `piefis` and pulling a module's CAN cable).
+

@@ -1,9 +1,9 @@
-# Resume here (last saved 2026-10-17, end of day)
+# Resume here (last saved 2026-10-18, end of day)
 
 Tell Claude: "Read RESUME.md and carry on."
 
 ## State of the sensor modules: finished and committed
-Firmware on the boards (all flashed, healthy, committed): IMU_AHRS 1.0.15, AIR_Module 1.0.34, GPS_Module 1.0.9.
+Firmware on the boards (all flashed, healthy, committed): IMU_AHRS 1.0.16, AIR_Module 1.0.35, GPS_Module 1.0.9 (the IMU and AIR now send the invalid-data markers, 2026-10-18).
 Libraries: ModuleInfo 1.3.0, StatusLED 1.2.0, SensorHealth 1.0.0, MS4525DO 1.1.1, SSC 1.1.1, plus two locally patched
 Adafruit libraries (`Adafruit_LSM6DS`: a failed read returns false; `Adafruit_MCP2515`: bounded send, `txFault()`,
 `clearErrorFlags()`), each with `PATCH_NOTES.md`.
@@ -72,8 +72,12 @@ Previous servers are in `~/EFIS/backup_20261018_server120/` (1.2.1, 1.3.0, 1.4.0
 Server step B is DONE and deployed (server 1.6.1, page 0.6.0, plan and status in `EFIS/docs/SERVER_STEP_B_PLAN.md`): invalid-data markers are decoded (a
 marker becomes None and an invalid instrument, never a number), the EFIS heartbeat 0x700 is on the bus once a second (checked with candump), and the Modules
 page has an EFIS row. Not yet tried on the real system: pulling a module's CAN cable and closing the Pi's display page, to see the heartbeat mask bits clear.
-Next: the backup display (CAN_Display: CAN_Feather and Display_Feather read the markers and the heartbeats 0x700 to 0x703 and show a status row; the first
-heartbeat after a server restart reads state 2, so allow it a second), and last the module marker changes (server and display first so nothing draws 32767).
+The modules now send the invalid-data markers (2026-10-18): AIR_Module 1.0.35 (airspeed on a pitot loss, altitude and vertical speed on a static loss, the OAT frame
+keeps coming with a marker, the pressure message), IMU_AHRS 1.0.16 (heading, pitch, roll, turn rate and the accelerations on an accel/gyro loss; a lost magnetometer
+still sends the gyro-only heading as a number). The GPS module sends none. Verified on the real bus with injected faults (`/tmp/fi.sh`, `marker_check.sh` on the Pi).
+A bug found on the way, a thin red X drawn across the display when a marker nulled a value before the validity caught up, is fixed (ISSUES #17: server 1.6.2, page 0.6.1).
+Next: the backup display, which is NOT built yet; David will start its design (CAN_Display: CAN_Feather and Display_Feather, DisplayProtocol.h; per-field validity from the
+markers, listen to 0x700 to 0x703, a status row; the first heartbeat after a server restart reads state 2, so allow it a second). Only the Pi EFIS receives the markers today.
 Other open items: AOA value on 0x29 is still always 0; command messages over CAN (ISSUES #9 steps 2 to 4).
 
 Watch the bus from the Pi:

@@ -90,6 +90,10 @@ Status: **Open**, **Monitoring** (fix applied, watching), **Fixed**.
   health tracking, chip re-initialisation, 6-axis AHRS without magnetometer, fault injection; verified
   with injected faults and a real wing pull). Steps 3 (AIR), 4 (status LED) and 5 (GPS no-data path) also done and tested. Still to do: full retest against the
   plan tables and recovery tests, then the 0x7FFF invalid-data markers with the EFIS pass.
+- 2026-10-18: the EFIS side (display step A, the Modules page, server step B with the marker decoding and the EFIS heartbeat 0x700) is done, and the
+  modules now send the markers (AIR_Module 1.0.35, IMU_AHRS 1.0.16; the GPS module sends none by decision). Verified on the real bus with injected faults:
+  pitot, static, OAT, accel/gyro and magnetometer. A marker bug found on the way (a thin red X drawn across the display) is ISSUES #17, fixed.
+  Not built yet: the backup display (CAN_Display) status row and per-field markers; David will design it next.
 
 ### 14. `/var/log/piefis.log` has no rotation and grows without limit
 - Found 2026-10-18: the file is 33 MB (the service writes its output there: `StandardOutput=append:/var/log/piefis.log`). In the last 20,000
