@@ -117,6 +117,16 @@ Status: **Open**, **Monitoring** (fix applied, watching), **Fixed**.
   module reflash the byte read 0 (declination 0, so no correction); modules older than 1.0.9 therefore get no correction, not a wrong one.
 - Idea for later: the backup display can read the same declination from 0x65 if it ever shows a course.
 
+### 16. Enhancement: make the HSI's GPS box a touch button that expands and contracts
+- Asked for by David 2026-10-18, parked for later. The GPS box in the top left of the HSI (`_createGpsStatusBox` in `hsi.mjs`) now shows five
+  lines all the time: fix type (DGPS, GPS, No Fix), SAT, HDOP, VDOP and VAR (magnetic variation, added 2026-10-18).
+- Wanted: the box is a touch button. Contracted (the normal state) it shows only the GPS status and VAR; touching it expands it to also show
+  the satellites, HDOP and VDOP; touching it again contracts it. That frees HSI space, which helps on the small Display 1 canvases.
+- Notes for when it is built: follow the existing touch pattern (`eventMode = 'static'`, `pointerdown`, `stopPropagation`, as in `softButtons.mjs`
+  and `menuOverlay.mjs`); the viewer pages need it to stay inert or local only (it changes nothing on the server, so a viewer may use it);
+  decide whether it contracts again by itself after some seconds; keep the blank/`--` behaviour when the GPS is lost; the failure flags
+  and the Display 1 portrait fit (the box was made taller for VAR) should be checked again after the change.
+
 ## Monitoring
 
 ### 6. MCP2515 not initialising on the Pi (`Cannot initialize MCP2515. Wrong wiring?`)
