@@ -50,7 +50,7 @@ import { FAILURE_LOOK } from './failureLook.mjs';
 
 // ----------------------------------------------------------------------------
 
-const VERSION = "0.5.0";
+const VERSION = "0.5.1";
 
 // Viewer mode: a page that is not the Pi's own display only watches. It sends
 // nothing to the server, ignores the encoder, and shows the QNH and brightness
@@ -926,10 +926,15 @@ function AircraftIndicator(app){
     let displayWidth = app.screen.width;
     let displayHeight = app.screen.height;
 
-    let px1 = displayWidth/7; // outside of large mark
+    let px4 = displayWidth/40;
     let px2 = displayWidth/25;  // offset to inside of large mark
     let px3 = displayWidth/30;
-    let px4 = displayWidth/40;
+
+    // The wings run from the gap at the centre (1.5 * px4) out to px1. The wing used to end at
+    // displayWidth/7; the wings are now shortened by WING_SHORTEN (a trial, 25% off the length).
+    const WING_SHORTEN = 0.25;
+    const wingInner = 1.5 * px4;
+    let px1 = wingInner + (displayWidth/7 - wingInner) * (1 - WING_SHORTEN); // outside of large mark
 
     let py1 = displayHeight/8;  // Not Used
     let py2 = displayHeight/40; // height of verticals
