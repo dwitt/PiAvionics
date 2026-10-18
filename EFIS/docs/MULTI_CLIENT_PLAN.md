@@ -1,6 +1,6 @@
 # Plan: more than one display client (view the EFIS from a laptop)
 
-Written 2026-10-18. Not built yet; the decisions at the end need David's answers.
+Written 2026-10-18. Decisions made 2026-10-18 (below); steps 1 and 2 built, step 3 (the page) still to do.
 
 ## Goal
 
@@ -106,3 +106,25 @@ Step 1 and 2 alone make a laptop safe to use (it will show the data, but with it
 4. **Access.** Open to the whole network as it is now (suggested for the bench), or restrict to certain addresses?
 5. **Order.** Do steps 1 and 2 now, before the display work (suggested), and step 3 right after, so the display work can be tested
    from the Mac?
+
+## Decisions (David, 2026-10-18: "I agree with the proposal")
+
+1. Only the Pi's own browser (localhost) is the controller. No `?control=1` for a laptop.
+2. Viewers show a small "VIEW ONLY" tag.
+3. At most 4 viewers; more are refused with HTTP 503.
+4. Open to the whole network as it is now (bench use). Revisit if the Pi is ever on a shared network in the aircraft.
+5. Do steps 1 and 2 (server, then deploy) before the display work, and step 3 (the page's viewer mode) right after.
+
+## Status
+
+- **Step 1 built** (`aio_server.py` 1.2.0): a set of clients; role by address (`is_local_address`); a new controller replaces the old
+  controller but viewers stay; viewers' `json` messages are ignored; `controller_state` {qnh, brightness} echoed to everyone;
+  `clients` {controller, viewers} in the JSON; each client's send is its own task with a 0.5 s timeout (a stuck client is skipped and
+  then dropped, nobody waits for it); connect / disconnect / refusal lines in the journal. One existing quirk was also fixed: a route
+  command (`active_leg`, `direct_to`) used to send a default QNH of 29.92 to the CAN bus because the message carried no `qnh`; QNH is now
+  processed only when the message has one.
+- **Tests** (`EFIS/tests/test_server_clients.py`, 12 tests, run on the Pi with `~/EFIS/venv/bin/python -m unittest discover -s tests`):
+  two clients both served; viewer commands ignored; controller commands applied and shared; route command without QNH; QNH clamped; a new
+  controller replaces the old one but viewers stay; viewer limit; disconnects clean up; a stuck client does not slow the others and is
+  dropped; address classification. Four deliberate breaks of the code (viewers allowed to command, no viewer limit, controllers not
+  replaced, default QNH on route commands) were each caught.

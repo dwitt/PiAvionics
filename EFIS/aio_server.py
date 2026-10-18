@@ -1,9 +1,10 @@
 """ Asynchronous I/O based webserver to handle page and websocket"""
 # pyright: reportMissingImports=false
 
-VERSION = "1.1.0"
+VERSION = "1.2.0"
 
 import asyncio
+import ipaddress
 import json
 import struct
 import time
@@ -98,6 +99,12 @@ SEESAW_EXPECTED_PRODUCT_ID = 4991  # Expected product ID for seesaw encoder
 # Set True once the display handles null/invalid values (display step A of MODULE_STATUS_PLAN.md).
 NULL_INVALID_VALUES = False
 STATUS_UPDATE_PERIOD = 0.1  # seconds between status evaluations
+
+# Display clients (EFIS/docs/MULTI_CLIENT_PLAN.md). The page served to this computer's own browser
+# (the Pi's kiosk Chromium) is the controller: its commands are processed. Any other page is a
+# viewer: it receives the data but everything it sends is ignored.
+MAX_VIEWERS = 4              # further viewers are refused (HTTP 503)
+CLIENT_SEND_TIMEOUT = 0.5    # seconds; a client that cannot take one message in this time is dropped
 JSON_UPDATE_RATE = 0.05  # seconds between JSON updates (20Hz = 50ms)
 
 # =============================================================================
@@ -173,6 +180,8 @@ class AvionicsData:
         self.data_lost = None       # per message group: True if it has stopped arriving
         self.heading_status = None  # valid, suspect (gyro-only heading), gyro_seconds
         self.system_state = None    # 1 all modules OK, 2 otherwise (for the EFIS heartbeat)
+        self.controller_state = None  # last qnh / brightness the controlling page sent, for viewer pages
+        self.clients = None         # {"controller": n, "viewers": n} connected display pages
         # The web page decides what to show (wording, colours, flashing) from these facts.
         # Navigation (computed from flight plan + GPS position)
         self.dtk = None         # desired track (degrees)
@@ -192,6 +201,16 @@ class AvionicsData:
 
 # *****************************************************************************
 
+def is_local_address(remote):
+    """True if `remote` (a client address string) is this computer: 127.0.0.1, ::1 or ::ffff:127.0.0.1."""
+    try:
+        address = ipaddress.ip_address(remote)
+    except (ValueError, TypeError):
+        return False
+    if address.version == 6 and address.ipv4_mapped is not None:
+        address = address.ipv4_mapped
+    return address.is_loopback
+
 # *****************************************************************************
 # *** CLASS Web Socket Response Handler
 # *** Created so that the web socket response object can be exposed for
@@ -201,7 +220,9 @@ class AvionicsData:
 class MyWebSocketResponse:
     """Class to handle websocket responses"""
     def __init__(self):
-        self._ws = None
+        # Connected display pages: websocket -> {"role": "controller" or "viewer", "remote": address}
+        self._clients = {}
+        self._send_tasks = {}   # websocket -> the send in progress for it (see send_json)
         self.can_bus = None
         self.data = None
         self.last_qnh = None
@@ -238,29 +259,55 @@ class MyWebSocketResponse:
 
     @property
     def web_socket(self):
-        """Returns the web socket once it has been created"""
-        return self._ws
+        """The controller's websocket (the Pi's own page) if one is connected, else None"""
+        for web_socket, info in self._clients.items():
+            if info["role"] == "controller" and not web_socket.closed:
+                return web_socket
+        return None
+
+    @property
+    def clients(self):
+        """All open websockets (controller and viewers)"""
+        return [web_socket for web_socket in self._clients if not web_socket.closed]
+
+    def _role(self, request):
+        """'controller' for a page opened on this computer, otherwise 'viewer'"""
+        return "controller" if is_local_address(request.remote) else "viewer"
+
+    def _update_client_counts(self):
+        """Keep data.clients up to date for the status page and the EFIS heartbeat"""
+        if self.data is None:
+            return
+        roles = [info["role"] for web_socket, info in self._clients.items() if not web_socket.closed]
+        self.data.clients = {"controller": roles.count("controller"), "viewers": roles.count("viewer")}
 
     # Function that is called when a request to create a websocket is received
     async def handler(self, request):
         """Handler to process web socket requests"""
         if DEBUG_QNH:
             print("handler called")
-        # close an existing web socket if it exists and is not already closing/closed
-        if self._ws is not None and not self._ws.closed:
-            # Check if websocket is in closing state (if available) before attempting to close
-            if hasattr(self._ws, 'closing') and self._ws.closing:
-                # Already closing, wait for it to complete
-                pass
-            else:
-                await self._ws.close()
+        role = self._role(request)
+
+        if role == "viewer":
+            viewers = sum(1 for web_socket, info in self._clients.items()
+                          if info["role"] == "viewer" and not web_socket.closed)
+            if viewers >= MAX_VIEWERS:
+                print(f"Display viewer from {request.remote} refused: {MAX_VIEWERS} viewers already connected",
+                      flush=True)
+                return web.Response(status=503, text="Too many viewers")
+        else:
+            # A page that was reloaded leaves its old socket behind: only one controller at a time
+            for web_socket, info in list(self._clients.items()):
+                if info["role"] == "controller" and not web_socket.closed:
+                    await web_socket.close()
+
         # Create a websocket response object and prepare it for use
         web_socket = web.WebSocketResponse()
         await web_socket.prepare(request)
 
-        # save the request now that it is prepared
-        # this allows us to use the object elsewhere
-        self._ws = web_socket
+        self._clients[web_socket] = {"role": role, "remote": request.remote}
+        self._update_client_counts()
+        print(f"Display {role} connected from {request.remote}", flush=True)
         try:
             # Iterate over the messages (msg) return by the Web Socket (web_socket)
             # I expect we should sit in this loop until told to close the socket
@@ -280,10 +327,13 @@ class MyWebSocketResponse:
                             print("websocket ready message")
                     # The efis-display.js will send json data prefixed with 'json'
                     elif len(msg.data) >= 4 and msg.data[0:4] == 'json':
-                        if DEBUG_WEBSOCKET:
-                            print("json message")
-                        # process the json send from the efis-display.js
-                        self.process_json_data(msg)
+                        if role == "controller":
+                            if DEBUG_WEBSOCKET:
+                                print("json message")
+                            # process the json send from the efis-display.js
+                            self.process_json_data(msg)
+                        elif DEBUG_WEBSOCKET:
+                            print("json message from a viewer ignored")
                 elif msg.type == aiohttp.WSMsgType.ERROR:
                     if DEBUG_WEBSOCKET:
                         print('ws connection closed with exception %s' % web_socket.exception())
@@ -291,14 +341,15 @@ class MyWebSocketResponse:
                 print('websocket connection closed')
         finally:
             # Always execute this code
-            # Close the web socket
+            # Close the web socket and forget it
             if DEBUG_WEBSOCKET:
                 print('websocket connection closed in finally')
             await web_socket.close()
+            self._clients.pop(web_socket, None)
+            self._update_client_counts()
+            print(f"Display {role} from {request.remote} disconnected", flush=True)
 
         # Return the websocket response object - required by aiohttp's API
-        # The framework uses this return value to manage the websocket connection lifecycle
-        # Note: The websocket is also stored in self._ws for access via the web_socket property
         return web_socket
 
     def process_json_data(self, web_socket_message):
@@ -311,26 +362,37 @@ class MyWebSocketResponse:
         try:
             dict_object = json.loads(web_socket_message.data[4:])
             try:
-                # Get QNH with default value
+                if self.data is not None and self.data.controller_state is None:
+                    self.data.controller_state = {}
+
+                # Get QNH. It is only processed when the message carries one: a route command
+                # (active_leg, direct_to) has no qnh and must not send a default to the CAN bus.
                 # QNH is received in inHg × 100 format (e.g., 2992 = 29.92 inHg)
-                qnh = dict_object.get('qnh', QNH_DEFAULT_INHG_X_100)
-                
-                # Validate and clamp QNH to reasonable range (28.00-31.00 inHg)
-                # Convert to int to handle any float values, then clamp
-                qnh = int(qnh)
-                qnh = max(QNH_MIN_INHG_X_100, min(QNH_MAX_INHG_X_100, qnh))
-                
-                if DEBUG_QNH:
-                    print(f"QNH from json= {qnh} (clamped to range {QNH_MIN_INHG_X_100}-{QNH_MAX_INHG_X_100})")
-                
-                # Process QNH (qnh is in inHg × 100 format)
-                self.process_qnh(qnh)
+                qnh = dict_object.get('qnh', None)
+                if qnh is not None:
+                    # Validate and clamp QNH to reasonable range (28.00-31.00 inHg)
+                    # Convert to int to handle any float values, then clamp
+                    qnh = int(qnh)
+                    qnh = max(QNH_MIN_INHG_X_100, min(QNH_MAX_INHG_X_100, qnh))
+
+                    if DEBUG_QNH:
+                        print(f"QNH from json= {qnh} (clamped to range {QNH_MIN_INHG_X_100}-{QNH_MAX_INHG_X_100})")
+
+                    # Process QNH (qnh is in inHg × 100 format)
+                    self.process_qnh(qnh)
+                    if self.data is not None:
+                        self.data.controller_state["qnh"] = qnh
                 
                 # Process brightness if provided
                 brightness = dict_object.get('brightness', None)
                 if brightness is not None:
                     if DEBUG_BRIGHTNESS:
                         print(f'Brightness received from client: {brightness}')
+                    if self.data is not None:
+                        try:
+                            self.data.controller_state["brightness"] = max(0, min(100, int(brightness)))
+                        except (ValueError, TypeError):
+                            pass
                     
                     if self.backlight is not None:
                         try:
@@ -1111,30 +1173,48 @@ async def send_json(web_socket_response, data):
     """
 
     while True: # Loop here forever
+        clients = web_socket_response.clients
         if DEBUG:
             print("Json Loop")
-            print (f"Web Socket response :{web_socket_response.web_socket}")
-            if web_socket_response.web_socket is not None:
-                print(f"Web Socket Closed: {web_socket_response.web_socket.closed}")
-        # Send json data only when a WebSocket exists and is not closed
-        if (web_socket_response.web_socket is not None and
-            not web_socket_response.web_socket.closed):
+            print(f"Display clients: {len(clients)}")
+        # Send json data only when at least one WebSocket is open
+        if clients:
             if DEBUG_JSON:
                 print("Send Json")
                 print("Json Send qnh = ",data.can_qnh)
-                #print("Json qnhx4 = ", data.qnhx4) 
                 print("Json Alt = ", data.altitude)
-            # use an exception handler as the socket could be closed inadvertently
-            try:
-                d = {k: v for k, v in data.__dict__.items() if not k.startswith('_')}
-                await web_socket_response.web_socket.send_json(d)
-            except (ConnectionResetError, ConnectionAbortedError, 
-                    aiohttp.ClientError, RuntimeError) as e:
-                if DEBUG:
-                    print(f"Error sending JSON to websocket: {e}")
-                # Socket is likely closed, will be handled by outer check
+            d = {k: v for k, v in data.__dict__.items() if not k.startswith('_')}
+            text = json.dumps(d)
+            # Every client gets the same message. Each client's send is its own task with its own
+            # timeout, and a client whose last send has not finished is skipped this time, so a
+            # slow client can never hold up the Pi's own display (it is dropped after the timeout).
+            for ws in clients:
+                task = web_socket_response._send_tasks.get(ws)
+                if task is not None and not task.done():
+                    continue
+                task = asyncio.create_task(send_to_client(web_socket_response, ws, text))
+                web_socket_response._send_tasks[ws] = task
+                task.add_done_callback(
+                    lambda t, ws=ws: web_socket_response._send_tasks.pop(ws, None)
+                    if web_socket_response._send_tasks.get(ws) is t else None)
         # Rate limit: wait before next send to prevent flooding the websocket
         await asyncio.sleep(JSON_UPDATE_RATE)
+
+
+async def send_to_client(web_socket_response, web_socket, text):
+    """Send one message to one client. A client that fails or cannot take the message within
+    CLIENT_SEND_TIMEOUT is closed and forgotten; its page reconnects by itself."""
+    try:
+        await asyncio.wait_for(web_socket.send_str(text), CLIENT_SEND_TIMEOUT)
+    except (asyncio.TimeoutError, ConnectionResetError, ConnectionAbortedError,
+            aiohttp.ClientError, RuntimeError) as e:
+        info = web_socket_response._clients.get(web_socket, {})
+        print(f"Display {info.get('role', 'client')} from {info.get('remote', '?')} dropped: "
+              f"{type(e).__name__}", flush=True)
+        try:
+            await web_socket.close()
+        except Exception:    # already gone
+            pass
 
 
 # -----------------------------------------------------------------------------
