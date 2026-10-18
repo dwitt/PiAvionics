@@ -44,7 +44,7 @@ import { RouteOverlay } from './routeOverlay.mjs';
 
 // ----------------------------------------------------------------------------
 
-const VERSION = "0.2.2";
+const VERSION = "0.2.3";
 
 // Viewer mode: a page that is not the Pi's own display only watches. It sends
 // nothing to the server, ignores the encoder, and shows the QNH and brightness
@@ -52,6 +52,7 @@ const VERSION = "0.2.2";
 // ignores commands from anything but the local browser).
 //   ?view=1            force viewer mode
 //   ?server=host:port  take the data from another EFIS server (implies viewer)
+//   ?pi=1              lay the page out at the size of the Pi's own screen (below)
 // Plan: EFIS/docs/MULTI_CLIENT_PLAN.md
 const pageParams = new URLSearchParams(location.search);
 const serverOverride = pageParams.get('server');
@@ -90,8 +91,15 @@ var testAirspeedDir = 1;
 // ---Create a Pixi Application                                             ---
 // ----------------------------------------------------------------------------
 
-const screenW = window.innerWidth;
-const screenH = window.innerHeight;
+// The Pi's screen is 720 x 1280 pixels with the compositor scaled 1.25 (labwc autostart,
+// wlr-randr --scale=1.25), so the kiosk browser window is 576 x 1024 CSS pixels.
+// ?pi=1 uses that size in any browser window, for an accurate view of the Pi's layout.
+const PI_SCREEN_W = 576;
+const PI_SCREEN_H = 1024;
+const USE_PI_SIZE = pageParams.get('pi') === '1';
+
+const screenW = USE_PI_SIZE ? PI_SCREEN_W : window.innerWidth;
+const screenH = USE_PI_SIZE ? PI_SCREEN_H : window.innerHeight;
 
 let width = screenW;
 let height = screenH;
