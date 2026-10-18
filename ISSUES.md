@@ -125,16 +125,17 @@ Status: **Open**, **Monitoring** (fix applied, watching), **Fixed**.
 - **Still to do:** a moving test (drive or flight) to see the track diamond and the course pointer agree with a compass. Before the GPS
   module reflash the byte read 0 (declination 0, so no correction); modules older than 1.0.9 therefore get no correction, not a wrong one.
 - Idea for later: the backup display can read the same declination from 0x65 if it ever shows a course.
+- Added 2026-10-18 (page 0.7.0): the track diamond is hidden below 10 knots of ground speed (`TRACK_MIN_SPEED_KT` in `efis-display.js`), because the GPS track is noise when slow
+  (the module's own hold-at-0 below 2 kt, `TRACK_SPEED_THRESHOLD` in the GPS firmware, is unchanged).
 
-### 16. Enhancement: make the HSI's GPS box a touch button that expands and contracts
-- Asked for by David 2026-10-18, parked for later. The GPS box in the top left of the HSI (`_createGpsStatusBox` in `hsi.mjs`) now shows five
-  lines all the time: fix type (DGPS, GPS, No Fix), SAT, HDOP, VDOP and VAR (magnetic variation, added 2026-10-18).
-- Wanted: the box is a touch button. Contracted (the normal state) it shows only the GPS status and VAR; touching it expands it to also show
-  the satellites, HDOP and VDOP; touching it again contracts it. That frees HSI space, which helps on the small Display 1 canvases.
-- Notes for when it is built: follow the existing touch pattern (`eventMode = 'static'`, `pointerdown`, `stopPropagation`, as in `softButtons.mjs`
-  and `menuOverlay.mjs`); the viewer pages need it to stay inert or local only (it changes nothing on the server, so a viewer may use it);
-  decide whether it contracts again by itself after some seconds; keep the blank/`--` behaviour when the GPS is lost; the failure flags
-  and the Display 1 portrait fit (the box was made taller for VAR) should be checked again after the change.
+### 16. Enhancement: make the HSI's GPS box a touch button that expands and contracts (done 2026-10-18)
+- Asked for by David 2026-10-18. Done in page 0.7.0 (`hsi.mjs`, `_createGpsStatusBox`): the box in the top left of the HSI is a touch button. Contracted (the
+  normal state, and how it starts after every reload) it shows the fix status and `VAR 10°W`; a touch expands it to also show SAT, HDOP, VDOP and DIFF (whether
+  differential corrections are used); another touch contracts it. It stays as David left it (no timer). A small arrow shows it can be touched.
+- The status word is now `3D FIX`, `2D FIX` or `NO FIX` (from the GPS module's fix type, `gps_fix_3d`), coloured by the HDOP quality for 3D (green below 1.5,
+  cyan below 3, yellow below 5, red above), yellow for 2D, red for no fix, grey dashes when the GPS is lost. "DGPS" is no longer the headline; DIFF shows `yes`
+  when the module reports differential (WAAS) corrections. (My claim that the chip's DGPS flag is "unreliable" was withdrawn: today's DGPS looked normal.)
+- Checked at the Display 2 portrait size with the fake feed (contracted, expanded, poor fix, 2D, no fix, GPS lost). Not yet checked by touch on the real Pi.
 
 ### 17. A thin red X drawn across the display when a module sent a marker (fixed 2026-10-18)
 - Found 2026-10-18 by David while the modules' invalid-data markers were first tested (the pitot fault on the AIR module): "an extra X is drawn

@@ -25,6 +25,7 @@ export class HSI {
         this._toFrom = null;         // "TO", "FROM", or null
         this._headingShown = true;   // false when the heading cannot be trusted (see setHeadingDisplay)
         this._gpsValid = true;       // false when the GPS data cannot be trusted (see gpsValid)
+        this._trackUsable = true;    // false when the ground track means nothing, for example at low speed (see trackUsable)
         this._cdiFullScaleNM = 2;    // full-scale CDI deflection in NM
         this._desiredTrack = null;   // DTK from flight plan (overrides CRS knob)
         this._waypointDistance = null;
@@ -599,115 +600,162 @@ export class HSI {
     }
 
     // -----------------------------------------------------------------------
-    // GPS Status Box — upper-left corner of HSI display
+    // GPS Status Box — upper-left corner of HSI display. It is a touch button:
+    // contracted (the normal state) it shows the fix status and the magnetic variation;
+    // a touch expands it to show the satellites, HDOP, VDOP and whether differential
+    // corrections (WAAS) are used, and another touch contracts it. It starts contracted.
     // -----------------------------------------------------------------------
     _createGpsStatusBox() {
         const screenX = this.app.screen.width / 2;
         const screenY = this.app.screen.height / 2;
         const margin = 10;
         const boxWidth = 120;
-        const boxHeight = 100;      // five lines: fix type, SAT, HDOP, VDOP, VAR
         const pad = 8;
-        const lineHeight = 18;
+
+        this._gpsBoxWidth = boxWidth;
+        this._gpsPad = pad;
+        this._gpsLineHeight = 18;
+        this._gpsExpanded = false;
+        this._gpsFixQuality = null;     // 0 no fix, 1 GPS, 2 differential (WAAS)
+        this._gpsFixType = null;        // 1 no fix, 2 2D, 3 3D
+        this._gpsHdopValue = null;
 
         const gpsBox = new Container();
-        gpsBox.position.set(-screenX + margin + boxWidth / 2, -screenY + margin + boxHeight / 2);
+        // the origin is the top left corner so the box grows downward when it expands
+        gpsBox.position.set(-screenX + margin, -screenY + margin);
 
-        // Background
-        const bg = new Graphics();
-        bg.fillStyle = { color: 0x222222, alpha: 0.85 };
-        bg.strokeStyle = { color: 0x666666, width: 1, alpha: 0.8 };
-        bg.roundRect(-boxWidth / 2, -boxHeight / 2, boxWidth, boxHeight, 6);
-        bg.fill();
-        bg.stroke();
-        gpsBox.addChild(bg);
+        this._gpsBoxBackground = new Graphics();
+        gpsBox.addChild(this._gpsBoxBackground);
 
-        const labelStyle = new TextStyle({
-            fontFamily: 'Tahoma', fontSize: 13, fill: 0x888888,
-        });
-        const valueStyle = new TextStyle({
-            fontFamily: 'Tahoma', fontSize: 14, fill: 0xbbbbbb,
-        });
-
-        const startY = -boxHeight / 2 + pad + 7;
-
-        // Line 1: Fix type (color changes dynamically)
+        // Row 0: the fix status (colour changes dynamically), with an arrow showing it can be touched
         this._gpsFixText = new Text({ text: '---', style: new TextStyle({
             fontFamily: 'Tahoma', fontSize: 14, fill: 0x888888, fontWeight: 'bold',
         })});
         this._gpsFixText.anchor.set(0.5, 0.5);
-        this._gpsFixText.position.set(0, startY);
+        this._gpsFixText.position.set(boxWidth / 2 - 4, this._gpsRowY(0));
         gpsBox.addChild(this._gpsFixText);
 
-        // Line 2: SAT count
-        const satLabel = new Text({ text: 'SAT', style: labelStyle });
-        satLabel.anchor.set(0, 0.5);
-        satLabel.position.set(-boxWidth / 2 + pad, startY + lineHeight);
-        gpsBox.addChild(satLabel);
+        this._gpsArrow = new Graphics();
+        gpsBox.addChild(this._gpsArrow);
 
-        this._gpsSatText = new Text({ text: '--', style: new TextStyle({
-            fontFamily: 'Tahoma', fontSize: 14, fill: 0xbbbbbb,
-        })});
-        this._gpsSatText.anchor.set(1, 0.5);
-        this._gpsSatText.position.set(boxWidth / 2 - pad, startY + lineHeight);
-        gpsBox.addChild(this._gpsSatText);
+        // Row 1: VAR, the magnetic variation (declination) the GPS module calculated, for example 10°W
+        this._gpsVarText = this._createGpsRow(gpsBox, 'VAR', 1);
 
-        // Line 3: HDOP
-        const hdopLabel = new Text({ text: 'HDOP', style: labelStyle });
-        hdopLabel.anchor.set(0, 0.5);
-        hdopLabel.position.set(-boxWidth / 2 + pad, startY + lineHeight * 2);
-        gpsBox.addChild(hdopLabel);
+        // Rows 2 to 5, only while expanded
+        this._gpsSatText = this._createGpsRow(gpsBox, 'SAT', 2);
+        this._gpsHdopText = this._createGpsRow(gpsBox, 'HDOP', 3);
+        this._gpsVdopText = this._createGpsRow(gpsBox, 'VDOP', 4);
+        this._gpsDiffText = this._createGpsRow(gpsBox, 'DIFF', 5);
+        this._gpsExpandedItems = [];
+        for (const row of [this._gpsSatText, this._gpsHdopText, this._gpsVdopText, this._gpsDiffText]) {
+            this._gpsExpandedItems.push(row, row.gpsLabel);
+        }
 
-        this._gpsHdopText = new Text({ text: '--', style: new TextStyle({
-            fontFamily: 'Tahoma', fontSize: 14, fill: 0xbbbbbb,
-        })});
-        this._gpsHdopText.anchor.set(1, 0.5);
-        this._gpsHdopText.position.set(boxWidth / 2 - pad, startY + lineHeight * 2);
-        gpsBox.addChild(this._gpsHdopText);
+        // A touch toggles the box
+        gpsBox.eventMode = 'static';
+        gpsBox.cursor = 'pointer';
+        gpsBox.on('pointerdown', (e) => {
+            e.stopPropagation();
+            this._gpsExpanded = !this._gpsExpanded;
+            this._drawGpsBox();
+        });
 
-        // Line 4: VDOP
-        const vdopLabel = new Text({ text: 'VDOP', style: labelStyle });
-        vdopLabel.anchor.set(0, 0.5);
-        vdopLabel.position.set(-boxWidth / 2 + pad, startY + lineHeight * 3);
-        gpsBox.addChild(vdopLabel);
-
-        this._gpsVdopText = new Text({ text: '--', style: new TextStyle({
-            fontFamily: 'Tahoma', fontSize: 14, fill: 0xbbbbbb,
-        })});
-        this._gpsVdopText.anchor.set(1, 0.5);
-        this._gpsVdopText.position.set(boxWidth / 2 - pad, startY + lineHeight * 3);
-        gpsBox.addChild(this._gpsVdopText);
-
-        // Line 5: VAR, the magnetic variation (declination) the GPS module calculated, for example 10°W
-        const varLabel = new Text({ text: 'VAR', style: labelStyle });
-        varLabel.anchor.set(0, 0.5);
-        varLabel.position.set(-boxWidth / 2 + pad, startY + lineHeight * 4);
-        gpsBox.addChild(varLabel);
-
-        this._gpsVarText = new Text({ text: '--', style: new TextStyle({
-            fontFamily: 'Tahoma', fontSize: 14, fill: 0xbbbbbb,
-        })});
-        this._gpsVarText.anchor.set(1, 0.5);
-        this._gpsVarText.position.set(boxWidth / 2 - pad, startY + lineHeight * 4);
-        gpsBox.addChild(this._gpsVarText);
-
+        this._drawGpsBox();
         this.fixedContainer.addChild(gpsBox);
     }
 
-    set gpsFixQuality(v) {
-        if (v === null || v === undefined) {
-            this._gpsFixText.text = '---';
-            this._gpsFixText.style.fill = 0x888888;
-        } else if (v === 2) {
-            this._gpsFixText.text = 'DGPS';
-            this._gpsFixText.style.fill = 0x00ff00;  // green — WAAS active
-        } else if (v === 1) {
-            this._gpsFixText.text = 'GPS';
-            this._gpsFixText.style.fill = 0x00ffff;  // cyan — standard fix
-        } else {
-            this._gpsFixText.text = 'No Fix';
-            this._gpsFixText.style.fill = 0xff0000;  // red — no fix
+    // y of the centre of a row of the GPS box
+    _gpsRowY(row) {
+        return this._gpsPad + 7 + row * this._gpsLineHeight;
+    }
+
+    // A label on the left and a value on the right; returns the value's Text (the label is its .gpsLabel)
+    _createGpsRow(gpsBox, label, row) {
+        const labelText = new Text({ text: label, style: new TextStyle({
+            fontFamily: 'Tahoma', fontSize: 13, fill: 0x888888,
+        })});
+        labelText.anchor.set(0, 0.5);
+        labelText.position.set(this._gpsPad, this._gpsRowY(row));
+        gpsBox.addChild(labelText);
+
+        const valueText = new Text({ text: '--', style: new TextStyle({
+            fontFamily: 'Tahoma', fontSize: 14, fill: 0xbbbbbb,
+        })});
+        valueText.anchor.set(1, 0.5);
+        valueText.position.set(this._gpsBoxWidth - this._gpsPad, this._gpsRowY(row));
+        gpsBox.addChild(valueText);
+        valueText.gpsLabel = labelText;
+        return valueText;
+    }
+
+    // Redraw the box background and arrow for the contracted or expanded state
+    _drawGpsBox() {
+        const rows = this._gpsExpanded ? 6 : 2;
+        const height = this._gpsRowY(rows - 1) + 13;
+
+        this._gpsBoxBackground.clear();
+        this._gpsBoxBackground.fillStyle = { color: 0x222222, alpha: 0.85 };
+        this._gpsBoxBackground.strokeStyle = { color: 0x666666, width: 1, alpha: 0.8 };
+        this._gpsBoxBackground.roundRect(0, 0, this._gpsBoxWidth, height, 6);
+        this._gpsBoxBackground.fill();
+        this._gpsBoxBackground.stroke();
+
+        for (const item of this._gpsExpandedItems) {
+            item.visible = this._gpsExpanded;
         }
+
+        // a small triangle at the right of the first row: down to expand, up to contract
+        const x = this._gpsBoxWidth - this._gpsPad - 3;
+        const y = this._gpsRowY(0);
+        this._gpsArrow.clear();
+        if (this._gpsExpanded) {
+            this._gpsArrow.poly([x - 4, y + 2, x + 4, y + 2, x, y - 3]);
+        } else {
+            this._gpsArrow.poly([x - 4, y - 2, x + 4, y - 2, x, y + 3]);
+        }
+        this._gpsArrow.fill({ color: 0x888888 });
+    }
+
+    // The status word and its colour: NO FIX is red, 2D FIX yellow, 3D FIX the colour of the HDOP quality
+    _updateGpsStatus() {
+        let text = '---';
+        let colour = 0x888888;
+        if (this._gpsFixType === 3) {
+            text = '3D FIX';
+            colour = this._gpsHdopValue !== null ? this._dopColor(this._gpsHdopValue) : 0xbbbbbb;
+        } else if (this._gpsFixType === 2) {
+            text = '2D FIX';
+            colour = 0xffff00;
+        } else if (this._gpsFixType !== null) {
+            text = 'NO FIX';
+            colour = 0xff0000;
+        } else if (this._gpsFixQuality === 0) {
+            text = 'NO FIX';                    // an older server that only sends the fix quality
+            colour = 0xff0000;
+        } else if (this._gpsFixQuality !== null) {
+            text = 'FIX';
+            colour = 0xbbbbbb;
+        }
+        this._gpsFixText.text = text;
+        this._gpsFixText.style.fill = colour;
+    }
+
+    /**
+     * Fix quality from the GPS module: 0 no fix, 1 GPS, 2 differential (WAAS). Shown as DIFF when expanded.
+     */
+    set gpsFixQuality(v) {
+        this._gpsFixQuality = (v === null || v === undefined) ? null : v;
+        this._gpsDiffText.text = this._gpsFixQuality === null ? '--' : (this._gpsFixQuality === 2 ? 'yes' : 'no');
+        this._gpsDiffText.style.fill = this._gpsFixQuality === 2 ? 0x00ff00 : 0xbbbbbb;
+        this._updateGpsStatus();
+    }
+
+    /**
+     * Fix type from the GPS module: 1 no fix, 2 2D, 3 3D. Gives the status word.
+     */
+    set gpsFixType(v) {
+        this._gpsFixType = (v === null || v === undefined) ? null : v;
+        this._updateGpsStatus();
     }
 
     set gpsSatellites(v) {
@@ -722,13 +770,15 @@ export class HSI {
     }
 
     set gpsHdop(v) {
-        if (v !== null && v !== undefined) {
+        this._gpsHdopValue = (v !== null && v !== undefined) ? v : null;
+        if (this._gpsHdopValue !== null) {
             this._gpsHdopText.text = v.toFixed(1);
             this._gpsHdopText.style.fill = this._dopColor(v);
         } else {
             this._gpsHdopText.text = '--';
             this._gpsHdopText.style.fill = 0xbbbbbb;
         }
+        this._updateGpsStatus();
     }
 
     /**
@@ -921,8 +971,18 @@ export class HSI {
         this._applyGpsVisibility();
     }
 
+    /**
+     * Set by the page: false when the GPS ground track is not worth drawing (the aircraft is moving too slowly,
+     * so the track is noise). The ground track diamond is hidden then.
+     * @param {boolean} isUsable
+     */
+    set trackUsable(isUsable) {
+        this._trackUsable = isUsable;
+        this._applyGpsVisibility();
+    }
+
     _applyGpsVisibility() {
-        this.trackContainer.visible = this._headingShown && this._gpsValid;
+        this.trackContainer.visible = this._headingShown && this._gpsValid && this._trackUsable;
         this.cdiBar.visible = this._gpsValid;
         this.toFrom = this._toFrom;     // shows or hides the TO/FROM triangles for the current state
     }

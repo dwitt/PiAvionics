@@ -50,7 +50,7 @@ import { FAILURE_LOOK } from './failureLook.mjs';
 
 // ----------------------------------------------------------------------------
 
-const VERSION = "0.6.1";
+const VERSION = "0.7.0";
 
 // Viewer mode: a page that is not the Pi's own display only watches. It sends
 // nothing to the server, ignores the encoder, and shows the QNH and brightness
@@ -198,6 +198,10 @@ if (VIEW_ONLY) {
 // speed and waypoint lines below it need about 120 pixels of height between them, which matters on a
 // short canvas (400 pixels tall on a Pi Touch Display 1 in portrait).
 const HSI_TEXT_ROOM = 120;
+
+// The GPS ground track is worked out from the velocity, so it is noisy when you move slowly (about 5 degrees at
+// 2 knots, 1 degree at 10 knots for this chip's typical velocity accuracy). The track diamond is only drawn at or above this ground speed.
+const TRACK_MIN_SPEED_KT = 10;
 let hsiDiameter = Math.min(Math.min(app2.screen.width, app2.screen.height) * 0.75,
                            app2.screen.height - HSI_TEXT_ROOM);
 hsi = new HSI(app2, app2.screen.width / 2, app2.screen.height / 2, hsiDiameter);
@@ -672,7 +676,10 @@ function DisplayUpdateLoop(delta) {
     hsi.gpsValid = valid.gps;
     // The compass rose is magnetic, so the track diamond uses the GPS module's magnetic track
     // (true track corrected with its WMM2025 declination), not the true track (ISSUES.md #15)
-    if (valid.gps && dataObject.mag_track !== undefined && dataObject.mag_track !== null) {
+    const trackWorthDrawing = valid.gps && dataObject.gps_speed !== undefined && dataObject.gps_speed !== null &&
+                              dataObject.gps_speed >= TRACK_MIN_SPEED_KT;
+    hsi.trackUsable = trackWorthDrawing;
+    if (trackWorthDrawing && dataObject.mag_track !== undefined && dataObject.mag_track !== null) {
         hsi.groundTrack = dataObject.mag_track;
     }
     hsi.groundSpeed = (valid.gps && dataObject.gps_speed !== undefined) ? dataObject.gps_speed : null;
@@ -680,12 +687,14 @@ function DisplayUpdateLoop(delta) {
     // The GPS receiver's own status box (fix type, satellites, HDOP, VDOP) follows the module and its NMEA data
     if (valid.gpsStatus && dataObject.gps_fix_quality !== undefined) {
         hsi.gpsFixQuality = dataObject.gps_fix_quality;
+        hsi.gpsFixType = dataObject.gps_fix_3d;
         hsi.gpsSatellites = dataObject.gps_satellites;
         hsi.gpsHdop = dataObject.gps_hdop;
         hsi.gpsVdop = dataObject.gps_vdop;
         hsi.gpsDeclination = dataObject.gps_declination;
     } else {
         hsi.gpsFixQuality = null;
+        hsi.gpsFixType = null;
         hsi.gpsSatellites = null;
         hsi.gpsHdop = null;
         hsi.gpsVdop = null;

@@ -14,7 +14,7 @@ screen orientation facts come from the real display_orientation.py with a preten
     curl 'localhost:8097/control?airspeed=60'        fake airspeed (for the orientation lock)
 
 tests/page_shots.py drives a headless Chrome through the scenarios and saves a screenshot of each.
-VERSION 1.6.0"""
+VERSION 1.7.0"""
 import argparse
 import asyncio
 import copy
@@ -131,7 +131,8 @@ SCENARIOS = {
     "mag": mag, "mag_blank": lambda f: mag(f, 301.0),
     "imu_cal": lambda f: f["modules"]["imu"]["sensors"].update({"calibration": False}),
     "gps_lost": gps_lost, "gps_nofix": gps_nofix,
-    "airmod": airmod, "imumod": imumod, "restart": restart, "several": several, "pitot_marker": pitot, "static_marker": static, "race_gyro": lambda f: None, "race_pitot": lambda f: None,
+    "airmod": airmod, "imumod": imumod, "restart": restart, "several": several, "gps_2d": lambda f: None, "gps_poor": lambda f: None,
+    "slow": lambda f: None, "taxi_9kt": lambda f: None, "pitot_marker": pitot, "static_marker": static, "race_gyro": lambda f: None, "race_pitot": lambda f: None,
     "oat_marker": oat, "gyro_marker": att, "efis_nodisplay": lambda f: None,
     "all_air_imu": lambda f: (airmod(f), imumod(f)),
 }
@@ -163,7 +164,11 @@ SCENARIO_DATA = {
     "gyro_marker": {"yaw": None, "pitch": None, "roll": None, "turn_rate": None,
                     "accx": None, "accy": None, "accz": None},
     # a receiver with no fix still reports its status: fix quality 0 and a few satellites
-    "gps_nofix": {"gps_fix_quality": 0, "gps_satellites": 3, "gps_hdop": 9.9, "gps_vdop": 9.9},
+    "gps_nofix": {"gps_fix_quality": 0, "gps_fix_3d": 1, "gps_satellites": 3, "gps_hdop": 9.9, "gps_vdop": 9.9},
+    "gps_2d": {"gps_fix_quality": 1, "gps_fix_3d": 2, "gps_satellites": 4, "gps_hdop": 2.4, "gps_vdop": 5.2},
+    "gps_poor": {"gps_fix_quality": 1, "gps_fix_3d": 3, "gps_satellites": 5, "gps_hdop": 4.2, "gps_vdop": 6.1},
+    "slow": {"gps_speed": 4, "true_track": 0, "mag_track": 0},
+    "taxi_9kt": {"gps_speed": 9, "true_track": 92, "mag_track": 102},
 }
 
 
@@ -187,7 +192,7 @@ def main():
             "altitude": 2400, "airspeed": state["airspeed"], "vsi": 150, "pitch": 3.0, "roll": 8.0,
             "yaw": 90, "accy": 0.02, "accz": 1.0, "turn_rate": 1.5, "oat": 22, "static_pressure": 9420,
             "differential_pressure": 620, "gps_speed": 112, "gps_altitude": 2410, "true_track": 92, "mag_track": 102,
-            "gps_fix_quality": 2, "gps_declination": -10, "gps_satellites": 11, "gps_hdop": 0.9, "gps_vdop": 1.2,
+            "gps_fix_quality": 2, "gps_fix_3d": 3, "gps_declination": -10, "gps_satellites": 11, "gps_hdop": 0.9, "gps_vdop": 1.2,
             # navigation to a waypoint (computed by the real server from the flight plan and GPS position)
             "wpt_id": "CYFD", "dist": 12.3, "dtk": 92, "xtrack": 0.4, "to_from": "TO",
             "controller_state": None, "display": orientation.facts(), "position": 0, "pressed": False,
