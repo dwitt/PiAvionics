@@ -68,9 +68,12 @@ Page changes reach the Pi with rsync of `EFIS/support/*` then a reload (`wtype -
 ISSUES #15 is fixed and deployed (server 1.5.0, page 0.5.5, GPS_Module 1.0.9 flashed): the track diamond uses `mag_track`, the GPS module sends
 its WMM2025 declination in 0x65 byte 3, and the server sends the desired track and bearing in magnetic degrees (held back until the declination is
 known); `NULL_INVALID_VALUES` is on (untrusted values are sent as null). A moving test of the diamond and course pointer is still to do.
-Previous servers are in `~/EFIS/backup_20261018_server120/` (1.2.1, 1.3.0, 1.4.0 copies).
-Next: server step B (markers decoded, 0x700 heartbeat), the backup display, and last the
-module marker changes (server and display first so nothing draws 32767).
+Previous servers are in `~/EFIS/backup_20261018_server120/` (1.2.1, 1.3.0, 1.4.0 and 1.5.0 copies).
+Server step B is DONE and deployed (server 1.6.1, page 0.6.0, plan and status in `EFIS/docs/SERVER_STEP_B_PLAN.md`): invalid-data markers are decoded (a
+marker becomes None and an invalid instrument, never a number), the EFIS heartbeat 0x700 is on the bus once a second (checked with candump), and the Modules
+page has an EFIS row. Not yet tried on the real system: pulling a module's CAN cable and closing the Pi's display page, to see the heartbeat mask bits clear.
+Next: the backup display (CAN_Display: CAN_Feather and Display_Feather read the markers and the heartbeats 0x700 to 0x703 and show a status row; the first
+heartbeat after a server restart reads state 2, so allow it a second), and last the module marker changes (server and display first so nothing draws 32767).
 Other open items: AOA value on 0x29 is still always 0; command messages over CAN (ISSUES #9 steps 2 to 4).
 
 Watch the bus from the Pi:
