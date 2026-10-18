@@ -268,3 +268,23 @@ Copied `aio_server.py` (1.1.0) and `module_status.py` to `~/EFIS` on the Pi; the
 identical to the git version before the change. `sudo systemctl restart piefis`: service active, no errors in the log, the browser
 reconnected by itself. CPU use of the server: about 6% of one core (was about 50%; ISSUES #2). The server's single websocket belongs to
 the display, so do not connect a test client to the live server; use `tests/live_check.py` (CAN only) instead.
+
+### 2026-10-18: display step A built, deployed and checked on the real display
+
+- **Built** (page 0.4.0): `support/instrumentStatus.mjs` (what the server's facts mean: validity per instrument, heading state, annunciations;
+  21 node tests in `tests/js`, 18 deliberate breaks caught), `failureLook.mjs` (all look settings in one place, optional `?xw= &xo= &fs= &labels=0`
+  overrides), `failureFlag.mjs` (red X with a label), `annunciators.mjs` (stack above the slip/skid ball, warnings first, new entries flash 5 s).
+  `efis-display.js` only sends trusted values to the instruments; a failed attitude loses its sky and ground, failed airspeed, altitude and VSI
+  tapes are blanked (wheels and units hidden), the gyro-only heading is dimmed under its X and blanked after 300 s, the HSI rose is hidden or
+  dimmed with the heading and gets its own X, the slip ball is hidden when the acceleration is untrusted, and the GS / GPS altitude / OAT / TAS /
+  density altitude readouts show `---`. With no message from the server for 1 s (or none yet) everything is flagged and `NO DATA` shows.
+  GPS NO DATA uses the module missing or NMEA lost, not `data_lost.gps_status` (it flaps), and "no fix" is not annunciated.
+- **Tools:** `tests/fake_feed.py` (a fake server that plays each failure, serves the page, uses the real `display_orientation.py`) and
+  `tests/page_shots.py` (headless Chrome screenshots of every scenario at any window size). Both need aiohttp (a venv on the Mac).
+- **Real display** (David, portrait and landscape both available): pitot, static, OAT, AOA, magnetometer, accel/gyro and GPS faults injected
+  into the real modules (`!P !S !O !A !M !G !N`, held 6 to 10 s, one at a time, then back); David: "It all looked good". All modules back to
+  state 1 afterwards. The look values (X width 6 px, opacity 0.8, label 16 px, text 19 px) were accepted as they are.
+- **Still to do in display step A:** the module status page from the Menu; look at the HSI under each failure more closely; then
+  `NULL_INVALID_VALUES = True` in the server (the page already ignores untrusted values). Server step B, the backup display and the modules'
+  markers follow as listed above.
+
