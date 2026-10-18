@@ -44,7 +44,7 @@ import { RouteOverlay } from './routeOverlay.mjs';
 
 // ----------------------------------------------------------------------------
 
-const VERSION = "0.2.1";
+const VERSION = "0.2.2";
 
 // Viewer mode: a page that is not the Pi's own display only watches. It sends
 // nothing to the server, ignores the encoder, and shows the QNH and brightness
@@ -58,6 +58,12 @@ const serverOverride = pageParams.get('server');
 const LOCAL_HOSTNAMES = ['localhost', '127.0.0.1', '[::1]'];
 const VIEW_ONLY = pageParams.get('view') === '1' || serverOverride !== null
                   || !LOCAL_HOSTNAMES.includes(location.hostname);
+
+// A reloaded controller page starts from the QNH and brightness the server last
+// received (controller_state), instead of 29.92 / 100. Until the first message from
+// the server has arrived the page sends nothing, so its defaults cannot overwrite them.
+var gotFirstMessage = false;
+var restoredFromServer = false;
 
 var CAN_QNH_PERIOD = 1000;      // time in milliseconds (1 second)
 // last_qnh stores QNH in inHg × 100 format (e.g., 2992 = 29.92 inHg)
@@ -281,6 +287,7 @@ function RecieveWebSocketMessage(event) {
     // parse the event.data into a data object
     // this will contain the data from the CAN bus
     dataObject = JSON.parse(event.data);
+    gotFirstMessage = true;
 }
 
 
@@ -611,6 +618,21 @@ function DisplayUpdateLoop(delta) {
 
     //magnetometerCalibrate.plotPoint(dataObject.magx,dataObject.magy,dataObject.magz);
     
+    // Controller, first pass after a (re)load: adopt the server's remembered values
+    if (!VIEW_ONLY && !restoredFromServer) {
+        if (!gotFirstMessage) return;       // nothing to send until we know them
+        const cs = dataObject.controller_state;
+        if (cs && typeof cs.qnh === 'number') {
+            qnhDisplay.value = cs.qnh;
+            last_qnh = qnhDisplay.value;
+        }
+        if (cs && typeof cs.brightness === 'number') {
+            brightness.value = cs.brightness;
+            last_brightness = brightness.value;
+        }
+        restoredFromServer = true;
+    }
+
     // Viewer: show the Pi's QNH and brightness; do not run the encoder or send anything
     if (VIEW_ONLY) {
         const cs = dataObject.controller_state;

@@ -360,7 +360,9 @@ export class Brightness {
             // TODO reposition the bug as the value changes
 
         } else if (this.changeableFirstPass) {
-            // TODO: handle any first pasS requirements
+            // Anchor the encoder to the current brightness so the first turn changes it
+            // smoothly, whatever the value is (it may have been restored from the server).
+            this._lowerRangeValue = value * this._brightnessStep - this._brightness;
             this.brightnessSlider.x = this._brightness/2.5;
             this.changeableFirstPass = false;
         }
