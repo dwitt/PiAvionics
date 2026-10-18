@@ -19,6 +19,9 @@ Status: **Open**, **Monitoring** (fix applied, watching), **Fixed**.
 - Chromium (GPU + renderer) also uses 40-60% each; that is the 20 Hz PixiJS display
   and is a separate matter.
 - Load average ~5 on 4 cores; no throttling (`throttled=0x0`), ~63 C.
+- **Fixed and deployed 2026-10-18** with EFIS server 1.1.0: `monitor_timeout()` was replaced by `monitor_status()`, which sleeps 0.1 s
+  between passes. `aio_server.py` now uses about 6% of one core (before: about 50% averaged over 39 hours, 20 h 26 min of CPU
+  in that time). Chromium's load is unchanged. Still to do: move this entry to "Fixed" and re-measure the load average once it settles.
 
 ### 3. `can0` does not auto-recover from bus-off until next boot
 - `/etc/systemd/system/can0.service` now sets `restart-ms 100` (backup saved as

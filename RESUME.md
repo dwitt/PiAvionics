@@ -35,8 +35,7 @@ the 0x7FFF marker; GPS frames stay stopped (EFIS timeout); timeouts 0.5 s / 1.5 
 heartbeat 0x700 with a mask of healthy modules plus display connected.
 Step 1 (protocol 0.2.0: markers, timeouts, 0x700 in `Protocol/can_messages.yaml`, docs regenerated) is DONE and committed.
 The annunciator/red-X mock-up (`EFIS/docs/mockups/annunciator_mockup.html`) is approved. Decision 11: the server only tracks facts and the web page decides presentation. Server step A is BUILT and unit-tested
-(`EFIS/module_status.py`, `aio_server.py` 1.1.0, `EFIS/tests/`) but NOT deployed to the live EFIS (committed in git only; deploy only when David
-says so); fault-injection run against the real modules DONE 2026-10-18 and passed (see the test log in the plan; driver `EFIS/tests/fault_run.py`). Still to do: deploy, then display step A, server step B (markers, 0x700), backup display, and last the module marker changes
+(`EFIS/module_status.py`, `aio_server.py` 1.1.0, `EFIS/tests/`) but NOT deployed to the live EFIS (fault-injection run against the real modules DONE 2026-10-18 and passed (see the test log in the plan; driver `EFIS/tests/fault_run.py`). DEPLOYED to the live Pi EFIS 2026-10-18 (backup of the old files in ~/EFIS/backup_20261018/). Still to do: display step A, server step B (markers, 0x700), backup display, and last the module marker changes
 (server and display first so nothing draws 32767).
 Other open items: AOA value on 0x29 is still always 0; command messages over CAN (ISSUES #9 steps 2 to 4); ISSUES #2
 (`monitor_timeout` busy loop) is fixed by the plan.

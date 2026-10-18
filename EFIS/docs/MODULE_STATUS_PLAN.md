@@ -259,3 +259,11 @@ No fault produced a false `invalid` on an unrelated instrument, and every module
 Finding for the display rules: while the GPS is silent, `data_lost.gps_status` flaps true/false about every 7 s, because the GPS
 module only sends 0x65 between its baud probes. `sensors.nmea` is false the whole time, so the rule "GPS NO DATA when `sensors.nmea`
 is false or the GPS is missing" is stable; the page should not use `data_lost.gps_status` alone for that caution.
+
+### 2026-10-18: server step A deployed to the live EFIS
+
+Copied `aio_server.py` (1.1.0) and `module_status.py` to `~/EFIS` on the Pi; the previous `aio_server.py` and `flightplan.py` are saved in
+`~/EFIS/backup_20261018/` (to roll back: copy them back and `sudo systemctl restart piefis`). The Pi's old `aio_server.py` was
+identical to the git version before the change. `sudo systemctl restart piefis`: service active, no errors in the log, the browser
+reconnected by itself. CPU use of the server: about 6% of one core (was about 50%; ISSUES #2). The server's single websocket belongs to
+the display, so do not connect a test client to the live server; use `tests/live_check.py` (CAN only) instead.
