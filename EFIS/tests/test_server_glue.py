@@ -1,7 +1,7 @@
 """Runs the real aio_server handlers and receive loop with a fake CAN reader.
 Needs the server's own libraries (aiohttp, python-can, ...), so it is skipped where they are not
 installed (for example on the Mac) and is run on the Pi:  python3 -m unittest discover -s tests -v"""
-VERSION = "1.4.0"
+VERSION = "1.5.0"
 
 import asyncio
 import contextlib
@@ -373,6 +373,16 @@ class ServerGlueTests(unittest.TestCase):
             self.send(frame)
             self.assertIsNone(getattr(self.data, axis), axis)
             self.assertFalse(self.data.valid["acceleration"], axis)
+
+    def test_a_marker_invalidates_at_once_not_only_at_the_next_status_check(self):
+        self.healthy()
+        srv.update_status(self.data, self.times, time.monotonic())
+        run_loop(self.data, self.times, [air_frame(airspeed=MARKER16)])       # no status check yet
+        self.assertIsNone(self.data.airspeed)                                  # the value is null at once ...
+        self.assertTrue(self.data.valid["airspeed"])                           # ... but the flag is still the old one
+        srv.apply_markers_to_valid(self.data, self.data.valid)                 # what the sending loop does
+        self.assertFalse(self.data.valid["airspeed"])
+        self.assertTrue(self.data.valid["altitude"])
 
     def test_markers_make_values_invalid_with_the_blanking_gate_off_too(self):
         srv.NULL_INVALID_VALUES = False

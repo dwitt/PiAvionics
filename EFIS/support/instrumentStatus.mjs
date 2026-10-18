@@ -1,6 +1,6 @@
 'use strict';
 
-export const VERSION = '1.3.0';
+export const VERSION = '1.4.0';
 
 /*****************************************************************************
  * The server tracks the facts (module heartbeats, which values can be trusted,
@@ -79,24 +79,27 @@ export class InstrumentStatus {
         const imu = modules.imu || {};
         const gps = modules.gps || {};
 
-        // ---- which instruments can be trusted
-        this.valid.airspeed = v.airspeed === true;
-        this.valid.altitude = v.altitude === true;
-        this.valid.vsi = v.vsi === true;
-        this.valid.oat = v.oat === true;
-        this.valid.attitude = v.attitude === true;
-        this.valid.turnRate = v.turn_rate === true;
-        this.valid.acceleration = v.acceleration === true;
+        // ---- which instruments can be trusted. A value that is null (the server sends null for a value it
+        // cannot trust, and for a field with an invalid-data marker) is never valid, even in the moment before
+        // the validity flag catches up: an instrument must never be handed a null.
+        const has = (...names) => names.every((name) => data[name] !== null);
+        this.valid.airspeed = v.airspeed === true && has('airspeed');
+        this.valid.altitude = v.altitude === true && has('altitude');
+        this.valid.vsi = v.vsi === true && has('vsi');
+        this.valid.oat = v.oat === true && has('oat');
+        this.valid.attitude = v.attitude === true && has('pitch', 'roll');
+        this.valid.turnRate = v.turn_rate === true && has('turn_rate');
+        this.valid.acceleration = v.acceleration === true && has('accx', 'accy', 'accz');
         this.valid.gps = v.gps_position === true;
-        this.valid.staticPressure = v.static_pressure === true;
+        this.valid.staticPressure = v.static_pressure === true && has('static_pressure');
         // values the display works out from several sources
-        this.valid.trueAirspeed = v.airspeed === true && v.static_pressure === true &&
-                                  v.differential_pressure === true && v.oat === true;
-        this.valid.densityAltitude = v.static_pressure === true && v.oat === true;
+        this.valid.trueAirspeed = this.valid.airspeed && this.valid.staticPressure &&
+                                  v.differential_pressure === true && has('differential_pressure') && this.valid.oat;
+        this.valid.densityAltitude = this.valid.staticPressure && this.valid.oat;
 
         // ---- heading: with the magnetometer lost the number is dimmed under the X, then blanked
         const hs = data.heading_status || {};
-        this.valid.heading = v.heading === true;
+        this.valid.heading = v.heading === true && has('yaw');
         const gyroOnly = this.valid.heading && hs.suspect === true;
         const blanked = gyroOnly && hs.gyro_seconds !== null && hs.gyro_seconds !== undefined &&
                         hs.gyro_seconds >= GYRO_HEADING_BLANK_SECONDS;

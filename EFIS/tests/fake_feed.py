@@ -14,7 +14,7 @@ screen orientation facts come from the real display_orientation.py with a preten
     curl 'localhost:8097/control?airspeed=60'        fake airspeed (for the orientation lock)
 
 tests/page_shots.py drives a headless Chrome through the scenarios and saves a screenshot of each.
-VERSION 1.4.0"""
+VERSION 1.6.0"""
 import argparse
 import asyncio
 import copy
@@ -131,7 +131,8 @@ SCENARIOS = {
     "mag": mag, "mag_blank": lambda f: mag(f, 301.0),
     "imu_cal": lambda f: f["modules"]["imu"]["sensors"].update({"calibration": False}),
     "gps_lost": gps_lost, "gps_nofix": gps_nofix,
-    "airmod": airmod, "imumod": imumod, "restart": restart, "several": several, "efis_nodisplay": lambda f: None,
+    "airmod": airmod, "imumod": imumod, "restart": restart, "several": several, "pitot_marker": pitot, "static_marker": static, "race_gyro": lambda f: None, "race_pitot": lambda f: None,
+    "oat_marker": oat, "gyro_marker": att, "efis_nodisplay": lambda f: None,
     "all_air_imu": lambda f: (airmod(f), imumod(f)),
 }
 
@@ -150,8 +151,17 @@ def efis_facts(facts, scenario):
     return {"version": "1.6.1", "state": state, "mask": mask, "uptime": 3725, "display_clients": 1 if display else 0}
 
 
-# Extra values a scenario changes in the data itself (not in the facts)
+# Extra values a scenario changes in the data itself (not in the facts). With the modules sending invalid-data
+# markers (AIR_Module 1.0.35, IMU_AHRS 1.0.16) the real server sends None for a failed value.
 SCENARIO_DATA = {
+    # the moment after a marker nulled a value but before the validity caught up: null values, flags still valid
+    "race_gyro": {"pitch": None, "roll": None, "yaw": None, "turn_rate": None},
+    "race_pitot": {"airspeed": None, "differential_pressure": None},
+    "pitot_marker": {"airspeed": None, "differential_pressure": None},
+    "static_marker": {"altitude": None, "vsi": None, "static_pressure": None},
+    "oat_marker": {"oat": None},
+    "gyro_marker": {"yaw": None, "pitch": None, "roll": None, "turn_rate": None,
+                    "accx": None, "accy": None, "accz": None},
     # a receiver with no fix still reports its status: fix quality 0 and a few satellites
     "gps_nofix": {"gps_fix_quality": 0, "gps_satellites": 3, "gps_hdop": 9.9, "gps_vdop": 9.9},
 }

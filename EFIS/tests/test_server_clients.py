@@ -1,7 +1,7 @@
 """Tests of the multi-client websocket handling in aio_server.py (EFIS/docs/MULTI_CLIENT_PLAN.md).
 Needs the server's libraries, so it is skipped where they are missing. On the Pi:
     ~/EFIS/venv/bin/python -m unittest discover -s tests -v"""
-VERSION = "1.1.1"
+VERSION = "1.2.0"
 
 import asyncio
 import json
@@ -131,6 +131,18 @@ class ClientTests(unittest.IsolatedAsyncioTestCase):
         await controller.send_str('json{"qnh": 3010, "brightness": 40, "active_leg": 1}')
         await asyncio.sleep(0.2)
         self.assertEqual(self.rotations, [])
+        await controller.close()
+
+    async def test_a_page_never_gets_a_null_value_that_is_still_flagged_valid(self):
+        # a marker nulled the airspeed a moment ago but the validity has not been re-evaluated yet
+        self.data.airspeed = None
+        self.data.valid = {"airspeed": True, "altitude": True}
+        self.data._markers = {"airspeed"}
+        controller = await self.connect("controller")
+        message = await self.receive_json(controller)
+        self.assertIsNone(message["airspeed"])
+        self.assertFalse(message["valid"]["airspeed"])
+        self.assertTrue(message["valid"]["altitude"])
         await controller.close()
 
     async def test_two_clients_both_receive_and_neither_is_dropped(self):

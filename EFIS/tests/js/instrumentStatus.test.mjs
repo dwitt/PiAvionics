@@ -413,3 +413,57 @@ test('describeEfis: an older server sends nothing', () => {
         assert.ok(d.sensors.every((s) => s.ok === null));
     }
 });
+
+// ---- a null value is never valid, even while the validity flag still says it is (ISSUES.md #17)
+
+function withValues(facts) {
+    // the numbers the server sends alongside the facts
+    return Object.assign(facts, {
+        airspeed: 112, altitude: 2400, vsi: 0, oat: 22.8, static_pressure: 9420, differential_pressure: 620,
+        pitch: 2.0, roll: -3.0, yaw: 90.0, turn_rate: 0.0, accx: 0.1, accy: 0.0, accz: 9.8,
+    });
+}
+
+test('with real values for everything, nothing changes', () => {
+    const s = evaluate(withValues(goodFacts()));
+    assert.ok(Object.values(s.valid).every((x) => x === true));
+});
+
+test('a null value is invalid at once although its validity flag is still true', () => {
+    const cases = [
+        ['airspeed', 'airspeed', ['airspeed', 'trueAirspeed']],
+        ['altitude', 'altitude', ['altitude']],
+        ['vsi', 'vsi', ['vsi']],
+        ['oat', 'oat', ['oat', 'trueAirspeed', 'densityAltitude']],
+        ['pitch', 'pitch', ['attitude']],
+        ['roll', 'roll', ['attitude']],
+        ['yaw', 'yaw', ['heading']],
+        ['turn_rate', 'turn_rate', ['turnRate']],
+        ['accx', 'accx', ['acceleration']],
+        ['accy', 'accy', ['acceleration']],
+        ['accz', 'accz', ['acceleration']],
+        ['static_pressure', 'static_pressure', ['staticPressure', 'trueAirspeed', 'densityAltitude']],
+        ['differential_pressure', 'differential_pressure', ['trueAirspeed']],
+    ];
+    for (const [field, , invalidated] of cases) {
+        const facts = withValues(goodFacts());     // every validity flag is true
+        facts[field] = null;
+        const s = evaluate(facts);
+        for (const name of invalidated) assert.equal(s.valid[name], false, field + ' -> ' + name);
+        // and nothing else is affected
+        const others = Object.keys(s.valid).filter((name) => !invalidated.includes(name));
+        for (const name of others) assert.equal(s.valid[name], true, field + ' must not affect ' + name);
+    }
+});
+
+test('a null heading also hides the heading display', () => {
+    const facts = withValues(goodFacts());
+    facts.yaw = null;
+    const s = evaluate(facts);
+    assert.deepEqual(s.heading, { show: false, dim: false, flag: true });
+});
+
+test('a value that is missing altogether (an older server) is not treated as null', () => {
+    const s = evaluate(goodFacts());               // no values at all in the data
+    assert.ok(Object.values(s.valid).every((x) => x === true));
+});

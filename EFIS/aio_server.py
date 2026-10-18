@@ -1,7 +1,7 @@
 """ Asynchronous I/O based webserver to handle page and websocket"""
 # pyright: reportMissingImports=false
 
-VERSION = "1.6.1"
+VERSION = "1.6.2"
 
 import asyncio
 import ipaddress
@@ -1180,6 +1180,13 @@ def to_magnetic(true_degrees, declination):
     return round((true_degrees - declination) % 360, 1)
 
 
+def apply_markers_to_valid(data, valid):
+    """A field that carries the invalid-data marker makes its instrument invalid, whatever the heartbeat's
+    sensor bits say."""
+    for field in data._markers:
+        valid[MARKER_INSTRUMENT[field]] = False
+
+
 def update_status(data, last_received_times, now):
     """Judge the module heartbeats and data freshness and store the result in `data`.
 
@@ -1191,9 +1198,7 @@ def update_status(data, last_received_times, now):
     snapshot = data._status.evaluate(now, last_received_times)
     valid = snapshot["valid"]
 
-    # A field that carries the invalid-data marker is not valid, whatever the heartbeat's sensor bits say
-    for field in data._markers:
-        valid[MARKER_INSTRUMENT[field]] = False
+    apply_markers_to_valid(data, valid)
     if not valid["heading"]:
         snapshot["heading"] = dict(snapshot["heading"], valid=False, suspect=False, gyro_seconds=None)
 
@@ -1345,6 +1350,11 @@ async def send_json(web_socket_response, data):
                 print("Send Json")
                 print("Json Send qnh = ",data.can_qnh)
                 print("Json Alt = ", data.altitude)
+            # A marker nulls its value the moment the frame arrives, but the validity is only re-evaluated every
+            # STATUS_UPDATE_PERIOD: apply the markers again here so a page never gets a null value that is
+            # still flagged valid (ISSUES.md #17).
+            if data.valid is not None:
+                apply_markers_to_valid(data, data.valid)
             d = {k: v for k, v in data.__dict__.items() if not k.startswith('_')}
             text = json.dumps(d)
             # Every client gets the same message. Each client's send is its own task with its own

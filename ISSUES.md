@@ -127,6 +127,20 @@ Status: **Open**, **Monitoring** (fix applied, watching), **Fixed**.
   decide whether it contracts again by itself after some seconds; keep the blank/`--` behaviour when the GPS is lost; the failure flags
   and the Display 1 portrait fit (the box was made taller for VAR) should be checked again after the change.
 
+### 17. A thin red X drawn across the display when a module sent a marker (fixed 2026-10-18)
+- Found 2026-10-18 by David while the modules' invalid-data markers were first tested (the pitot fault on the AIR module): "an extra X is drawn
+  somewhere else when the data drops".
+- Cause: a marker turns its value into `null` the moment the frame arrives, but the server re-evaluates `valid` only every 0.1 s, so for up to 100 ms
+  the page got a null value that was still flagged valid and handed it to the instrument. The old classes have their own built-in red X for
+  bad data (`Ribbon.badDataGraphic`, `AttitudeIndicator.badDataGraphics`); it was drawn across the middle of the display next to the new failure
+  flags and the tapes scrolled to 0. (The older failures never showed it because their values stayed numbers until the validity changed.)
+  Reproduced in a browser with the fake feed (`race_gyro`, `race_pitot` scenarios) and confirmed gone after the fix.
+- Fixed (server 1.6.2, page 0.6.1): the sending loop applies the markers to `valid` again just before every send (`apply_markers_to_valid`), and
+  `InstrumentStatus` treats an explicit `null` value as invalid at once (airspeed, altitude, vsi, oat, pitch or roll, yaw, turn rate, any
+  acceleration, both pressures; a missing key from an older server is not treated as null). Tests: 2 server tests and 4 page tests; 2 and 9 deliberate breaks caught.
+- Note: the old built-in X's in `Ribbon` and `AttitudeIndicator` are still there and would show if a page ever passed `undefined` (ribbons) or `null`
+  (attitude) to them; the page now never does.
+
 ## Monitoring
 
 ### 6. MCP2515 not initialising on the Pi (`Cannot initialize MCP2515. Wrong wiring?`)
