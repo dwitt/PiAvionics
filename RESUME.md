@@ -41,6 +41,10 @@ modules on 2026-10-18 and is DEPLOYED to the live Pi EFIS (old files saved in `~
 `sudo systemctl restart piefis`). It adds `modules`, `valid`, `data_lost`, `heading_status`, `system_state` to the JSON; the current
 display ignores them. Do not connect a test client to the live server's websocket (it holds one, for the display); use
 `EFIS/tests/live_check.py` (CAN only). Use `~/EFIS/venv/bin/python` on the Pi, not the system python3.
+Before that, David asked for a multi-client / viewer capability so the EFIS can be watched from a laptop without disturbing the Pi's
+screen: planned in `EFIS/docs/MULTI_CLIENT_PLAN.md` (5 decisions pending; suggested to do its steps 1 and 2 before the display work).
+Do NOT open the page from another computer until it is built: the second page would knock the Pi's display off and overwrite the
+QNH on the CAN bus and the screen brightness.
 Next: display step A (failure flags, annunciator strip built by the page from the facts using the rules table in the plan, module
 status page in the Menu, null guards, websocket-stall handling), then server step B (markers decoded, 0x700 heartbeat), the backup
 display, and last the module marker changes (server and display first so nothing draws 32767).
