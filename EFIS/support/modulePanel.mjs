@@ -3,7 +3,7 @@
 import { Container, Graphics, TextStyle, Text } from './pixi.mjs';
 import { describeModule, WARNING, CAUTION } from './instrumentStatus.mjs';
 
-export const VERSION = '1.0.0';
+export const VERSION = '1.0.1';
 
 /*****************************************************************************
  * Module status page: one block per sensor module (IMU, AIR, GPS) showing its
@@ -138,7 +138,7 @@ export class ModulePanel {
             const text = this.createText(sensor.label, sensorX, 76, 16, COLOURS.unknown, true, 0);
             block.addChild(text);
             parts.sensors.push({ key: sensor.key, text: text });
-            sensorX += text.width + 30;      // room for the ' X' added when a sensor is lost
+            sensorX += text.width + 18;
         }
         parts.restarted = this.createText('', width - 12, 76, 16, COLOURS[CAUTION], false, 1);
         block.addChild(parts.restarted);
@@ -178,7 +178,7 @@ export class ModulePanel {
             d.sensors.forEach((sensor, i) => {
                 const colour = sensor.ok === null ? COLOURS.unknown
                              : sensor.ok ? COLOURS.ok : COLOURS[WARNING];
-                this.setText(parts.sensors[i].text, sensor.label + (sensor.ok === false ? ' X' : ''), colour);
+                this.setText(parts.sensors[i].text, sensor.label, colour);
             });
         }
     }
