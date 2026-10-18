@@ -1,9 +1,11 @@
 """Runs the real aio_server handlers and receive loop with a fake CAN reader.
 Needs the server's own libraries (aiohttp, python-can, ...), so it is skipped where they are not
 installed (for example on the Mac) and is run on the Pi:  python3 -m unittest discover -s tests -v"""
-VERSION = "1.3.0"
+VERSION = "1.4.0"
 
 import asyncio
+import contextlib
+import io
 import json
 import os
 import struct
@@ -84,6 +86,18 @@ def run_loop(data, times, msgs):
         asyncio.run(srv.process_can_messages(FakeReader(msgs), data, times))
     except asyncio.CancelledError:
         pass
+
+
+class FakeBus:
+    """Records what is sent; `error` makes every send fail like a bus nothing acknowledges."""
+    def __init__(self, error=None):
+        self.sent = []
+        self.error = error
+
+    def send(self, msg, timeout=None):
+        if self.error is not None:
+            raise self.error
+        self.sent.append((msg.arbitration_id, bytes(msg.data), timeout))
 
 
 @unittest.skipIf(srv is None, "aio_server cannot be imported here")
@@ -366,6 +380,83 @@ class ServerGlueTests(unittest.TestCase):
         self.send(air_frame(airspeed=MARKER16))
         self.assertIsNone(self.data.airspeed)                     # a marker is never kept as a number
         self.assertFalse(self.data.valid["airspeed"])
+
+    # --- the EFIS heartbeat task (CAN 0x700) ---
+
+    def run_heartbeat(self, bus, seconds=0.35, period=0.05, **kwargs):
+        saved = {name: getattr(srv, name) for name in ["EFIS_HEARTBEAT_PERIOD"] + list(kwargs)}
+        srv.EFIS_HEARTBEAT_PERIOD = period
+        for name, value in kwargs.items():
+            setattr(srv, name, value)
+        heartbeat = srv.efis_heartbeat.EfisHeartbeat("1.6.1", time.monotonic())
+        output = io.StringIO()
+
+        async def run_briefly():
+            task = asyncio.create_task(srv.send_efis_heartbeat(self.data, bus, heartbeat))
+            await asyncio.sleep(seconds)
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+        try:
+            with contextlib.redirect_stdout(output):
+                asyncio.run(run_briefly())
+        finally:
+            for name, value in saved.items():
+                setattr(srv, name, value)
+        return output.getvalue()
+
+    def test_efis_heartbeat_is_sent_repeatedly_with_the_right_content(self):
+        self.healthy()
+        srv.update_status(self.data, self.times, time.monotonic())
+        self.data.clients = {"controller": 1, "viewers": 2}
+        bus = FakeBus()
+        self.run_heartbeat(bus)
+        self.assertGreaterEqual(len(bus.sent), 4)
+        can_id, payload, timeout = bus.sent[0]
+        self.assertEqual(can_id, 0x700)
+        self.assertEqual(len(payload), 8)
+        self.assertEqual(payload[:6], bytes([0, 1, 6, 1, 1, 0x0F]))          # module 0, v1.6.1, state OK, all four bits
+        self.assertEqual(timeout, srv.EFIS_HEARTBEAT_SEND_TIMEOUT)             # a send can never wait for long
+        self.assertEqual(self.data.efis["state"], 1)
+        self.assertEqual(self.data.efis["display_clients"], 1)                 # viewers are not counted
+        json.dumps({k: v for k, v in self.data.__dict__.items() if not k.startswith("_")})
+
+    def test_efis_heartbeat_shows_a_missing_module_and_no_display(self):
+        self.healthy(gps_mask=0x03)
+        srv.update_status(self.data, self.times, time.monotonic())
+        self.data._modules_ok_mask = 0x05                                      # IMU not healthy
+        self.data.clients = {"controller": 0, "viewers": 1}
+        bus = FakeBus()
+        self.run_heartbeat(bus, seconds=0.12)
+        payload = bus.sent[0][1]
+        self.assertEqual((payload[4], payload[5]), (srv.efis_heartbeat.STATE_DEGRADED, 0x05))   # no display bit
+        self.assertEqual(self.data.efis["display_clients"], 0)
+
+    def test_efis_heartbeat_with_no_bus_still_publishes_the_facts(self):
+        self.data.clients = None
+        self.run_heartbeat(None, seconds=0.12)
+        self.assertIsNotNone(self.data.efis)
+        self.assertEqual(self.data.efis["display_clients"], 0)
+
+    def test_failed_heartbeat_sends_do_not_stop_the_task_or_flood_the_log(self):
+        import can
+        bus = FakeBus(error=can.CanError("No buffer space available"))
+        output = self.run_heartbeat(bus, seconds=0.4)                          # about 8 failed sends
+        lines = [line for line in output.splitlines() if line.strip()]
+        self.assertEqual(len(lines), 1)                                        # reported once, not 8 times
+        self.assertIn("send failure", lines[0])
+        self.assertIn("No buffer space", lines[0])
+        self.assertIsNotNone(self.data.efis)                                   # and the task kept running
+
+    def test_failed_sends_are_reported_again_after_the_log_period_with_a_count(self):
+        import can
+        bus = FakeBus(error=can.CanError("no ack"))
+        output = self.run_heartbeat(bus, seconds=0.5, EFIS_HEARTBEAT_LOG_PERIOD=0.2)
+        lines = [line for line in output.splitlines() if line.strip()]
+        self.assertGreaterEqual(len(lines), 2)
+        self.assertLess(len(lines), 8)
 
     def test_monitor_status_task_updates_and_sleeps(self):
         self.healthy()

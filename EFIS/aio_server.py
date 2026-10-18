@@ -1,7 +1,7 @@
 """ Asynchronous I/O based webserver to handle page and websocket"""
 # pyright: reportMissingImports=false
 
-VERSION = "1.6.0"
+VERSION = "1.6.1"
 
 import asyncio
 import ipaddress
@@ -19,6 +19,7 @@ from enum import Enum
 from flightplan import FlightPlan, compute_navigation
 import module_status
 import display_orientation
+import efis_heartbeat
 
 #import board #pylint: disable=import-error
 from adafruit_extended_bus import ExtendedI2C as I2C
@@ -100,6 +101,9 @@ SEESAW_EXPECTED_PRODUCT_ID = 4991  # Expected product ID for seesaw encoder
 # Set True once the display handles null/invalid values (display step A of MODULE_STATUS_PLAN.md).
 NULL_INVALID_VALUES = True    # a value that cannot be trusted is sent as null (the page ignores it anyway)
 STATUS_UPDATE_PERIOD = 0.1  # seconds between status evaluations
+EFIS_HEARTBEAT_PERIOD = 1.0         # seconds between EFIS heartbeats (CAN 0x700)
+EFIS_HEARTBEAT_SEND_TIMEOUT = 0.05  # a send that cannot complete gives up after this long (seconds)
+EFIS_HEARTBEAT_LOG_PERIOD = 60.0    # failed sends are reported at most this often, with a count
 DECLINATION_UNKNOWN = 0x7F  # GPS status byte 3 until the GPS module has calculated the declination
 
 # Invalid-data markers (Protocol/can_messages.yaml, protocol 0.2.0): a module sends this value in a field
@@ -209,6 +213,7 @@ class AvionicsData:
         self.system_state = None    # 1 all modules OK, 2 otherwise (for the EFIS heartbeat)
         self.controller_state = None  # last qnh / brightness the controlling page sent, for viewer pages
         self.clients = None         # {"controller": n, "viewers": n} connected display pages
+        self.efis = None            # this server's own heartbeat (version, state, mask, uptime, display_clients)
         self.display = None         # screen orientation, saved setting and any trial (display_orientation.py)
         # The web page decides what to show (wording, colours, flashing) from these facts.
         # Navigation (computed from flight plan + GPS position)
@@ -1266,6 +1271,37 @@ async def monitor_status(data, last_received_times):
         update_status(data, last_received_times, time.monotonic())
         await asyncio.sleep(STATUS_UPDATE_PERIOD)
 
+async def send_efis_heartbeat(data, bus, heartbeat):
+    """Send the EFIS heartbeat (CAN 0x700) every EFIS_HEARTBEAT_PERIOD seconds and publish the same facts in
+    data.efis for the pages. The task stops when the server stops, which is what lets the backup display see
+    that the EFIS has gone. A send that fails is counted and reported at most once every
+    EFIS_HEARTBEAT_LOG_PERIOD seconds (nothing acknowledging the frame was once logged 18,000 times, ISSUES.md #14).
+
+    Args:
+        data: AvionicsData instance (_modules_ok_mask and clients are read, efis is written)
+        bus: the python-can bus, or None (the facts are still published)
+        heartbeat: efis_heartbeat.EfisHeartbeat
+    """
+    failures = 0
+    last_report = None
+    while True:
+        now = time.monotonic()
+        controllers = (data.clients or {}).get("controller", 0)
+        can_id, payload, facts = heartbeat.frame(data._modules_ok_mask, controllers, now)
+        data.efis = facts
+        if bus is not None:
+            try:
+                bus.send(can.Message(arbitration_id=can_id, data=payload, is_extended_id=False),
+                         timeout=EFIS_HEARTBEAT_SEND_TIMEOUT)
+            except (can.CanError, OSError) as error:
+                failures += 1
+                if last_report is None or now - last_report >= EFIS_HEARTBEAT_LOG_PERIOD:
+                    print(f"EFIS heartbeat: {failures} send failure(s) since the last report, last: {error}", flush=True)
+                    failures = 0
+                    last_report = now
+        await asyncio.sleep(EFIS_HEARTBEAT_PERIOD)
+
+
 async def monitor_orientation(data, orientation):
     """Apply the saved screen orientation at start, then every ORIENTATION_UPDATE_PERIOD seconds end a trial
     that ran out of time and publish the orientation facts for the pages (display_orientation.py)."""
@@ -1629,6 +1665,7 @@ async def main():
         send_json(web_socket_response, avionics_data),
         monitor_flight_plan(avionics_data),
         monitor_orientation(avionics_data, orientation),
+        send_efis_heartbeat(avionics_data, bus, efis_heartbeat.EfisHeartbeat(VERSION, time.monotonic())),
     #    read_input(encoder, button, avionics_data)
     ]
     
