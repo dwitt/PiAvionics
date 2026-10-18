@@ -19,7 +19,7 @@ Sensor modules broadcast their data on fixed IDs. The Pi EFIS listens, sends QNH
 
 - Lower IDs win bus arbitration. All PiAvionics IDs (0x19 to 0x83) are lower than every MGL device ID (0x200 and up).
 - Modules send each message on a timer (period_ms). The firmware adds up to 50 ms of random jitter; it has little effect in practice and is not needed for collision handling, because CAN arbitration never drops a frame.
-- Invalid-data markers (protocol 0.2.0). A field that cannot be trusted is sent as the largest positive value of its type: 0x7FFF for a 16-bit field, 0x7FFFFFFF for a 32-bit field. No real value can reach it (see the Invalid marker column). A receiver must show such a field as failed and never as a number. The EFIS server understands the markers (1.6.0 onward); the module firmware does not send them yet. Until it does, a module in trouble sends the interim values listed in the notes of each message, and its heartbeat (0x701 to 0x703) says which sensor is lost.
+- Invalid-data markers (protocol 0.2.0). A field that cannot be trusted is sent as the largest positive value of its type: 0x7FFF for a 16-bit field, 0x7FFFFFFF for a 32-bit field. No real value can reach it (see the Invalid marker column). A receiver must show such a field as failed and never as a number. The EFIS server understands the markers (1.6.0 onward); the module firmware sends them from AIR_Module 1.0.35 and IMU_AHRS 1.0.16 (2026-10-18); the GPS module sends none (its frames stop instead). A module's heartbeat (0x701 to 0x703) also says which sensor is lost.
 - Timeouts (decided 2026-10-17, not yet implemented in the EFIS). The EFIS treats data as lost after: 0.5 s without 0x28, 0x48 or 0x49; 1.5 s without 0x2A or 0x2B; 3.5 s without 0x63, 0x64 or 0x65; 3 s without a module heartbeat (the module is shown as missing). Today the EFIS times out only 0x48 and 0x49, after 0.2 s.
 - Three things make a value invalid on the EFIS: the marker, a heartbeat that says the sensor is lost, or the message not arriving within its timeout. All three look the same on the display.
 
@@ -153,7 +153,7 @@ Sensor modules broadcast their data on fixed IDs. The Pi EFIS listens, sends QNH
 
 **Notes**
 
-- Invalid markers (planned): airspeed when the pitot sensor is lost; altitude and vertical speed when the static pressure sensor is lost. Interim behaviour until the firmware sends them (AIR_Module 1.0.34): pitot lost sends airspeed 0; static lost holds the last altitude (0 if the sensor was never found) and sends vertical speed 0. The AIR heartbeat (0x702) mask bits 0 and 2 say which sensor is lost.
+- Invalid markers (AIR_Module 1.0.35 onward, 2026-10-18): airspeed is 0x7FFF when the pitot sensor is lost; altitude (0x7FFFFFFF) and vertical speed (0x7FFF) when the static pressure sensor is lost. Before 1.0.35 a pitot loss sent airspeed 0, and a static loss held the last altitude (0 if the sensor was never found) and sent vertical speed 0. The AIR heartbeat (0x702) mask bits 0 and 2 say which sensor is lost.
 - Altitude is a full 4-byte integer with no padding byte. The older Can Docs.md showed a 3-byte altitude and is wrong.
 - Vertical speed is computed by AIR_Module v1.0.21 and later from the low-passed static pressure (standard atmosphere, not QNH): the altitude change over the last 3 s, smoothed. It lags a real change in climb rate by about 3 s.
 
@@ -222,7 +222,7 @@ Sensor modules broadcast their data on fixed IDs. The Pi EFIS listens, sends QNH
 
 **Notes**
 
-- Sent while the RTD (MAX31865) gives valid readings. When it is lost (open or shorted probe, MAX31865 board missing, or a temperature outside -60 to 80 C) the AIR module currently stops sending this message (AIR_Module 1.0.34). Decided 2026-10-17: it will keep sending it with the invalid marker instead, so the EFIS can tell a failed sensor from a silent module. Heartbeat 0x702 bit 3 says the same.
+- When the RTD (MAX31865) is lost (open or shorted probe, MAX31865 board missing, or a temperature outside -60 to 80 C) the AIR module keeps sending this message with the invalid marker 0x7FFF in the temperature (AIR_Module 1.0.35 onward, decided 2026-10-17), so the EFIS can tell a failed sensor from a silent module. Before 1.0.35 it stopped sending. Heartbeat 0x702 bit 3 says the same.
 
 **Code**
 
@@ -258,7 +258,7 @@ Sensor modules broadcast their data on fixed IDs. The Pi EFIS listens, sends QNH
 **Notes**
 
 - Matches the legacy CircuitPython format (struct "<hbhBBB"). The differential pressure (bytes 3-4) was missing from the old Can Docs.md.
-- Invalid markers (planned): static pressure when the static sensor is lost, differential pressure when the pitot is lost. Interim (AIR_Module 1.0.34): differential pressure is 0 when the pitot is lost; static pressure holds its last value. The 1.5 s timeout was not in the 2026-10-17 decision list; it was set equal to the OAT message because the EFIS uses both for density altitude.
+- Invalid markers (AIR_Module 1.0.35 onward, 2026-10-18): static pressure is 0x7FFF when the static sensor is lost, differential pressure when the pitot is lost. Before 1.0.35 the differential pressure was 0 when the pitot was lost and the static pressure held its last value. The 1.5 s timeout was not in the 2026-10-17 decision list; it was set equal to the OAT message because the EFIS uses both for density altitude.
 
 **Code**
 
@@ -354,7 +354,7 @@ Sensor modules broadcast their data on fixed IDs. The Pi EFIS listens, sends QNH
 
 **Notes**
 
-- Invalid markers (planned): all four fields when the accelerometer/gyro (ISM330DHCX) is lost. Interim (IMU_AHRS 1.0.15): the last attitude is held and keeps being sent. When only the magnetometer is lost the IMU keeps running as a 6-axis AHRS: pitch and roll stay correct and the heading continues from the gyro alone, drifting about 0.1 deg/s. That heading is NOT marked invalid; the EFIS learns of it from heartbeat 0x701 (sensors bit 1 clear) and shows it under a red X for 5 minutes (decision 1 in EFIS/docs/MODULE_STATUS_PLAN.md).
+- Invalid markers (IMU_AHRS 1.0.16 onward, 2026-10-18): all four fields (heading, pitch, roll, turn rate) are 0x7FFF when the accelerometer/gyro (ISM330DHCX) is lost. Before 1.0.16 the last attitude was held and kept being sent. When only the magnetometer is lost the IMU keeps running as a 6-axis AHRS: pitch and roll stay correct and the heading continues from the gyro alone, drifting about 0.1 deg/s. That heading is NOT marked invalid; the EFIS learns of it from heartbeat 0x701 (sensors bit 1 clear) and shows it under a red X for 5 minutes (decision 1 in EFIS/docs/MODULE_STATUS_PLAN.md).
 - The IMU converts its native frame (NWU) to aircraft NED before sending. The EFIS only divides by 10.
 - Today the EFIS treats this message as stale after 0.2 s and blanks the values; the new timeout is 0.5 s.
 
@@ -391,7 +391,7 @@ Sensor modules broadcast their data on fixed IDs. The Pi EFIS listens, sends QNH
 
 **Notes**
 
-- Invalid markers (planned): the three accelerations when the accelerometer is lost. Interim (IMU_AHRS 1.0.15): the last values are held.
+- Invalid markers (IMU_AHRS 1.0.16 onward, 2026-10-18): the three accelerations are 0x7FFF when the accelerometer is lost. Before 1.0.16 the last values were held.
 - Calibrated values in the sensor's native frame, not converted to aircraft axes.
 - Today the EFIS treats this message as stale after 0.2 s; the new timeout is 0.5 s.
 

@@ -30,7 +30,7 @@
 /*****************************************************************************
  * Firmware version - increment the patch number on every change
  *****************************************************************************/
-#define VERSION "1.0.34"
+#define VERSION "1.0.35"
 
 // Set to 0 to run without the AOA sensor (Wire1, GPIO8/9). With 0, Wire1 is not
 // touched at all and a missing AOA sensor does not stop startup.
@@ -213,6 +213,11 @@ LowPassFilter oatLowPassFilter(0.3);
 #define CAN_TEMP_MSG_ID   0x2A
 #define CAN_RAW_MSG_ID    0x2B
 #define CAN_QNH_MSG_ID    0x2E
+
+// Invalid-data markers (Protocol/can_messages.yaml): a field that cannot be trusted is sent as the largest
+// positive value of its type, so a receiver shows it as failed and never as a number.
+#define CAN_MARKER_INT16  0x7FFF
+#define CAN_MARKER_INT32  0x7FFFFFFF
 
 #define CAN_AIR_PERIOD    100 
 #define CAN_AOA_PERIOD    200
@@ -920,9 +925,13 @@ void loop() {
   // --------------------------------------------------------------------------
 
   if (millis() - canAirTimeStamp > CAN_AIR_PERIOD + random(50)) {
-    canData.packedData.integer1 = airSpeed;
-    canData.packedData.longInteger = altitude;
-    canData.packedData.integer2 = verticalSpeed;
+    // Pitot lost: no airspeed. Static lost: no altitude and no vertical speed. (A lost sensor used to send
+    // airspeed 0 or hold the last altitude.)
+    bool pitotOk = pitotChan.health.valid();
+    bool staticOk = staticChan.health.valid();
+    canData.packedData.integer1 = pitotOk ? airSpeed : (int16_t)CAN_MARKER_INT16;
+    canData.packedData.longInteger = staticOk ? altitude : (int32_t)CAN_MARKER_INT32;
+    canData.packedData.integer2 = staticOk ? verticalSpeed : (int16_t)CAN_MARKER_INT16;
 
     can.beginPacket(CAN_AIR_MSG_ID);
     can.write(canData.bytes, 8);
@@ -951,11 +960,13 @@ void loop() {
     // Pack to match legacy format: <hbhBBB>
     // int16 static_pressure (hPa×10), int8 temperature (°C),
     // int16 differential_pressure (Pa), 3 bytes padding
-    int16_t sp = (int16_t)(staticPressureFiltered * 10);  // hPa → hPa×10
+    int16_t sp = staticChan.health.valid() ? (int16_t)(staticPressureFiltered * 10)  // hPa → hPa×10
+                                           : (int16_t)CAN_MARKER_INT16;
     canData.bytes[0] = sp & 0xFF;
     canData.bytes[1] = (sp >> 8) & 0xFF;
     canData.bytes[2] = (uint8_t)((int8_t)sensorStaticTemp);  // whole °C
-    int16_t diffP = (int16_t)(pitotPressureFiltered * 100);   // hPa → Pa
+    int16_t diffP = pitotChan.health.valid() ? (int16_t)(pitotPressureFiltered * 100)   // hPa → Pa
+                                             : (int16_t)CAN_MARKER_INT16;
     canData.bytes[3] = diffP & 0xFF;
     canData.bytes[4] = (diffP >> 8) & 0xFF;
     canData.bytes[5] = 0;
@@ -972,8 +983,10 @@ void loop() {
   // Send the OAT (Outside Air Temperature) data from the MAX31865 RTD
   // --------------------------------------------------------------------------
 
-  if (oatHealth.valid() && millis() - canTempTimeStamp > CAN_TEMP_PERIOD + random(50)) {
-    canData.integers[0] = oatTemp;    // °C × 10 (int16, bytes 0-1)
+  // The frame keeps coming when the RTD is lost, with the marker, so "OAT sensor failed" can be told apart
+  // from "AIR module silent". (It used to stop.)
+  if (millis() - canTempTimeStamp > CAN_TEMP_PERIOD + random(50)) {
+    canData.integers[0] = oatHealth.valid() ? oatTemp : (int16_t)CAN_MARKER_INT16;    // °C × 10 (int16, bytes 0-1)
     canData.bytes[2] = 0;             // Humidity % (not available)
     canData.bytes[3] = 0;
     canData.bytes[4] = 0;

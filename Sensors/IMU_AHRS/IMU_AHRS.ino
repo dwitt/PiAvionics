@@ -53,7 +53,7 @@
 /*****************************************************************************
  * Firmware version - increment the patch number on every change
  *****************************************************************************/
-#define VERSION "1.0.15"
+#define VERSION "1.0.16"
 
 ModuleInfo moduleInfo("IMU_AHRS", VERSION, __DATE__, __TIME__);
 
@@ -205,6 +205,10 @@ StatusLED led;
 
 // CAN Message Constants -----------------------------------------------------
 #define CAN_EULER_MSG_ID	0x48
+
+// Invalid-data marker (Protocol/can_messages.yaml): a field that cannot be trusted is sent as 0x7FFF, so a
+// receiver shows it as failed and never as a number.
+#define CAN_MARKER_INT16	0x7FFF
 #define CAN_ACC_MSG_ID		0x49
 #define CAN_CALIB_MSG_ID	0x23
 #define CAN_MAGX_MSG_ID		0x81
@@ -646,10 +650,14 @@ void loop() {
 	// --- Send yaw, pitch and roll
 	// ------------------------------------------------------------------------
 	if (millis() > (canEulerTimeStamp + CAN_EULER_PERIOD) + random(50)) {
-		canData.integers[0] = yaw;
-		canData.integers[1] = pitch;
-		canData.integers[2] = roll;
-		canData.integers[3] = turnRateScaled;
+		// Accelerometer/gyro lost: no attitude, heading or turn rate (they used to be held at the last
+		// values). A lost magnetometer is different: the gyro-only heading is still sent as a number
+		// and the heartbeat says the magnetometer is lost.
+		bool motionOk = ismHealth.valid();
+		canData.integers[0] = motionOk ? yaw : (int16_t)CAN_MARKER_INT16;
+		canData.integers[1] = motionOk ? pitch : (int16_t)CAN_MARKER_INT16;
+		canData.integers[2] = motionOk ? roll : (int16_t)CAN_MARKER_INT16;
+		canData.integers[3] = motionOk ? turnRateScaled : (int16_t)CAN_MARKER_INT16;
 		can.beginPacket(CAN_EULER_MSG_ID);
 		can.write(canData.bytes, 8);
 		can.endPacket();
@@ -660,9 +668,10 @@ void loop() {
 	// -- Send accelerations. Fill out the buffer with 0
 	// ------------------------------------------------------------------------
 	if (millis() > (canAccTimeStamp + CAN_ACC_PERIOD) + random(50)) {
-		canData.integers[0] = accelX; 
-		canData.integers[1] = accelY;
-		canData.integers[2] = accelZ;
+		bool accelOk = ismHealth.valid();	// accelerometer lost: no accelerations (they used to be held)
+		canData.integers[0] = accelOk ? accelX : (int16_t)CAN_MARKER_INT16;
+		canData.integers[1] = accelOk ? accelY : (int16_t)CAN_MARKER_INT16;
+		canData.integers[2] = accelOk ? accelZ : (int16_t)CAN_MARKER_INT16;
 		canData.integers[3] = 0;
 		can.beginPacket(CAN_ACC_MSG_ID);
 		can.write(canData.bytes, 8);
