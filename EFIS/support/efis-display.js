@@ -40,7 +40,8 @@ import { MenuOverlay } from './menuOverlay.mjs';
 import { HSI } from './hsi.mjs';
 import { RouteOverlay } from './routeOverlay.mjs';
 import { OrientationPanel } from './orientationPanel.mjs';
-import { InstrumentStatus } from './instrumentStatus.mjs';
+import { InstrumentStatus, describeModule } from './instrumentStatus.mjs';
+import { ModulePanel } from './modulePanel.mjs';
 import { FailureFlag } from './failureFlag.mjs';
 import { Annunciators } from './annunciators.mjs';
 import { FAILURE_LOOK } from './failureLook.mjs';
@@ -49,7 +50,7 @@ import { FAILURE_LOOK } from './failureLook.mjs';
 
 // ----------------------------------------------------------------------------
 
-const VERSION = "0.4.0";
+const VERSION = "0.4.1";
 
 // Viewer mode: a page that is not the Pi's own display only watches. It sends
 // nothing to the server, ignores the encoder, and shows the QNH and brightness
@@ -297,6 +298,7 @@ var attitudeIndicator,
     softButtons,
     menuOverlay,
     orientationPanel,
+    modulePanel,
     annunciators,
     asiFlag,
     altFlag,
@@ -490,7 +492,20 @@ function setup() {
 
     // Screen orientation (portrait / landscape): a row in the Menu opens the panels. Only the
     // controller (the Pi's own page) can change it, so viewers do not get the row.
-    const actionDefs = [];
+    // The module status page is read only, so viewers get it too.
+    modulePanel = new ModulePanel(app);
+    const actionDefs = [{
+        label: "Modules",
+        getValue: () => {
+            let notOk = 0;
+            for (const name of ['imu', 'air', 'gps']) {
+                const modules = dataObject.modules;
+                if (describeModule(name, modules ? modules[name] : undefined).level !== 'ok') notOk++;
+            }
+            return notOk === 0 ? 'all OK' : notOk + ' not OK';
+        },
+        action: () => modulePanel.show(),
+    }];
     if (!VIEW_ONLY) {
         orientationPanel = new OrientationPanel(app, sendCommand);
         actionDefs.push({
@@ -736,6 +751,9 @@ function DisplayUpdateLoop(delta) {
     
     // The server's orientation facts drive the choose / confirm / Keep panels (controller only)
     if (orientationPanel) orientationPanel.update(dataObject.display);
+
+    // The module status page (when it is open)
+    modulePanel.update(dataObject.modules);
 
     // Controller, first pass after a (re)load: adopt the server's remembered values
     if (!VIEW_ONLY && !restoredFromServer) {

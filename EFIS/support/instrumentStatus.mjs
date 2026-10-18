@@ -1,6 +1,6 @@
 'use strict';
 
-export const VERSION = '1.0.0';
+export const VERSION = '1.1.0';
 
 /*****************************************************************************
  * The server tracks the facts (module heartbeats, which values can be trusted,
@@ -158,4 +158,93 @@ export class InstrumentStatus {
         this.heading.flag = true;
         this.annunciations = annunciations;
     }
+}
+
+// ----------------------------------------------------------------------------
+// --- Text for the module status page                                      ---
+// ----------------------------------------------------------------------------
+const STATE_NAMES = { 0: 'STARTING', 1: 'OK', 2: 'DEGRADED', 3: 'FAILED' };
+
+// The sensors each module reports, in the order they are listed, with the label shown for each
+const MODULE_SENSORS = {
+    imu: [['gyro_accel', 'GYRO/ACCEL'], ['magnetometer', 'MAG'], ['calibration', 'CAL']],
+    air: [['pitot', 'PITOT'], ['aoa', 'AOA'], ['static', 'STATIC'], ['oat', 'OAT']],
+    gps: [['nmea', 'NMEA'], ['fix', 'FIX']],
+};
+
+/**
+ * Format a number of seconds as h:mm:ss
+ */
+export function formatDuration(seconds) {
+    const total = Math.max(0, Math.floor(seconds));
+    const h = Math.floor(total / 3600);
+    const m = Math.floor((total % 3600) / 60);
+    const s = total % 60;
+    return h + ':' + String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0');
+}
+
+/**
+ * Format an age in seconds the way the status page shows it (0.4 s, 12 s, 5 min)
+ */
+export function formatAge(seconds) {
+    if (seconds < 10) return seconds.toFixed(1) + ' s';
+    if (seconds < 100) return Math.round(seconds) + ' s';
+    return Math.round(seconds / 60) + ' min';
+}
+
+/**
+ * Work out what to show about one module on the module status page.
+ * @param {string} name 'imu', 'air' or 'gps'
+ * @param {object} info that module's entry in the server's `modules` facts (may be undefined)
+ * @returns {object} {state, level, version, uptime, heard, restarted, sensors}
+ *     level is 'ok', CAUTION, WARNING or 'unknown'; sensors is a list of {key, label, ok}
+ *     where ok is true, false, or null when the module has not said
+ */
+export function describeModule(name, info) {
+    info = info || {};
+    let state, level;
+    if (info.missing === true) {
+        state = 'MISSING';
+        level = WARNING;
+    } else if (info.present !== true) {
+        state = 'WAITING';          // not heard yet, still within the start-up grace period
+        level = 'unknown';
+    } else if (info.state === 1) {
+        state = 'OK';
+        level = 'ok';
+    } else if (info.state === 2) {
+        state = STATE_NAMES[2];
+        level = CAUTION;
+    } else if (info.state === 3) {
+        state = STATE_NAMES[3];
+        level = WARNING;
+    } else if (info.state === 0) {
+        state = STATE_NAMES[0];
+        level = 'unknown';
+    } else {
+        state = 'UNKNOWN';
+        level = 'unknown';
+    }
+
+    let heard = 'never heard';
+    if (info.age !== null && info.age !== undefined) {
+        heard = (info.missing === true ? 'last heard ' : 'heard ') + formatAge(info.age) + ' ago';
+    }
+
+    const sensors = (MODULE_SENSORS[name] || []).map(([key, label]) => {
+        const known = info.sensors !== null && info.sensors !== undefined;
+        return { key: key, label: label, ok: known ? info.sensors[key] === true : null };
+    });
+
+    return {
+        state: state,
+        level: level,
+        version: info.version ? 'v' + info.version : '--',
+        uptime: (info.present === true && info.uptime !== null && info.uptime !== undefined)
+                ? 'up ' + formatDuration(info.uptime) : 'up --',
+        heard: heard,
+        restarted: (info.restarted_age !== null && info.restarted_age !== undefined)
+                   ? 'restarted ' + formatAge(info.restarted_age) + ' ago' : '',
+        sensors: sensors,
+    };
 }

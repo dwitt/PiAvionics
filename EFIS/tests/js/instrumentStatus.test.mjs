@@ -3,7 +3,8 @@
 //     node --test tests/js
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { InstrumentStatus, WARNING, CAUTION } from '../../support/instrumentStatus.mjs';
+import { InstrumentStatus, WARNING, CAUTION, describeModule, formatDuration, formatAge }
+    from '../../support/instrumentStatus.mjs';
 
 // What the server sends when everything is healthy (the shape of module_status.py's facts)
 function goodFacts() {
@@ -287,4 +288,75 @@ test('with accel/gyro lost the HDG GYRO caution is not added as well', () => {
     f.heading_status = { valid: false, suspect: true, gyro_seconds: 10 };
     f.valid.attitude = f.valid.heading = f.valid.turn_rate = f.valid.acceleration = false;
     assert.deepEqual(texts(evaluate(f)), ['ATT FAIL']);
+});
+
+// ---- module status page text
+
+test('formatDuration gives h:mm:ss', () => {
+    assert.equal(formatDuration(0), '0:00:00');
+    assert.equal(formatDuration(59), '0:00:59');
+    assert.equal(formatDuration(61), '0:01:01');
+    assert.equal(formatDuration(3600), '1:00:00');
+    assert.equal(formatDuration(3725.9), '1:02:05');
+    assert.equal(formatDuration(-5), '0:00:00');
+});
+
+test('formatAge gives 0.4 s, 12 s or 5 min', () => {
+    assert.equal(formatAge(0.44), '0.4 s');
+    assert.equal(formatAge(9.96), '10.0 s');
+    assert.equal(formatAge(12.4), '12 s');
+    assert.equal(formatAge(99.4), '99 s');
+    assert.equal(formatAge(300), '5 min');
+});
+
+test('describeModule: a healthy module', () => {
+    const f = goodFacts().modules.gps;
+    f.version = '1.0.8';
+    f.uptime = 3725;
+    f.age = 0.44;
+    const d = describeModule('gps', f);
+    assert.equal(d.state, 'OK');
+    assert.equal(d.level, 'ok');
+    assert.equal(d.version, 'v1.0.8');
+    assert.equal(d.uptime, 'up 1:02:05');
+    assert.equal(d.heard, 'heard 0.4 s ago');
+    assert.equal(d.restarted, '');
+    assert.deepEqual(d.sensors, [{ key: 'nmea', label: 'NMEA', ok: true }, { key: 'fix', label: 'FIX', ok: true }]);
+});
+
+test('describeModule: states and levels', () => {
+    const m = (extra) => describeModule('air', Object.assign({ present: true, missing: false }, extra));
+    assert.deepEqual([m({ state: 1 }).state, m({ state: 1 }).level], ['OK', 'ok']);
+    assert.deepEqual([m({ state: 2 }).state, m({ state: 2 }).level], ['DEGRADED', CAUTION]);
+    assert.deepEqual([m({ state: 3 }).state, m({ state: 3 }).level], ['FAILED', WARNING]);
+    assert.deepEqual([m({ state: 0 }).state, m({ state: 0 }).level], ['STARTING', 'unknown']);
+    assert.equal(m({ state: 9 }).state, 'UNKNOWN');
+});
+
+test('describeModule: missing, never heard and no information', () => {
+    const missingInfo = { present: false, missing: true, state: null, version: '1.0.34', uptime: 500, age: 4.2, sensors: null };
+    const d = describeModule('air', missingInfo);
+    assert.deepEqual([d.state, d.level], ['MISSING', WARNING]);
+    assert.equal(d.heard, 'last heard 4.2 s ago');
+    assert.equal(d.uptime, 'up --');
+    assert.ok(d.sensors.every((s) => s.ok === null));
+
+    const waiting = describeModule('imu', { present: false, missing: false, age: null, version: null, uptime: null, sensors: null });
+    assert.deepEqual([waiting.state, waiting.level, waiting.heard, waiting.version], ['WAITING', 'unknown', 'never heard', '--']);
+
+    const none = describeModule('gps', undefined);
+    assert.equal(none.state, 'WAITING');
+    assert.equal(none.sensors.length, 2);
+});
+
+test('describeModule: sensors in order with their state, and a restart note', () => {
+    const f = goodFacts().modules.air;
+    f.sensors.aoa = false;
+    f.restarted_age = 12.4;
+    const d = describeModule('air', f);
+    assert.deepEqual(d.sensors.map((s) => s.label), ['PITOT', 'AOA', 'STATIC', 'OAT']);
+    assert.deepEqual(d.sensors.map((s) => s.ok), [true, false, true, true]);
+    assert.equal(d.restarted, 'restarted 12 s ago');
+    const imu = describeModule('imu', goodFacts().modules.imu);
+    assert.deepEqual(imu.sensors.map((s) => s.label), ['GYRO/ACCEL', 'MAG', 'CAL']);
 });

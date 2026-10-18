@@ -4,7 +4,8 @@ Start the fake feed first (tests/fake_feed.py), then, with the same venv (needs 
     venv/bin/python tests/page_shots.py OUT_DIR [scenario ...]            (all scenarios when none are named)
     venv/bin/python tests/page_shots.py OUT_DIR pitot several --size 1024x576    (landscape layout)
 Query options for the page can be added with --query, for example  --query "xw=8&xo=70&fs=22".
-VERSION 1.0.1"""
+Taps made once after the page loads (to open a Menu page) with --taps "530,492;288,278" (x,y pairs in page pixels).
+VERSION 1.1.0"""
 import argparse
 import asyncio
 import base64
@@ -35,7 +36,7 @@ class Cdp:
                 return reply.get("result")
 
 
-async def run(out_dir, scenarios, width, height, query):
+async def run(out_dir, scenarios, width, height, query, taps):
     os.makedirs(out_dir, exist_ok=True)
     chrome = subprocess.Popen([CHROME, "--headless=new", "--use-angle=swiftshader", "--enable-unsafe-swiftshader",
                                "--no-sandbox", f"--window-size={width},{height}", "--remote-debugging-port=9335",
@@ -59,6 +60,11 @@ async def run(out_dir, scenarios, width, height, query):
                 url = f"http://localhost:{PORT}/" + ("?" + query if query else "")
                 await cdp.call("Page.navigate", url=url)
                 await asyncio.sleep(4)
+                for x, y in taps:
+                    for kind in ("mousePressed", "mouseReleased"):
+                        await cdp.call("Input.dispatchMouseEvent", type=kind, x=x, y=y, button="left", clickCount=1)
+                        await asyncio.sleep(0.05)
+                    await asyncio.sleep(0.5)
                 for name in scenarios:
                     urllib.request.urlopen(f"http://localhost:{PORT}/scenario?name={name}").read()
                     await asyncio.sleep(1.5)
@@ -77,12 +83,14 @@ def main():
     parser.add_argument("scenarios", nargs="*")
     parser.add_argument("--size", default="576x1024", help="window size WxH (default the Pi's portrait page)")
     parser.add_argument("--query", default="", help="page address options, for example xw=8&xo=70")
+    parser.add_argument("--taps", default="", help="taps after loading, x,y pairs separated by ;")
     args = parser.parse_args()
+    taps = [tuple(int(v) for v in pair.split(",")) for pair in args.taps.split(";") if pair]
     listing = urllib.request.urlopen(f"http://localhost:{PORT}/scenario").read().decode()
     choices = [c.strip() for c in listing.split("choices:")[1].split(",")]
     scenarios = args.scenarios or choices
     width, height = (int(v) for v in args.size.split("x"))
-    asyncio.run(run(args.out_dir, scenarios, width, height, args.query))
+    asyncio.run(run(args.out_dir, scenarios, width, height, args.query, taps))
 
 
 if __name__ == "__main__":

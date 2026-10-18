@@ -13,7 +13,7 @@ screen orientation facts come from the real display_orientation.py with a preten
     curl 'localhost:8097/control?airspeed=60'        fake airspeed (for the orientation lock)
 
 tests/page_shots.py drives a headless Chrome through the scenarios and saves a screenshot of each.
-VERSION 1.0.0"""
+VERSION 1.1.0"""
 import argparse
 import asyncio
 import copy
@@ -135,25 +135,11 @@ SCENARIOS = {
 }
 
 
-def make_site():
-    """A folder with the page files, plus support/pixi.mjs (the Pi's copy script renames pixi-v8.6.6.mjs)."""
-    site = tempfile.mkdtemp(prefix="efis_site_")
-    os.makedirs(os.path.join(site, "support"))
-    os.symlink(os.path.join(EFIS, "index.html"), os.path.join(site, "index.html"))
-    for name in os.listdir(os.path.join(EFIS, "support")):
-        os.symlink(os.path.join(EFIS, "support", name), os.path.join(site, "support", name))
-    pixi = os.path.join(site, "support", "pixi.mjs")
-    if not os.path.exists(pixi):
-        os.symlink(os.path.join(EFIS, "support", "pixi-v8.6.6.mjs"), pixi)
-    return site
-
-
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--port", type=int, default=8097)
     args = parser.parse_args()
 
-    site = make_site()
     state = {"scenario": "ok", "stalled": False, "airspeed": 112.0}
     saved = os.path.join(tempfile.mkdtemp(prefix="efis_orientation_"), "display_orientation.json")
 
@@ -222,12 +208,17 @@ def main():
         return web.Response(text="ok")
 
     async def index(request):
-        return web.FileResponse(os.path.join(site, "index.html"))
+        return web.FileResponse(os.path.join(EFIS, "index.html"))
+
+    async def pixi(request):
+        # the Pi's copy script renames support/pixi-v8.6.6.mjs to support/pixi.mjs
+        return web.FileResponse(os.path.join(EFIS, "support", "pixi-v8.6.6.mjs"))
 
     app = web.Application()
     app.add_routes([web.get("/", index), web.get("/ws", ws_handler), web.get("/scenario", scenario),
                     web.get("/stall", stall), web.get("/resume", resume), web.get("/control", control),
-                    web.static("/support", os.path.join(site, "support"), follow_symlinks=True)])
+                    web.get("/support/pixi.mjs", pixi),
+                    web.static("/support", os.path.join(EFIS, "support"))])
     print(f"fake EFIS feed on http://localhost:{args.port}/  (scenarios: {', '.join(SCENARIOS)})", flush=True)
     web.run_app(app, host="127.0.0.1", port=args.port, print=None)
 

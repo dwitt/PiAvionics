@@ -27,3 +27,4 @@ instrumentStatus.mjs
 failureLook.mjs
 failureFlag.mjs
 annunciators.mjs
+modulePanel.mjs
