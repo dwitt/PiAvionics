@@ -50,7 +50,7 @@ import { FAILURE_LOOK } from './failureLook.mjs';
 
 // ----------------------------------------------------------------------------
 
-const VERSION = "0.4.4";
+const VERSION = "0.5.0";
 
 // Viewer mode: a page that is not the Pi's own display only watches. It sends
 // nothing to the server, ignores the encoder, and shows the QNH and brightness
@@ -58,6 +58,7 @@ const VERSION = "0.4.4";
 // ignores commands from anything but the local browser).
 //   ?view=1            force viewer mode
 //   ?server=host:port  take the data from another EFIS server (implies viewer)
+//   ?sharp=0           draw at 1x and let the browser enlarge it (the old way, for comparing)
 //   ?pi=true           lay the page out at the size of the Pi's own screen, portrait (below)
 //   ?pi=portrait       the same, portrait: 576 x 1024, canvases stacked
 //   ?pi=landscape      the Pi's screen turned: 1024 x 576, canvases side by side
@@ -138,9 +139,16 @@ if (screenH > screenW) {
   // Landscape → left half
   width = screenW / 2;
 }
+// Draw at the display's real pixel ratio (1.25 on the Pi, 2 on a retina laptop) so lines and text
+// are not enlarged by the browser. The canvas keeps its width and height in CSS pixels
+// (autoDensity); only the pixels drawn inside it are finer. ?sharp=0 goes back to drawing at 1x.
+const SHARP_DRAWING = pageParams.get('sharp') !== '0';
+const drawingOptions = SHARP_DRAWING ? { resolution: window.devicePixelRatio, autoDensity: true } : {};
+
 const app = new Application();  // the applicaiton object available globally
 await app.init({width: width,
-                height: height
+                height: height,
+                ...drawingOptions
                 }
 );
 
@@ -152,7 +160,8 @@ await app.init({width: width,
 // screen.
 const app2 = new Application();
 await app2.init({width: width,
-                height: height
+                height: height,
+                ...drawingOptions
                 }
 );
 

@@ -4,8 +4,9 @@ Start the fake feed first (tests/fake_feed.py), then, with the same venv (needs 
     venv/bin/python tests/page_shots.py OUT_DIR [scenario ...]            (all scenarios when none are named)
     venv/bin/python tests/page_shots.py OUT_DIR pitot several --size 1024x576    (landscape layout)
 Query options for the page can be added with --query, for example  --query "xw=8&xo=70&fs=22".
+Use --dpr 1.25 to render with the Pi's device pixel ratio (the screenshot is then 1.25 times larger).
 Taps made once after the page loads (to open a Menu page) with --taps "530,492;288,278" (x,y pairs in page pixels).
-VERSION 1.1.0"""
+VERSION 1.2.0"""
 import argparse
 import asyncio
 import base64
@@ -36,7 +37,7 @@ class Cdp:
                 return reply.get("result")
 
 
-async def run(out_dir, scenarios, width, height, query, taps):
+async def run(out_dir, scenarios, width, height, query, taps, dpr):
     os.makedirs(out_dir, exist_ok=True)
     chrome = subprocess.Popen([CHROME, "--headless=new", "--use-angle=swiftshader", "--enable-unsafe-swiftshader",
                                "--no-sandbox", f"--window-size={width},{height}", "--remote-debugging-port=9335",
@@ -55,7 +56,7 @@ async def run(out_dir, scenarios, width, height, query, taps):
             async with session.ws_connect(page["webSocketDebuggerUrl"], max_msg_size=0) as ws:
                 cdp = Cdp(ws)
                 await cdp.call("Emulation.setDeviceMetricsOverride", width=width, height=height,
-                               deviceScaleFactor=1, mobile=False)
+                               deviceScaleFactor=dpr, mobile=False)
                 await cdp.call("Page.enable")
                 url = f"http://localhost:{PORT}/" + ("?" + query if query else "")
                 await cdp.call("Page.navigate", url=url)
@@ -83,6 +84,7 @@ def main():
     parser.add_argument("scenarios", nargs="*")
     parser.add_argument("--size", default="576x1024", help="window size WxH (default the Pi's portrait page)")
     parser.add_argument("--query", default="", help="page address options, for example xw=8&xo=70")
+    parser.add_argument("--dpr", type=float, default=1.0, help="device pixel ratio (the Pi's is 1.25)")
     parser.add_argument("--taps", default="", help="taps after loading, x,y pairs separated by ;")
     args = parser.parse_args()
     taps = [tuple(int(v) for v in pair.split(",")) for pair in args.taps.split(";") if pair]
@@ -90,7 +92,7 @@ def main():
     choices = [c.strip() for c in listing.split("choices:")[1].split(",")]
     scenarios = args.scenarios or choices
     width, height = (int(v) for v in args.size.split("x"))
-    asyncio.run(run(args.out_dir, scenarios, width, height, args.query, taps))
+    asyncio.run(run(args.out_dir, scenarios, width, height, args.query, taps, args.dpr))
 
 
 if __name__ == "__main__":
