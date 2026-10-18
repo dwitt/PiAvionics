@@ -1,6 +1,6 @@
 # Plan: more than one display client (view the EFIS from a laptop)
 
-Written 2026-10-18. Decisions made 2026-10-18 (below); steps 1 and 2 built, step 3 (the page) still to do.
+Written 2026-10-18. Decisions made 2026-10-18 (below); all steps built, deployed and tested 2026-10-18.
 
 ## Goal
 
@@ -134,3 +134,8 @@ Step 1 and 2 alone make a laptop safe to use (it will show the data, but with it
   brightness from `controller_state`, and shows an amber "VIEW ONLY" tag in the top left of the HSI canvas.
   Test from the Mac: serve the EFIS folder with the Pi's `pixi.mjs` name (copytopiefis.sh renames `pixi-v8.6.6.mjs`), then open
   `http://127.0.0.1:8099/?server=192.168.5.110:8080`.
+- **Deployed and tested** (2026-10-18): server 1.2.1 and page 0.2.1 on the Pi, backup in `~/EFIS/backup_20261018_server120/`. A laptop
+  (Chrome and Safari) showed the live display as a viewer with the Pi's real QNH and the "VIEW ONLY" tag; the Pi's screen stayed steady.
+  Page 0.2.2 then fixed the old quirk where a reloaded Pi page reset QNH to 29.92 (and brightness to 100): the controller page now sends
+  nothing until the first server message arrives and then adopts `controller_state`. `brightness.mjs`: the encoder anchors to the current
+  value on the first adjustment. Confirmed on the Pi by reloading with ctrl-shift-R (QNH held). A plain ctrl-r can reuse cached script files.

@@ -41,14 +41,13 @@ modules on 2026-10-18 and is DEPLOYED to the live Pi EFIS (old files saved in `~
 `sudo systemctl restart piefis`). It adds `modules`, `valid`, `data_lost`, `heading_status`, `system_state` to the JSON; the current
 display ignores them. Do not connect a test client to the live server's websocket (it holds one, for the display); use
 `EFIS/tests/live_check.py` (CAN only). Use `~/EFIS/venv/bin/python` on the Pi, not the system python3.
-Multi-client viewer support (David's request) is planned in `EFIS/docs/MULTI_CLIENT_PLAN.md` (decisions made 2026-10-18). Server
-steps 1 and 2 are DONE: `aio_server.py` 1.2.0 is DEPLOYED to the Pi (1.2.1, a log-noise fix, is in git and waits for the next server
-deploy; the previous server 1.1.0 is saved in `~/EFIS/backup_20261018_server110/`). The Pi's own page is the controller; any other page
-(for example a laptop at http://192.168.5.110:8080) is a read-only viewer; max 4 viewers; the server echoes the controller's QNH and
-brightness as `controller_state`. Verified from the Mac with `EFIS/tests/viewer_probe.py 192.168.5.110:8080 --try-command`: the viewer
-got the stream and its QNH command was ignored. Still to do (plan step 3): viewer mode in the page (send nothing, ignore the encoder,
-use `controller_state`, "VIEW ONLY" tag, `?server=host:port` override). Until then a laptop page works as a viewer but shows its own
-QNH/brightness boxes. The service's output is in `/var/log/piefis.log` (not the journal), see ISSUES #14.
+Multi-client viewer support (David's request) is DONE and DEPLOYED (plan `EFIS/docs/MULTI_CLIENT_PLAN.md`): `aio_server.py` 1.2.1 and the
+page (`efis-display.js` 0.2.2) are on the Pi (previous files saved in `~/EFIS/backup_20261018_server120/`, older ones in
+`backup_20261018_server110/`). The Pi's own page (localhost) is the controller; any other page is a read-only viewer (max 4): open
+http://192.168.5.110:8080 on a laptop, or serve the EFIS files on the Mac and use `?server=192.168.5.110:8080` (the Pi renames
+`pixi-v8.6.6.mjs` to `pixi.mjs`, so a local test folder needs that name; `?view=1` forces viewer mode). A viewer shows the controller's QNH and
+brightness (`controller_state`) and a "VIEW ONLY" tag. A reloaded Pi page now starts from the server's remembered QNH/brightness instead of
+29.92/100 (page 0.2.2, tested on the Pi). Tested in Chrome from the Mac and Safari. The service's output is in `/var/log/piefis.log` (not the journal), see ISSUES #14.
 Next: display step A (failure flags, annunciator strip built by the page from the facts using the rules table in the plan, module
 status page in the Menu, null guards, websocket-stall handling), then server step B (markers decoded, 0x700 heartbeat), the backup
 display, and last the module marker changes (server and display first so nothing draws 32767).
