@@ -19,7 +19,7 @@ Sensor modules broadcast their data on fixed IDs. The Pi EFIS listens, sends QNH
 
 - Lower IDs win bus arbitration. All PiAvionics IDs (0x19 to 0x83) are lower than every MGL device ID (0x200 and up).
 - Modules send each message on a timer (period_ms). The firmware adds up to 50 ms of random jitter; it has little effect in practice and is not needed for collision handling, because CAN arbitration never drops a frame.
-- Invalid-data markers (protocol 0.2.0, planned). A field that cannot be trusted is sent as the largest positive value of its type: 0x7FFF for a 16-bit field, 0x7FFFFFFF for a 32-bit field. No real value can reach it (see the Invalid marker column). A receiver must show such a field as failed and never as a number. The markers are defined here but the firmware does not send them yet; until it does, a module in trouble sends the interim values listed in the notes of each message, and its heartbeat (0x701 to 0x703) says which sensor is lost.
+- Invalid-data markers (protocol 0.2.0). A field that cannot be trusted is sent as the largest positive value of its type: 0x7FFF for a 16-bit field, 0x7FFFFFFF for a 32-bit field. No real value can reach it (see the Invalid marker column). A receiver must show such a field as failed and never as a number. The EFIS server understands the markers (1.6.0 onward); the module firmware does not send them yet. Until it does, a module in trouble sends the interim values listed in the notes of each message, and its heartbeat (0x701 to 0x703) says which sensor is lost.
 - Timeouts (decided 2026-10-17, not yet implemented in the EFIS). The EFIS treats data as lost after: 0.5 s without 0x28, 0x48 or 0x49; 1.5 s without 0x2A or 0x2B; 3.5 s without 0x63, 0x64 or 0x65; 3 s without a module heartbeat (the module is shown as missing). Today the EFIS times out only 0x48 and 0x49, after 0.2 s.
 - Three things make a value invalid on the EFIS: the marker, a heartbeat that says the sensor is lost, or the message not arriving within its timeout. All three look the same on the display.
 
@@ -53,7 +53,7 @@ Sensor modules broadcast their data on fixed IDs. The Pi EFIS listens, sends QNH
 | `0x081` | [MAG_X](#0x081-mag_x) | IMU / AHRS module | Pi EFIS | — | 4 | 🔘 Reserved |
 | `0x082` | [MAG_Y](#0x082-mag_y) | IMU / AHRS module | Pi EFIS | — | 4 | 🔘 Reserved |
 | `0x083` | [MAG_Z](#0x083-mag_z) | IMU / AHRS module | Pi EFIS | — | 4 | 🔘 Reserved |
-| `0x700` | [EFIS_HEARTBEAT](#0x700-efis_heartbeat) | Pi EFIS | CAN display feather | 1 s | 8 | ⚪ Planned |
+| `0x700` | [EFIS_HEARTBEAT](#0x700-efis_heartbeat) | Pi EFIS | CAN display feather | 1 s | 8 | ✅ Active |
 | `0x701` | [IMU_HEARTBEAT](#0x701-imu_heartbeat) | IMU / AHRS module | Pi EFIS | 1 s | 8 | 🟡 Partial |
 | `0x702` | [AIR_HEARTBEAT](#0x702-air_heartbeat) | AIR module | Pi EFIS | 1 s | 8 | 🟡 Partial |
 | `0x703` | [GPS_HEARTBEAT](#0x703-gps_heartbeat) | GPS module | Pi EFIS | 1 s | 8 | 🟡 Partial |
@@ -682,7 +682,7 @@ Sensor modules broadcast their data on fixed IDs. The Pi EFIS listens, sends QNH
 | Received by | CAN display feather |
 | Rate | 1 s |
 | Data length | 8 bytes |
-| Status | ⚪ Planned |
+| Status | ✅ Active |
 | Treated as lost after | 3 s without a message |
 
 | Bytes | Field | Type | Unit | Description |
@@ -710,7 +710,7 @@ Sensor modules broadcast their data on fixed IDs. The Pi EFIS listens, sends QNH
 
 **Code**
 
-- Sender: not written yet (aio_server.py)
+- Sender: aio_server.py send_efis_heartbeat (efis_heartbeat.py), EFIS server 1.6.1 onward
 - Receiver: not written yet (CAN_Feather.ino)
 
 ### 0x701 IMU_HEARTBEAT

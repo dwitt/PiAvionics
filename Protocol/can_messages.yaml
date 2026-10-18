@@ -43,12 +43,13 @@ protocol:
       50 ms of random jitter; it has little effect in practice and is not needed
       for collision handling, because CAN arbitration never drops a frame.
     - >
-      Invalid-data markers (protocol 0.2.0, planned). A field that cannot be trusted is sent as the
+      Invalid-data markers (protocol 0.2.0). A field that cannot be trusted is sent as the
       largest positive value of its type: 0x7FFF for a 16-bit field, 0x7FFFFFFF for a 32-bit field.
       No real value can reach it (see the Invalid marker column). A receiver must show such a field
-      as failed and never as a number. The markers are defined here but the firmware does not send
-      them yet; until it does, a module in trouble sends the interim values listed in the notes of
-      each message, and its heartbeat (0x701 to 0x703) says which sensor is lost.
+      as failed and never as a number. The EFIS server understands the markers (1.6.0 onward);
+      the module firmware does not send them yet. Until it does, a module in trouble sends the interim
+      values listed in the notes of each message, and its heartbeat (0x701 to 0x703) says which
+      sensor is lost.
     - >
       Timeouts (decided 2026-10-17, not yet implemented in the EFIS). The EFIS treats data as lost
       after: 0.5 s without 0x28, 0x48 or 0x49; 1.5 s without 0x2A or 0x2B; 3.5 s without
@@ -594,7 +595,7 @@ messages:
     receivers: [can_display]
     period_ms: 1000
     dlc: 8
-    status: planned
+    status: active
     timeout_ms: 3000
     fields: *heartbeat_fields
     notes:
@@ -615,7 +616,7 @@ messages:
         cannot produce a display (for example no display client for a while after start-up, to be
         defined with the implementation).
     code:
-      sender: "not written yet (aio_server.py)"
+      sender: "aio_server.py send_efis_heartbeat (efis_heartbeat.py), EFIS server 1.6.1 onward"
       receiver: "not written yet (CAN_Feather.ino)"
 
 # IDs that code refers to but which carry no CAN traffic

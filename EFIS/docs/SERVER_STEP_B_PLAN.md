@@ -1,6 +1,6 @@
 # Plan: server step B (invalid-data markers and the EFIS heartbeat)
 
-Written 2026-10-18. Nothing is built yet; the decisions that need David are at the end. This is step 4 of the order of work in
+Written 2026-10-18. Built, deployed and checked on the real bus 2026-10-18; decisions and status at the end. This is step 4 of the order of work in
 `MODULE_STATUS_PLAN.md`. The protocol side is already done (protocol 0.2.0): the markers and message 0x700 are defined.
 
 ## Goal
@@ -110,3 +110,28 @@ exercised only by tests until step 6.
 2. **Version bytes** = the server's version (1.5.0 gives 1, 5, 0)?
 3. **Modules page** with an EFIS row and a layout that adapts to a short canvas (compact blocks)?
 4. **Heartbeat send failures** logged at most once a minute with a count?
+
+## Decisions (David, 2026-10-18: "go ahead with the build", all four as proposed)
+
+1. State 3 of the EFIS heartbeat means no controller page for more than 30 s (and after start-up); a bench with no Pi display reads state 3.
+2. The version bytes are the server's version.
+3. The Modules page gets an EFIS row and compact blocks on a short canvas.
+4. Failed heartbeat sends are logged at most once a minute with a count.
+
+## Status
+
+- **Markers (server 1.6.0):** `decode_field` compares the raw value with the marker before scaling; fields with a marker are `None`, recorded
+  in `data._markers`, and `update_status` makes the matching instrument invalid (`MARKER_INSTRUMENT` table; a heading marker also clears
+  `heading_status`). 13 glue tests, 12 deliberate breaks caught.
+- **Heartbeat (server 1.6.1):** `efis_heartbeat.py` 1.0.0 (12 unit tests), task `send_efis_heartbeat` (1 s, send timeout 50 ms, failures logged at most once a
+  minute with a count), `efis` facts in the JSON, 5 glue tests; 15 deliberate breaks caught.
+- **Page 0.6.0:** `describeEfis` (3 tests), the EFIS block on the Modules page, blocks and text sized to the canvas height (checked at Display 2 portrait and
+  landscape and Display 1 portrait and landscape).
+- **Deployed and checked on the real bus:** `candump can0,700:7FF` shows one frame a second: `00 01 06 01 01 0F uu uu` (module 0, v1.6.1, state OK, all four
+  bits, uptime). A pitot fault gave state 2 / mask 0E and restoring it gave state 1 / 0F. Stopping `piefis` stopped the heartbeat (gap about 8 s with the
+  restart); after the restart the first frame read state 2, mask 00, uptime 0 (the server has not yet seen the modules or a display), then state 1, mask 0F
+  a second later. The three modules were unaffected (uptimes continuous, no restarts).
+- **Not tested yet on the real system:** pulling a module's CAN cable and closing the Pi's display page (the mask bits must clear); and the first-frame
+  state 2 at start-up should be allowed for by the backup display (give it a second of grace).
+- Previous servers saved in `~/EFIS/backup_20261018_server120/` (1.2.1, 1.3.0, 1.4.0, 1.5.0). Rollback: copy one back, `sudo systemctl restart piefis`; no firmware changed.
+
