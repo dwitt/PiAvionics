@@ -602,14 +602,15 @@ export class HSI {
     // -----------------------------------------------------------------------
     // GPS Status Box — upper-left corner of HSI display. It is a touch button:
     // contracted (the normal state) it shows the fix status and the magnetic variation;
-    // a touch expands it to show the satellites, HDOP, VDOP and whether differential
-    // corrections (WAAS) are used, and another touch contracts it. It starts contracted.
+    // a touch expands it to show the satellites, HDOP and VDOP, and another touch contracts it.
+    // It starts contracted. The word WAAS beside the status is green when differential
+    // corrections are in use and dim when they are not.
     // -----------------------------------------------------------------------
     _createGpsStatusBox() {
         const screenX = this.app.screen.width / 2;
         const screenY = this.app.screen.height / 2;
         const margin = 10;
-        const boxWidth = 120;
+        const boxWidth = 130;       // wide enough for "3D FIX WAAS" and the arrow
         const pad = 8;
 
         this._gpsBoxWidth = boxWidth;
@@ -627,13 +628,21 @@ export class HSI {
         this._gpsBoxBackground = new Graphics();
         gpsBox.addChild(this._gpsBoxBackground);
 
-        // Row 0: the fix status (colour changes dynamically), with an arrow showing it can be touched
+        // Row 0: the fix status (colour changes dynamically) on the left, the word WAAS next to the arrow
+        // that shows the box can be touched
         this._gpsFixText = new Text({ text: '---', style: new TextStyle({
             fontFamily: 'Tahoma', fontSize: 14, fill: 0x888888, fontWeight: 'bold',
         })});
-        this._gpsFixText.anchor.set(0.5, 0.5);
-        this._gpsFixText.position.set(boxWidth / 2 - 4, this._gpsRowY(0));
+        this._gpsFixText.anchor.set(0, 0.5);
+        this._gpsFixText.position.set(pad, this._gpsRowY(0));
         gpsBox.addChild(this._gpsFixText);
+
+        this._gpsWaasText = new Text({ text: 'WAAS', style: new TextStyle({
+            fontFamily: 'Tahoma', fontSize: 13, fill: 0x555555, fontWeight: 'bold',
+        })});
+        this._gpsWaasText.anchor.set(1, 0.5);
+        this._gpsWaasText.position.set(boxWidth - pad - 12, this._gpsRowY(0));
+        gpsBox.addChild(this._gpsWaasText);
 
         this._gpsArrow = new Graphics();
         gpsBox.addChild(this._gpsArrow);
@@ -641,13 +650,12 @@ export class HSI {
         // Row 1: VAR, the magnetic variation (declination) the GPS module calculated, for example 10°W
         this._gpsVarText = this._createGpsRow(gpsBox, 'VAR', 1);
 
-        // Rows 2 to 5, only while expanded
+        // Rows 2 to 4, only while expanded
         this._gpsSatText = this._createGpsRow(gpsBox, 'SAT', 2);
         this._gpsHdopText = this._createGpsRow(gpsBox, 'HDOP', 3);
         this._gpsVdopText = this._createGpsRow(gpsBox, 'VDOP', 4);
-        this._gpsDiffText = this._createGpsRow(gpsBox, 'DIFF', 5);
         this._gpsExpandedItems = [];
-        for (const row of [this._gpsSatText, this._gpsHdopText, this._gpsVdopText, this._gpsDiffText]) {
+        for (const row of [this._gpsSatText, this._gpsHdopText, this._gpsVdopText]) {
             this._gpsExpandedItems.push(row, row.gpsLabel);
         }
 
@@ -690,7 +698,7 @@ export class HSI {
 
     // Redraw the box background and arrow for the contracted or expanded state
     _drawGpsBox() {
-        const rows = this._gpsExpanded ? 6 : 2;
+        const rows = this._gpsExpanded ? 5 : 2;
         const height = this._gpsRowY(rows - 1) + 13;
 
         this._gpsBoxBackground.clear();
@@ -741,12 +749,12 @@ export class HSI {
     }
 
     /**
-     * Fix quality from the GPS module: 0 no fix, 1 GPS, 2 differential (WAAS). Shown as DIFF when expanded.
+     * Fix quality from the GPS module: 0 no fix, 1 GPS, 2 differential (WAAS). The word WAAS is green when
+     * the corrections are in use and dim when they are not.
      */
     set gpsFixQuality(v) {
         this._gpsFixQuality = (v === null || v === undefined) ? null : v;
-        this._gpsDiffText.text = this._gpsFixQuality === null ? '--' : (this._gpsFixQuality === 2 ? 'yes' : 'no');
-        this._gpsDiffText.style.fill = this._gpsFixQuality === 2 ? 0x00ff00 : 0xbbbbbb;
+        this._gpsWaasText.style.fill = this._gpsFixQuality === 2 ? 0x00ff00 : 0x555555;
         this._updateGpsStatus();
     }
 
