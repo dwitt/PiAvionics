@@ -69,13 +69,15 @@ ISSUES #15 is fixed and deployed (server 1.5.0, page 0.5.5, GPS_Module 1.0.9 fla
 its WMM2025 declination in 0x65 byte 3, and the server sends the desired track and bearing in magnetic degrees (held back until the declination is
 known); `NULL_INVALID_VALUES` is on (untrusted values are sent as null). A moving test of the diamond and course pointer is still to do.
 Previous servers are in `~/EFIS/backup_20261018_server120/` (1.2.1, 1.3.0, 1.4.0 and 1.5.0 copies).
-Server step B is DONE and deployed (server 1.6.1, page 0.6.0, plan and status in `EFIS/docs/SERVER_STEP_B_PLAN.md`): invalid-data markers are decoded (a
+Server step B is DONE and deployed (server 1.6.1 then, now 1.6.3, page 0.6.1, plan and status in `EFIS/docs/SERVER_STEP_B_PLAN.md`): invalid-data markers are decoded (a
 marker becomes None and an invalid instrument, never a number), the EFIS heartbeat 0x700 is on the bus once a second (checked with candump), and the Modules
 page has an EFIS row. Not yet tried on the real system: pulling a module's CAN cable and closing the Pi's display page, to see the heartbeat mask bits clear.
 The modules now send the invalid-data markers (2026-10-18): AIR_Module 1.0.35 (airspeed on a pitot loss, altitude and vertical speed on a static loss, the OAT frame
 keeps coming with a marker, the pressure message), IMU_AHRS 1.0.16 (heading, pitch, roll, turn rate and the accelerations on an accel/gyro loss; a lost magnetometer
 still sends the gyro-only heading as a number). The GPS module sends none. Verified on the real bus with injected faults (`/tmp/fi.sh`, `marker_check.sh` on the Pi).
 A bug found on the way, a thin red X drawn across the display when a marker nulled a value before the validity caught up, is fixed (ISSUES #17: server 1.6.2, page 0.6.1).
+Log rotation is done (ISSUES #14): server 1.6.3 reports a repeating send failure once a minute, and `/etc/logrotate.d/piefis` (from `EFIS/linux/piefis.logrotate`) rotates
+`/var/log/piefis.log` at 5 MB, keeping 4. The service ordering against `can0.service` is parked as ISSUES #18.
 Next: the backup display, which is NOT built yet; David will start its design (CAN_Display: CAN_Feather and Display_Feather, DisplayProtocol.h; per-field validity from the
 markers, listen to 0x700 to 0x703, a status row; the first heartbeat after a server restart reads state 2, so allow it a second). Only the Pi EFIS receives the markers today.
 Other open items: AOA value on 0x29 is still always 0; command messages over CAN (ISSUES #9 steps 2 to 4).

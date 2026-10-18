@@ -95,17 +95,18 @@ Status: **Open**, **Monitoring** (fix applied, watching), **Fixed**.
   pitot, static, OAT, accel/gyro and magnetometer. A marker bug found on the way (a thin red X drawn across the display) is ISSUES #17, fixed.
   Not built yet: the backup display (CAN_Display) status row and per-field markers; David will design it next.
 
-### 14. `/var/log/piefis.log` has no rotation and grows without limit
-- Found 2026-10-18: the file is 33 MB, 369,835 lines (the service writes its output there: `StandardOutput=append:/var/log/piefis.log`). 366,280
-  of those lines are `Error sending CAN message: Failed to transmit: No buffer space available [Error Code 105]`, one per second for days when nothing on the
-  bus acknowledged the Pi's QNH frames; the last one is about 1,000 lines from the end, so it stopped long ago (can0 is ERROR-ACTIVE and the modules
-  acknowledge). `logrotate` is installed and its timer runs daily, but nothing is configured for this file.
-- Done 2026-10-18 (server 1.6.3, committed, deploy with the next restart): a failed QNH send is now reported once and then at most once a minute with a
-  count (`RepeatedErrorReporter`, shared with the EFIS heartbeat), so the same fault can never fill the log again. Tests: 2, with 4 deliberate breaks caught.
-- Ready, not yet installed on the Pi: `EFIS/linux/piefis.logrotate` (rotate at 5 MB, keep 4, compress, `copytruncate` because systemd holds the file open).
-  Install: `sudo cp ~/EFIS/linux/piefis.logrotate /etc/logrotate.d/piefis`. A dry run (`logrotate -d`) read it correctly and showed the current file would be
-  rotated at the next daily run.
-- The service-ordering finding from this investigation is now ISSUES #18.
+### 14. `/var/log/piefis.log` has no rotation and grows without limit (fixed 2026-10-18)
+- Found 2026-10-18: the file was 33 MB, 369,835 lines (the service writes its output there: `StandardOutput=append:/var/log/piefis.log`). 366,280
+  of those lines were `Error sending CAN message: Failed to transmit: No buffer space available [Error Code 105]`, one per second for days when nothing on the
+  bus acknowledged the Pi's QNH frames; the last one was about 1,000 lines from the end, so it stopped long ago. `logrotate` was installed and its timer ran
+  daily, but nothing was configured for this file.
+- Fixed 2026-10-18, the cause (server 1.6.3, deployed): a failed QNH send is reported once and then at most once a minute with a count (`RepeatedErrorReporter`,
+  shared with the EFIS heartbeat), so the same fault can never fill the log again. Tests: 2, with 4 deliberate breaks caught.
+- Fixed 2026-10-18, the file: `/etc/logrotate.d/piefis` installed on the Pi from `EFIS/linux/piefis.logrotate` (rotate at 5 MB, keep 4, compress, `copytruncate` because
+  systemd holds the file open). Run once by hand: the 33 MB file became `/var/log/piefis.log.1` and the log restarted empty, and the service kept writing to it
+  (a page reload showed up in the new file). The timer runs it daily (next 00:22). The old `piefis.log.1` (33 MB of the old error lines) is compressed by the next run and
+  removed after four more rotations; delete it by hand to reclaim the space sooner.
+- The service-ordering finding from this investigation is ISSUES #18.
 
 ### 15. HSI ground track diamond and course pointer mixed true and magnetic (fixed 2026-10-18, one moving test left)
 - Found 2026-10-18 (David asked where the HSI heading comes from). The HSI rose is rotated by `dataObject.yaw`, the IMU module's

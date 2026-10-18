@@ -322,6 +322,14 @@ sudo systemctl enable piefis.service
 
 Logging is configured in the service file to append to `/var/log/piefis.log`.
 
+The log is rotated by `logrotate` (its timer runs daily): when the file passes 5 MB it is copied to `piefis.log.1`, emptied in place, and four
+older copies are kept compressed. Install the rule once on a new Pi (the copy of it is kept in the repo):
+
+    sudo cp ~/EFIS/linux/piefis.logrotate /etc/logrotate.d/piefis
+
+It uses `copytruncate` because systemd keeps the log file open, so the server needs no restart. To try it by hand: `sudo logrotate -v /etc/logrotate.d/piefis`
+(a dry run that changes nothing: `logrotate -d /etc/logrotate.d/piefis`).
+
 ---
 ## Configure labwc + Chromium Startup (Kiosk Mode)
 
