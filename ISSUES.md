@@ -105,9 +105,7 @@ Status: **Open**, **Monitoring** (fix applied, watching), **Fixed**.
 - Ready, not yet installed on the Pi: `EFIS/linux/piefis.logrotate` (rotate at 5 MB, keep 4, compress, `copytruncate` because systemd holds the file open).
   Install: `sudo cp ~/EFIS/linux/piefis.logrotate /etc/logrotate.d/piefis`. A dry run (`logrotate -d`) read it correctly and showed the current file would be
   rotated at the next daily run.
-- Also found: `piefis.service` has `DefaultDependencies=false` and `After=network.target` only, no ordering against `can0.service`, so at a reboot or restart the CAN
-  interface can go down first and the server prints about 40 long tracebacks (`Error receiving: Network is down`). Optional fix: `After=can0.service`, `Wants=can0.service` and
-  dropping `DefaultDependencies=false` (changes boot ordering a little, so test with a reboot). The deployed unit equals the repo copy `EFIS/linux/piefis.service`.
+- The service-ordering finding from this investigation is now ISSUES #18.
 
 ### 15. HSI ground track diamond and course pointer mixed true and magnetic (fixed 2026-10-18, one moving test left)
 - Found 2026-10-18 (David asked where the HSI heading comes from). The HSI rose is rotated by `dataObject.yaw`, the IMU module's
@@ -150,6 +148,15 @@ Status: **Open**, **Monitoring** (fix applied, watching), **Fixed**.
   acceleration, both pressures; a missing key from an older server is not treated as null). Tests: 2 server tests and 4 page tests; 2 and 9 deliberate breaks caught.
 - Note: the old built-in X's in `Ribbon` and `AttitudeIndicator` are still there and would show if a page ever passed `undefined` (ribbons) or `null`
   (attitude) to them; the page now never does.
+
+### 18. `piefis.service` is not ordered against the CAN interface (found 2026-10-18, parked for later)
+- `EFIS/linux/piefis.service` (the deployed unit is identical) has `DefaultDependencies=false` and `After=network.target` only: no ordering against `can0.service`.
+  At a reboot or a restart the CAN interface can go down before the server stops, and the server prints about 40 long tracebacks into
+  `/var/log/piefis.log` (`can.exceptions.CanOperationError: Error receiving: Network is down [Error Code 100]`, from python-can's notifier). It is harmless noise,
+  and the log rotation (ISSUES #14) keeps it bounded.
+- Possible fix: add `After=can0.service` and `Wants=can0.service` (as `piefis-labwc.service` already does) so the server starts after the CAN interface is up and is stopped
+  before it goes down, and drop `DefaultDependencies=false` so the service is stopped in order at shutdown. That changes boot and shutdown ordering a little, so test it with
+  a reboot (the display, the CAN modules and the heartbeat should come up as before). Also check what happens if `can0` is slow to come up (the server has `Restart=on-failure`).
 
 ## Monitoring
 
