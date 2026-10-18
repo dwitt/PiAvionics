@@ -3,7 +3,7 @@
 Tell Claude: "Read RESUME.md and carry on."
 
 ## State of the sensor modules: finished and committed
-Firmware on the boards (all flashed, healthy, committed): IMU_AHRS 1.0.15, AIR_Module 1.0.34, GPS_Module 1.0.8.
+Firmware on the boards (all flashed, healthy, committed): IMU_AHRS 1.0.15, AIR_Module 1.0.34, GPS_Module 1.0.9.
 Libraries: ModuleInfo 1.3.0, StatusLED 1.2.0, SensorHealth 1.0.0, MS4525DO 1.1.1, SSC 1.1.1, plus two locally patched
 Adafruit libraries (`Adafruit_LSM6DS`: a failed read returns false; `Adafruit_MCP2515`: bounded send, `txFault()`,
 `clearErrorFlags()`), each with `PATCH_NOTES.md`.
