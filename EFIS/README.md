@@ -11,7 +11,7 @@ The hardware is based on various Feather boards running CircuitPython that can b
 The server accepts more than one display page. The page on the Pi itself (localhost) is the controller: its encoder, QNH and brightness
 control the aircraft. Any other page is a read-only viewer (up to 4) and cannot change anything.
 
-- On a laptop on the same network open `http://pi-efis.local:8080` (or `http://192.168.5.110:8080`). A "VIEW ONLY" tag shows in the corner and
+- On a laptop on the same network open `http://pi-efis.local:8080` (or `http://192.168.5.110:8080`). A "VIEW ONLY" tag shows in the lower left of the HSI and
   the QNH and brightness follow the Pi's. The page sizes itself to the window. Add `?pi=1` (`http://pi-efis.local:8080/?pi=1`) to lay it out at the
   size of the Pi's own screen (576 x 1024 CSS pixels: 720 x 1280 at the compositor's 1.25 scale) whatever the window size.
 - To try page changes with the live data without deploying: serve the EFIS folder on the computer (the Pi renames `support/pixi-v8.6.6.mjs`

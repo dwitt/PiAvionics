@@ -44,7 +44,7 @@ import { RouteOverlay } from './routeOverlay.mjs';
 
 // ----------------------------------------------------------------------------
 
-const VERSION = "0.2.3";
+const VERSION = "0.2.5";
 
 // Viewer mode: a page that is not the Pi's own display only watches. It sends
 // nothing to the server, ignores the encoder, and shows the QNH and brightness
@@ -135,15 +135,21 @@ await app2.init({width: width,
 // ----------------------------------------------------------------------------
 document.body.appendChild(app.canvas);
 document.body.appendChild(app2.canvas);
+if (USE_PI_SIZE) {
+    // Stack the canvases (primary above the HSI) like the Pi's portrait screen, even in a wide window
+    app.canvas.style.display = 'block';
+    app2.canvas.style.display = 'block';
+}
 
-// "VIEW ONLY" tag in the top left corner of the second canvas
+// "VIEW ONLY" tag in the bottom left corner of the second canvas (the top left holds the GPS box)
 if (VIEW_ONLY) {
     const viewTag = new Text({
         text: "VIEW ONLY",
         style: new TextStyle({fontFamily: 'Tahoma', fontSize: 16, fontWeight: 'bold',
                               fill: 0xFFB000})
     });
-    viewTag.position.set(6, 4);
+    viewTag.anchor.set(0, 1);
+    viewTag.position.set(6, app2.screen.height - 4);
     app2.stage.addChild(viewTag);
 }
 
