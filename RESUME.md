@@ -41,10 +41,14 @@ modules on 2026-10-18 and is DEPLOYED to the live Pi EFIS (old files saved in `~
 `sudo systemctl restart piefis`). It adds `modules`, `valid`, `data_lost`, `heading_status`, `system_state` to the JSON; the current
 display ignores them. Do not connect a test client to the live server's websocket (it holds one, for the display); use
 `EFIS/tests/live_check.py` (CAN only). Use `~/EFIS/venv/bin/python` on the Pi, not the system python3.
-Before that, David asked for a multi-client / viewer capability so the EFIS can be watched from a laptop without disturbing the Pi's
-screen: planned in `EFIS/docs/MULTI_CLIENT_PLAN.md` (5 decisions pending; suggested to do its steps 1 and 2 before the display work).
-Do NOT open the page from another computer until it is built: the second page would knock the Pi's display off and overwrite the
-QNH on the CAN bus and the screen brightness.
+Multi-client viewer support (David's request) is planned in `EFIS/docs/MULTI_CLIENT_PLAN.md` (decisions made 2026-10-18). Server
+steps 1 and 2 are DONE: `aio_server.py` 1.2.0 is DEPLOYED to the Pi (1.2.1, a log-noise fix, is in git and waits for the next server
+deploy; the previous server 1.1.0 is saved in `~/EFIS/backup_20261018_server110/`). The Pi's own page is the controller; any other page
+(for example a laptop at http://192.168.5.110:8080) is a read-only viewer; max 4 viewers; the server echoes the controller's QNH and
+brightness as `controller_state`. Verified from the Mac with `EFIS/tests/viewer_probe.py 192.168.5.110:8080 --try-command`: the viewer
+got the stream and its QNH command was ignored. Still to do (plan step 3): viewer mode in the page (send nothing, ignore the encoder,
+use `controller_state`, "VIEW ONLY" tag, `?server=host:port` override). Until then a laptop page works as a viewer but shows its own
+QNH/brightness boxes. The service's output is in `/var/log/piefis.log` (not the journal), see ISSUES #14.
 Next: display step A (failure flags, annunciator strip built by the page from the facts using the rules table in the plan, module
 status page in the Menu, null guards, websocket-stall handling), then server step B (markers decoded, 0x700 heartbeat), the backup
 display, and last the module marker changes (server and display first so nothing draws 32767).

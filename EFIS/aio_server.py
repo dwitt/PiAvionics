@@ -1,7 +1,7 @@
 """ Asynchronous I/O based webserver to handle page and websocket"""
 # pyright: reportMissingImports=false
 
-VERSION = "1.2.0"
+VERSION = "1.2.1"
 
 import asyncio
 import ipaddress
@@ -1208,9 +1208,9 @@ async def send_to_client(web_socket_response, web_socket, text):
         await asyncio.wait_for(web_socket.send_str(text), CLIENT_SEND_TIMEOUT)
     except (asyncio.TimeoutError, ConnectionResetError, ConnectionAbortedError,
             aiohttp.ClientError, RuntimeError) as e:
-        info = web_socket_response._clients.get(web_socket, {})
-        print(f"Display {info.get('role', 'client')} from {info.get('remote', '?')} dropped: "
-              f"{type(e).__name__}", flush=True)
+        info = web_socket_response._clients.get(web_socket)
+        if info is not None:        # (a client that already disconnected on its own is not news)
+            print(f"Display {info['role']} from {info['remote']} dropped: {type(e).__name__}", flush=True)
         try:
             await web_socket.close()
         except Exception:    # already gone

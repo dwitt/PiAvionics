@@ -91,6 +91,14 @@ Status: **Open**, **Monitoring** (fix applied, watching), **Fixed**.
   with injected faults and a real wing pull). Steps 3 (AIR), 4 (status LED) and 5 (GPS no-data path) also done and tested. Still to do: full retest against the
   plan tables and recovery tests, then the 0x7FFF invalid-data markers with the EFIS pass.
 
+### 14. `/var/log/piefis.log` has no rotation and grows without limit
+- Found 2026-10-18: the file is 33 MB (the service writes its output there: `StandardOutput=append:/var/log/piefis.log`). In the last 20,000
+  lines, 18,643 were `Error sending CAN message: Failed to transmit: No buffer space available [Error Code 105]` (plus some
+  `No such device or address`), from earlier times when nothing on the bus acknowledged the Pi's QNH frames. Since the restart on
+  2026-10-18 there are none and `can0` is ERROR-ACTIVE.
+- To do: add a `logrotate` rule for `/var/log/piefis.log`, and consider logging a repeated send error once (with a count) instead of
+  on every attempt.
+
 ## Monitoring
 
 ### 6. MCP2515 not initialising on the Pi (`Cannot initialize MCP2515. Wrong wiring?`)
