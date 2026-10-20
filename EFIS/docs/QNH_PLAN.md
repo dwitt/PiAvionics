@@ -114,6 +114,8 @@ The mode falls back to the default after a period with no input. The details bel
 - Boot: `qnh` = 2992, flagged not set (reported in 0x2B byte 7 bit 0) until a valid frame is heard. Nothing is stored.
 - It does not send in the QNH block (it has no person-operated control), so rules 3 and 4 do not apply to it.
 - Report the QNH in use in 0x2B bytes 5-7 (see "AIR report").
+- Send the altitude invalid marker on 0x28 until the 2 s listen window ends (see Decisions).
+- Recovery: a rebooted AIR module hears the next keep-alive from any set device within about 1 s, adopts it and clears not set.
 - Keep the existing "discard unwanted packet" read loop.
 - Heartbeat and LED unchanged. Add the adopted value and its source ID to the DEBUG serial output.
 
@@ -204,6 +206,8 @@ Decided (2026-10-20, David):
 - The AIR module reports the QNH it is using, in 0x2B bytes 5-7, because its altitude is computed from it.
 - The flat +/- 20 ms applies to every periodic message, GPS included.
 
-Open:
-- How the not-set state and the baro mismatch look on the EFIS page and the backup display.
-- The GPS time-sync message (0x19) with +/- 20 ms: the server only seems to build a datetime from it, but check that nothing uses its arrival time.
+- AIR module hold-off: during its 2 s listen window the AIR module sends the altitude invalid marker (0x7FFFFFFF) on 0x28, not an altitude from the unset 29.92. After the window it uses the adopted value, or 29.92 flagged not set.
+- Looks: on the EFIS page a not-set QNH flashes at 1 Hz and a mismatch turns the QNH box amber. On the backup 20x4, `29.92?` is not set and `29.92!` is a mismatch (final form in the display design).
+- GPS 0x19 with +/- 20 ms is safe: the server only builds a datetime from the fields and nothing uses the arrival time.
+
+Open: none.
