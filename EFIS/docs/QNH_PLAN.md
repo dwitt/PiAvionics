@@ -1,8 +1,11 @@
 # Plan: share the QNH (altimeter setting) between all devices on the CAN bus
 
-Written 2026-10-20. Status 2026-10-20: steps 1 to 3 are written and committed but NOT yet flashed, deployed or tested on the
-bench (protocol 0.3.0, AIR_Module 1.0.36, aio_server 1.7.0 with qnh_state.py, efis-display.js 0.8.0). The jitter fix (step 4) and the
-backup display (step 5) are not started. Decisions at the end are marked open or decided.
+Written 2026-10-20. Status 2026-10-20: steps 1 to 3 are written, committed, AIR_Module 1.0.36 is flashed and aio_server 1.7.0 with
+qnh_state.py and the page 0.8.0 are deployed to the Pi (old files in ~/EFIS/backup_20261020_qnh). Bench-tested on the real bus: block IDs
+0x2C/0x2D/0x2F adopted, out-of-range / hPa-mismatch / wrong-ID frames ignored, boot sends the altitude marker for 2 s then 29.92 flagged
+not set, the next frame clears the flag, 0x2B bytes 5-7 report the value, the server follows 0x2C/0x2D and keeps alive on 0x2E.
+Not yet done: the page itself on the Pi screen (needs a reload), a live mismatch, the jitter fix (step 4) and the backup display
+(step 5). Decisions at the end are marked open or decided.
 
 ## Goal
 
