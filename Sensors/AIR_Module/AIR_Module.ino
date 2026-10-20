@@ -14,6 +14,7 @@
 #include <Wire.h>               // I2C library
 #include "src/Adafruit_MCP2515/src/Adafruit_MCP2515.h"   // for CAN bus FeatherWing
 #include "src/StatusLED/StatusLED.h"         // status LED: startup colours and runtime heartbeat
+#include "src/SendTimer/SendTimer.h"         // send each CAN message every period +/- 20 ms
 #include <Adafruit_MAX31865.h>  // for MAX31865 RTD temperature sensor
 #include "MS4525DO.h"           // MS4525DO Sensor Library
 #include "SSC.h"                // SSC Sensor Library
@@ -30,7 +31,7 @@
 /*****************************************************************************
  * Firmware version - increment the patch number on every change
  *****************************************************************************/
-#define VERSION "1.0.36"
+#define VERSION "1.0.37"
 
 // Set to 0 to run without the AOA sensor (Wire1, GPIO8/9). With 0, Wire1 is not
 // touched at all and a missing AOA sensor does not stop startup.
@@ -243,10 +244,10 @@ Adafruit_Sensor *static_pressure, *static_temp;
 static uint32_t timestamp;      // tracking the timing in the main loop
 
 // Timestamps to determine when to send the next CAN message
-static long canAirTimeStamp = 0;
-static long canAoaTimeStamp = 0;
-static long canTempTimeStamp = 0;
-static long canRawTimeStamp = 0;
+static SendTimer canAirTimer(CAN_AIR_PERIOD);     // each wait is the period +/- 20 ms, drawn once per send
+static SendTimer canAoaTimer(CAN_AOA_PERIOD);
+static SendTimer canTempTimer(CAN_TEMP_PERIOD);
+static SendTimer canRawTimer(CAN_RAW_PERIOD);
 
 // Data to send via CAN
 // Declare static so they are local to this file
@@ -932,7 +933,7 @@ void loop() {
   // Send the Airspeed, Altitude and Vertical Speed data
   // --------------------------------------------------------------------------
 
-  if (millis() - canAirTimeStamp > CAN_AIR_PERIOD + random(50)) {
+  if (canAirTimer.due()) {
     // Pitot lost: no airspeed. Static lost: no altitude and no vertical speed. (A lost sensor used to send
     // airspeed 0 or hold the last altitude.)
     bool pitotOk = pitotChan.health.valid();
@@ -946,27 +947,27 @@ void loop() {
     can.beginPacket(CAN_AIR_MSG_ID);
     can.write(canData.bytes, 8);
     can.endPacket();
-    canAirTimeStamp = millis(); // update the timestamp
+    canAirTimer.sent();
   }
 
   // --------------------------------------------------------------------------
   // Send the AOA data
   // --------------------------------------------------------------------------
 
-  if (millis() - canAoaTimeStamp > CAN_AOA_PERIOD + random(50)) {
+  if (canAoaTimer.due()) {
     canData.integers[0] = aoa;
 
     can.beginPacket(CAN_AOA_MSG_ID);
     can.write(canData.bytes, 8);
     can.endPacket();
-    canAoaTimeStamp = millis(); // update the timestamp
+    canAoaTimer.sent();
   }
 
   // --------------------------------------------------------------------------
   // Send the Raw Static Pressure and Temperature data
   // --------------------------------------------------------------------------
 
-  if (millis() - canRawTimeStamp > CAN_RAW_PERIOD + random(50)) {
+  if (canRawTimer.due()) {
     // Pack to match legacy format: <hbhBBB>
     // int16 static_pressure (hPa×10), int8 temperature (°C),
     // int16 differential_pressure (Pa), int16 QNH in use (inHg x 100), flags
@@ -989,7 +990,7 @@ void loop() {
     can.beginPacket(CAN_RAW_MSG_ID);
     can.write(canData.bytes, 8);
     can.endPacket();
-    canRawTimeStamp = millis(); // update the timestamp
+    canRawTimer.sent();
   }
 
   // --------------------------------------------------------------------------
@@ -998,7 +999,7 @@ void loop() {
 
   // The frame keeps coming when the RTD is lost, with the marker, so "OAT sensor failed" can be told apart
   // from "AIR module silent". (It used to stop.)
-  if (millis() - canTempTimeStamp > CAN_TEMP_PERIOD + random(50)) {
+  if (canTempTimer.due()) {
     canData.integers[0] = oatHealth.valid() ? oatTemp : (int16_t)CAN_MARKER_INT16;    // °C × 10 (int16, bytes 0-1)
     canData.bytes[2] = 0;             // Humidity % (not available)
     canData.bytes[3] = 0;
@@ -1010,7 +1011,7 @@ void loop() {
     can.beginPacket(CAN_TEMP_MSG_ID);
     can.write(canData.bytes, 8);
     can.endPacket();
-    canTempTimeStamp = millis();
+    canTempTimer.sent();
   }
 
   /***************************************************************************

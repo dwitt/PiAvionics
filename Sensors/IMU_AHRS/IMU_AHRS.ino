@@ -49,11 +49,12 @@
 // See Sensors/Libraries/StatusLED/StatusLED.md for full specification
 // ---------------------------------------------------------------------------
 #include "src/StatusLED/StatusLED.h"
+#include "src/SendTimer/SendTimer.h"         // send each CAN message every period +/- 20 ms
 
 /*****************************************************************************
  * Firmware version - increment the patch number on every change
  *****************************************************************************/
-#define VERSION "1.0.16"
+#define VERSION "1.0.17"
 
 ModuleInfo moduleInfo("IMU_AHRS", VERSION, __DATE__, __TIME__);
 
@@ -255,8 +256,8 @@ uint32_t timestamp;					// tracking the timing in the main loop
 
 // Timestamps to determine when to send the next CAN message
 
-static long canEulerTimeStamp = 0;	
-static long canAccTimeStamp = 0;
+static SendTimer canEulerTimer(CAN_EULER_PERIOD);   // each wait is the period +/- 20 ms, drawn once per send	
+static SendTimer canAccTimer(CAN_ACC_PERIOD);
 static long canMagTimeStamp = 0;
 
 // Data to send via CAN
@@ -649,7 +650,7 @@ void loop() {
 	// ------------------------------------------------------------------------
 	// --- Send yaw, pitch and roll
 	// ------------------------------------------------------------------------
-	if (millis() > (canEulerTimeStamp + CAN_EULER_PERIOD) + random(50)) {
+	if (canEulerTimer.due()) {
 		// Accelerometer/gyro lost: no attitude, heading or turn rate (they used to be held at the last
 		// values). A lost magnetometer is different: the gyro-only heading is still sent as a number
 		// and the heartbeat says the magnetometer is lost.
@@ -661,13 +662,13 @@ void loop() {
 		can.beginPacket(CAN_EULER_MSG_ID);
 		can.write(canData.bytes, 8);
 		can.endPacket();
-		canEulerTimeStamp = millis();
+		canEulerTimer.sent();
 	}
 
 	// ------------------------------------------------------------------------
 	// -- Send accelerations. Fill out the buffer with 0
 	// ------------------------------------------------------------------------
-	if (millis() > (canAccTimeStamp + CAN_ACC_PERIOD) + random(50)) {
+	if (canAccTimer.due()) {
 		bool accelOk = ismHealth.valid();	// accelerometer lost: no accelerations (they used to be held)
 		canData.integers[0] = accelOk ? accelX : (int16_t)CAN_MARKER_INT16;
 		canData.integers[1] = accelOk ? accelY : (int16_t)CAN_MARKER_INT16;
@@ -676,7 +677,7 @@ void loop() {
 		can.beginPacket(CAN_ACC_MSG_ID);
 		can.write(canData.bytes, 8);
 		can.endPacket();
-		canAccTimeStamp = millis();
+		canAccTimer.sent();
 	}
 
 	// ------------------------------------------------------------------------

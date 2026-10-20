@@ -14,10 +14,11 @@
 #include <Adafruit_GPS.h>        // Adafruit GPS NMEA parsing library
 #include "src/Adafruit_MCP2515/src/Adafruit_MCP2515.h"    // for CAN Bus FeatherWing
 #include "src/StatusLED/StatusLED.h"          // status LED: startup colours and runtime heartbeat
+#include "src/SendTimer/SendTimer.h"         // send each CAN message every period +/- 20 ms
 #include "XYZgeomag.hpp"         // WMM2025 magnetic declination (nhz2/XYZgeomag)
 #include "src/ModuleInfo/ModuleInfo.h"        // USB product name, startup log and '?' report
 
-#define VERSION "1.0.9"
+#define VERSION "1.0.10"
 
 ModuleInfo moduleInfo("GPS_Module", VERSION, __DATE__, __TIME__);
 
@@ -78,10 +79,10 @@ Adafruit_MCP2515 can(CAN_CS_PIN);
 // ----------------------------------------------------------------------------
 
 // Timestamps to determine when to send the next CAN message
-static long canGps1TimeStamp = 0;
-static long canGps2TimeStamp = 0;
-static long canGps3TimeStamp = 0;
-static long canTimeSyncTimeStamp = 0;
+static SendTimer canGps1Timer(CAN_GPS1_PERIOD);   // each wait is the period +/- 20 ms, drawn once per send
+static SendTimer canGps2Timer(CAN_GPS2_PERIOD);
+static SendTimer canGps3Timer(CAN_GPS3_PERIOD);
+static SendTimer canTimeSyncTimer(CAN_TIME_SYNC_PERIOD);
 
 // Data to send via CAN
 // Declare static so they are local to this file
@@ -610,7 +611,7 @@ void loop() {
     // Send the GPS Coordinates (latitude, longitude)
     // --------------------------------------------------------------------------
 
-    if (millis() - canGps1TimeStamp > CAN_GPS1_PERIOD + random(50)) {
+    if (canGps1Timer.due()) {
       canGps1Data.longs[0] = latitude;
       canGps1Data.longs[1] = longitude;
 
@@ -621,14 +622,14 @@ void loop() {
       can.write(canGps1Data.bytes, 8);
       can.endPacket();
       #endif
-      canGps1TimeStamp = millis();
+      canGps1Timer.sent();
     }
 
     // --------------------------------------------------------------------------
     // Send the GPS Speed, Altitude, and True Track
     // --------------------------------------------------------------------------
 
-    if (millis() - canGps2TimeStamp > CAN_GPS2_PERIOD + random(50)) {
+    if (canGps2Timer.due()) {
       canGps2Data.integers[0] = groundSpeed;
       canGps2Data.integers[1] = gpsAltitude;
       canGps2Data.integers[2] = trueTrack;
@@ -641,7 +642,7 @@ void loop() {
       can.write(canGps2Data.bytes, 8);
       can.endPacket();
       #endif
-      canGps2TimeStamp = millis();
+      canGps2Timer.sent();
 
       #if defined(DEBUG)
       if (Serial) {
@@ -661,7 +662,7 @@ void loop() {
     // Send the Time Sync data
     // --------------------------------------------------------------------------
 
-    if (millis() - canTimeSyncTimeStamp > CAN_TIME_SYNC_PERIOD + random(50)) {
+    if (canTimeSyncTimer.due()) {
 
       if (gpsHasDate) {
 
@@ -691,7 +692,7 @@ void loop() {
         can.write(canTimeSyncData, 8);
         can.endPacket();
         #endif
-        canTimeSyncTimeStamp = millis();
+        canTimeSyncTimer.sent();
       }
     }
 
@@ -701,7 +702,7 @@ void loop() {
   // Send GPS Status (sent regardless of fix, so display shows "No Fix" status)
   // --------------------------------------------------------------------------
 
-  if (millis() - canGps3TimeStamp > CAN_GPS3_PERIOD + random(50)) {
+  if (canGps3Timer.due()) {
     canGps3Data[0] = gps.fixquality;      // 0=No fix, 1=GPS, 2=DGPS (WAAS)
     canGps3Data[1] = gps.fixquality_3d;   // 1=No fix, 2=2D, 3=3D
     canGps3Data[2] = gps.satellites;       // Number of satellites in use
@@ -722,7 +723,7 @@ void loop() {
     can.write(canGps3Data, 8);
     can.endPacket();
     #endif
-    canGps3TimeStamp = millis();
+    canGps3Timer.sent();
 
     #if defined(DEBUG)
     if (Serial) {

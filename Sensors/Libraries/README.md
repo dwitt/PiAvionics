@@ -7,6 +7,7 @@ GPS sketches. They live here, once.
 |---|---|---|
 | `ModuleInfo` | USB product name, startup log, `?` report, CAN heartbeat packing, test-command hook | IMU, AIR, GPS |
 | `StatusLED` | NeoPixel startup colours, POST codes, runtime heartbeat colours | IMU, AIR, GPS |
+| `SendTimer` | when to send a periodic CAN message: every period +/- 20 ms, drawn once per send | IMU, AIR, GPS |
 | `SensorHealth` | valid / invalid decision for a sensor from good/bad samples | IMU, AIR |
 | `Adafruit_MCP2515` | **patched** CAN library (bounded send, error counters) | IMU, AIR, GPS |
 | `Adafruit_LSM6DS` | **patched** accel/gyro library (a failed read returns false) | IMU |
