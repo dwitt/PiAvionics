@@ -1,7 +1,7 @@
 """ Asynchronous I/O based webserver to handle page and websocket"""
 # pyright: reportMissingImports=false
 
-VERSION = "1.6.3"
+VERSION = "1.7.0"
 
 import asyncio
 import ipaddress
@@ -20,6 +20,7 @@ from flightplan import FlightPlan, compute_navigation
 import module_status
 import display_orientation
 import efis_heartbeat
+import qnh_state
 
 #import board #pylint: disable=import-error
 from adafruit_extended_bus import ExtendedI2C as I2C
@@ -45,7 +46,7 @@ DEBUG_NAV = False
 # =============================================================================
 # CAN BUS CONFIGURATION
 # =============================================================================
-CAN_QNH_PERIOD = 1000  # ms between messages (1 second between transmitting qnh)
+QNH_SERVICE_PERIOD = 0.02  # seconds between QNH sends and silence checks (the 20 ms send guard in qnh_state.py)
 CAN_BITRATE = 250000
 CAN_CHANNEL = 'can0'
 CAN_TIMEOUT = 0.1
@@ -194,6 +195,8 @@ class AvionicsData:
         self.oat = None             # Outside Air Temperature (°C, from MAX31865 RTD)
         self.can_qnh = None
         self.can_qnh_hpa = None
+        self.qnh_set = False        # False while the QNH is 29.92 "not set" (nobody has set it and none was heard)
+        self.qnh_mismatch = False   # the AIR module reports a different QNH from the one held (qnh_state.py)
         self.yaw = None
         self.pitch = None
         self.roll = None
@@ -253,6 +256,7 @@ class AvionicsData:
         self._dtk_true = None      # desired track and bearing as worked out from the flight plan, in TRUE degrees;
         self._bearing_true = None  # update_status() sends them as dtk and bearing in magnetic degrees
         self._status = module_status.StatusTracker(time.monotonic())  # heartbeats and validity
+        self._qnh = qnh_state.QnhState(time.monotonic())  # the shared QNH: adopt, send, mismatch
         self._modules_ok_mask = 0  # bit 0 AIR, 1 IMU, 2 GPS seen healthy (for the EFIS heartbeat 0x700)
 
 # *****************************************************************************
@@ -281,11 +285,9 @@ class MyWebSocketResponse:
         self._send_tasks = {}   # websocket -> the send in progress for it (see send_json)
         self.can_bus = None
         self.data = None
-        self.last_qnh = None
         self.qnh_send_errors = RepeatedErrorReporter("QNH send", QNH_SEND_LOG_PERIOD)
         self.orientation = None     # display_orientation.DisplayOrientation, set in main()
         self._orientation_tasks = set()   # keeps the orientation commands from being garbage collected
-        self.can_qnh_timestamp = int(time.monotonic_ns() / 1000000)
         # Initialize backlight with error handling
         self.backlight = None
         self.last_brightness = None
@@ -437,10 +439,10 @@ class MyWebSocketResponse:
                     if DEBUG_QNH:
                         print(f"QNH from json= {qnh} (clamped to range {QNH_MIN_INHG_X_100}-{QNH_MAX_INHG_X_100})")
 
-                    # Process QNH (qnh is in inHg × 100 format)
-                    self.process_qnh(qnh)
+                    # A change by the person at the controller page: hold it and send it at once
                     if self.data is not None:
-                        self.data.controller_state["qnh"] = qnh
+                        self.data._qnh.on_user(qnh, time.monotonic())
+                        self.service_qnh()
                 
                 # Process brightness if provided
                 brightness = dict_object.get('brightness', None)
@@ -541,48 +543,28 @@ class MyWebSocketResponse:
         if await self.orientation.revert():
             print(f"Display orientation trial reverted to {self.orientation.saved}", flush=True)
 
-    def process_qnh(self, qnh):
-        """Determine if qnh needs to be sent on the can bus based on
-        whether it has changed or if sufficient time has elapsed.
-        If it needs to be sent out pack it into the message and send it.
-        
-        Args:
-            qnh (int): QNH value in inHg × 100 format (e.g., 2992 = 29.92 inHg)
-        
-        Note:
-            QNH is sent on CAN bus if it has changed from the last sent value
-            or if CAN_QNH_PERIOD milliseconds have elapsed since the last send.
-        """
-        current_time_millis = int(time.monotonic_ns() / 1000000)
-        if (qnh != self.last_qnh or
-            current_time_millis > self.can_qnh_timestamp + CAN_QNH_PERIOD):
-
-            if DEBUG_CAN:
-                print("prepare to send QNH on CAN")
-                print(f"qnh = {qnh}")
+    def service_qnh(self):
+        """Send the QNH if qnh_state says one is due (a change by a person, or the keep-alive after 1000 ms +/- 20 ms of
+        silence), and publish the state for the pages. Called after a change from the page and every
+        QNH_SERVICE_PERIOD."""
+        if self.data is None:
+            return
+        state = self.data._qnh
+        now = time.monotonic()
+        value = state.due(now)
+        if value is not None:
             if DEBUG_QNH:
-                print(", sending via CAN")
-
-            message = self.pack_can_qnh_msg(qnh)
-            self.can_qnh_timestamp = current_time_millis
-            self.last_qnh = qnh
-            #print(f"QNH: {qnh}, Last QNH:{self.last_qnh}")
-            #print(f"Sending can message {message}")
-
-            if DEBUG_CAN:
-                print(self.can_bus)
-
-            # Check if CAN bus is available before sending
+                print(f"sending QNH {value} on CAN")
             if self.can_bus is not None:
                 try:
-                    self.can_bus.send(message)
-                    if DEBUG_CAN:
-                        print(f"Message sent on {self.can_bus.channel_info}")
+                    self.can_bus.send(self.pack_can_qnh_msg(value))
                 except Exception as e:
                     self.qnh_send_errors.report(e, time.monotonic())
-            else:
-                if DEBUG_CAN:
-                    print("CAN bus not available, cannot send QNH message")
+        if self.data.controller_state is None:
+            self.data.controller_state = {}
+        self.data.controller_state["qnh"] = state.value
+        self.data.qnh_set = state.is_set
+        self.data.qnh_mismatch = state.mismatch(now)
 
     def pack_can_qnh_msg(self, qnh):
         """ Pack the qnh value into a message for sending on the CAN bus.
@@ -594,7 +576,7 @@ class MyWebSocketResponse:
             can.Message: Packed CAN message ready to send
         """
         # Convert from inHg × 100 to hPa (qnh is in inHg × 100, so divide by conversion factor)
-        qnh_hpa = int(qnh / QNH_TO_HPA_CONVERSION)
+        qnh_hpa = round(qnh / QNH_TO_HPA_CONVERSION)
         # qnh is in inHg × 100, so qnh*QNH_ACCURACY_MULTIPLIER gives inHg × 400 for accuracy preservation
         qnh_message = struct.pack("<hhBBBB",
                                     qnh_hpa,
@@ -778,9 +760,11 @@ async def process_static_pressure_message(msg, data, last_received_times):
         return False
     
     try:
-        (static_pressure, temperature, differential_pressure, _, _, _) = (
-            struct.unpack("<hbhbbb", msg.data)
+        (static_pressure, temperature, differential_pressure, qnh_in_use, qnh_flags) = (
+            struct.unpack("<hbhhB", msg.data)
         )
+        # Bytes 5-7: the QNH the AIR module is using (inHg x 100, 0x7FFF = invalid) and its flags
+        data._qnh.on_air_report(qnh_in_use, qnh_flags, time.monotonic())
         data.static_pressure = decode_field(data, "static_pressure", static_pressure)
         data.temperature = temperature
         data.differential_pressure = decode_field(data, "differential_pressure", differential_pressure)
@@ -823,6 +807,8 @@ async def process_qnh_message(msg, data, last_received_times):
         # qnhx4 is inHg × 400, divide by QNH_ACCURACY_MULTIPLIER to convert to inHg
         data.can_qnh = qnhx4 / QNH_ACCURACY_MULTIPLIER
         data.can_qnh_hpa = qnh_hpa
+        # Any ID in the block 0x2C to 0x2F counts; the last frame heard wins (qnh_state.py)
+        data._qnh.on_can(msg.arbitration_id, qnh_hpa, qnhx4, time.monotonic())
         if DEBUG_JSON:
             print(data.can_qnh)
         return True
@@ -1127,7 +1113,7 @@ CAN_MESSAGE_HANDLERS = {
     CAN_MSG_ID.ALTITUDE_AIRSPEED_VSI.value: process_altitude_message,
     CAN_MSG_ID.OAT.value: process_oat_message,
     CAN_MSG_ID.STATIC_PRESSURE.value: process_static_pressure_message,
-    CAN_MSG_ID.QNH.value: process_qnh_message,
+    **{qnh_id: process_qnh_message for qnh_id in range(qnh_state.ID_FIRST, qnh_state.ID_LAST + 1)},
     CAN_MSG_ID.AHRS_ORIENT.value: process_ahrs_orient_message,
     CAN_MSG_ID.AHRS_ACCEL.value: process_ahrs_accel_message,
     CAN_MSG_ID.GPS1.value: process_gps1_message,
@@ -1321,6 +1307,14 @@ async def send_efis_heartbeat(data, bus, heartbeat):
             except (can.CanError, OSError) as error:
                 send_errors.report(error, now)
         await asyncio.sleep(EFIS_HEARTBEAT_PERIOD)
+
+
+async def monitor_qnh(web_socket_response):
+    """Every QNH_SERVICE_PERIOD seconds send the QNH if one is due (the keep-alive after silence, or a change waiting
+    for the 20 ms guard) and publish qnh_set and qnh_mismatch for the pages."""
+    while True:
+        web_socket_response.service_qnh()
+        await asyncio.sleep(QNH_SERVICE_PERIOD)
 
 
 async def monitor_orientation(data, orientation):
@@ -1691,6 +1685,7 @@ async def main():
         send_json(web_socket_response, avionics_data),
         monitor_flight_plan(avionics_data),
         monitor_orientation(avionics_data, orientation),
+        monitor_qnh(web_socket_response),
         send_efis_heartbeat(avionics_data, bus, efis_heartbeat.EfisHeartbeat(VERSION, time.monotonic())),
     #    read_input(encoder, button, avionics_data)
     ]

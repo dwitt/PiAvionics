@@ -1,7 +1,7 @@
 """Runs the real aio_server handlers and receive loop with a fake CAN reader.
 Needs the server's own libraries (aiohttp, python-can, ...), so it is skipped where they are not
 installed (for example on the Mac) and is run on the Pi:  python3 -m unittest discover -s tests -v"""
-VERSION = "1.6.0"
+VERSION = "1.7.0"
 
 import asyncio
 import contextlib
@@ -58,6 +58,10 @@ def oat_frame(oat=228):
 
 def pressure_frame(static=9420, temperature=22, differential=620):
     return FakeMsg(0x2B, struct.pack("<hbhbbb", static, temperature, differential, 0, 0, 0))
+
+
+def qnh_frame(can_id, inhg_x100):
+    return FakeMsg(can_id, struct.pack("<hhBBBB", round(inhg_x100 / 2.95299875), inhg_x100 * 4, 0, 0, 0, 0))
 
 
 def accel_frame(x=10, y=-20, z=981, calibration=3):
@@ -124,6 +128,41 @@ class ServerGlueTests(unittest.TestCase):
         self.assertEqual(self.data.modules["air"]["version"], "1.0.15")
         self.assertEqual(self.data.modules["imu"]["state"], 1)
         json.dumps({k: v for k, v in self.data.__dict__.items() if not k.startswith("_")})
+
+    def test_qnh_from_any_id_in_the_block_is_adopted(self):
+        run_loop(self.data, self.times, [qnh_frame(0x2D, 3010)])
+        self.assertEqual((self.data._qnh.value, self.data._qnh.is_set), (3010, True))
+        run_loop(self.data, self.times, [qnh_frame(0x2E, 3015), qnh_frame(0x2F, 3020)])
+        self.assertEqual(self.data._qnh.value, 3020)
+
+    def test_qnh_out_of_range_is_ignored(self):
+        run_loop(self.data, self.times, [qnh_frame(0x2D, 3200)])
+        self.assertEqual((self.data._qnh.value, self.data._qnh.is_set), (2992, False))
+
+    def test_air_report_in_0x2b_is_read_and_a_mismatch_flagged(self):
+        run_loop(self.data, self.times, [qnh_frame(0x2D, 3010)])
+        report = lambda: FakeMsg(0x2B, struct.pack("<hbhhB", 9420, 22, 620, 2992, 0))
+        run_loop(self.data, self.times, [report()])
+        now = time.monotonic()
+        self.assertFalse(self.data._qnh.mismatch(now))
+        self.data._qnh.on_air_report(2992, 0, now)
+        self.assertFalse(self.data._qnh.mismatch(now))
+        self.data._qnh.on_air_report(2992, 0, now + 2.5)
+        self.assertTrue(self.data._qnh.mismatch(now + 2.5))
+
+    def test_service_sends_a_change_on_0x2e_and_publishes_state(self):
+        web = srv.MyWebSocketResponse()
+        web.data = self.data
+        web.can_bus = FakeBus()
+        self.data._qnh.on_user(2992, time.monotonic())
+        self.data._qnh.on_user(3005, time.monotonic())
+        web.service_qnh()
+        self.assertEqual(len(web.can_bus.sent), 1)
+        can_id, payload, _ = web.can_bus.sent[0]
+        self.assertEqual(can_id, 0x2E)
+        self.assertEqual(struct.unpack("<hhBBBB", payload)[:2], (round(3005 / 2.95299875), 3005 * 4))
+        self.assertEqual(self.data.controller_state["qnh"], 3005)
+        self.assertTrue(self.data.qnh_set)
 
     def test_pitot_lost_flags_but_keeps_the_number_while_gate_is_off(self):
         self.healthy(air_mask=0x0E)
@@ -489,11 +528,14 @@ class ServerGlueTests(unittest.TestCase):
         import can
         handler = srv.MyWebSocketResponse()
         handler.backlight = None
+        handler.data = self.data
         handler.can_bus = FakeBus(error=can.CanError("No buffer space available"))
         output = io.StringIO()
         with contextlib.redirect_stdout(output):
             for qnh in range(2900, 2930):                                # a different QNH each time, so each one is sent
-                handler.process_qnh(qnh)
+                self.data._qnh.on_user(qnh, time.monotonic())
+                self.data._qnh._last_send = None                         # (skip the 20 ms guard between steps)
+                handler.service_qnh()
         lines = [line for line in output.getvalue().splitlines() if "QNH send" in line]
         self.assertEqual(len(lines), 1)                                  # thirty failures, one line
         self.assertIn("No buffer space available", lines[0])
