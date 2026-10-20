@@ -30,6 +30,7 @@ export class UserInput {
 
         this.itemSelectionMode = false;
         this.firstPass = true;
+        this.rebaseNext = false;    // see rebaseEncoder()
 
         // storage for call back and virtual encoder
         this.numberOfCallbacksRegistered = 0;
@@ -94,6 +95,12 @@ export class UserInput {
      * @param {boolean} button The state of the encoder push button. True is 
      *     depressed. False is released.
      */
+    rebaseEncoder() {
+        // Call when the server has restarted (a new connection): its encoder position may not continue from the
+        // old one. The next position seen becomes the starting point, so the jump does not turn the selected item.
+        this.rebaseNext = true;
+    }
+
     processState(position, button) {
         var encoderPosition;
 
@@ -121,6 +128,19 @@ export class UserInput {
         // All regular processing happens here
         } else {
             // We have at least one call back registered
+
+            // No position (the server has just restarted), or the first one after a reconnection: take it as the
+            // starting point. encoderAdjustment moves by the jump, so the value of the selected item is unchanged.
+            if (position === undefined || position === null) {
+                this.rebaseNext = true;
+                return;
+            }
+            if (this.rebaseNext) {
+                this.encoderAdjustment += position - this.lastPosition;
+                this.lastPosition = position;
+                this.rebaseNext = false;
+                return;
+            }
             
             /******************************************************************
              * Handle changes to the push button state first                  *

@@ -50,7 +50,7 @@ import { FAILURE_LOOK } from './failureLook.mjs';
 
 // ----------------------------------------------------------------------------
 
-const VERSION = "0.8.0";
+const VERSION = "0.8.1";
 
 // Viewer mode: a page that is not the Pi's own display only watches. It sends
 // nothing to the server, ignores the encoder, and shows the QNH and brightness
@@ -268,6 +268,7 @@ dataObject.magz = 0.0;
 
 var webSocketURL = "ws://" + (serverOverride || location.host) + "/ws";
 var myWebSocket;
+var encoderRebasePending = false;       // set on every (re)connection, cleared by the first message
 const WEBSOCKET_RECONNECT_MS = 1000;    // delay between reconnect attempts
 
 function connectWebSocket() {
@@ -275,6 +276,9 @@ function connectWebSocket() {
 
     // listen for the 'open' event and respond with "ready"
     myWebSocket.addEventListener('open', function(event){
+        // A new connection may mean a restarted server whose encoder position does not continue from the old one:
+        // userInput takes the first position it gets as a new starting point (rebaseEncoder)
+        encoderRebasePending = true;
         // Let the server know we are ready for data
         myWebSocket.send("ready")
     })
@@ -370,6 +374,10 @@ function RecieveWebSocketMessage(event) {
     // this will contain the data from the CAN bus
     dataObject = JSON.parse(event.data);
     gotFirstMessage = true;
+    if (encoderRebasePending) {
+        encoderRebasePending = false;
+        if (typeof userInput !== 'undefined' && userInput) userInput.rebaseEncoder();
+    }
     instrumentStatus.messageReceived(Date.now());
 }
 
