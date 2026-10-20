@@ -39,9 +39,11 @@ protocol:
       Lower IDs win bus arbitration. All PiAvionics IDs (0x19 to 0x83) are lower
       than every MGL device ID (0x200 and up).
     - >
-      Modules send each message on a timer (period_ms). The firmware is meant to vary each interval by a flat
-      +/- 20 ms about the period, drawn once per send (decided 2026-10-20). Until the jitter fix is flashed the
-      actual jitter is only about 1 to 3 ms, because the random number was drawn again on every pass of loop().
+      Modules send each message on a timer (period_ms). Each interval varies by a flat +/- 20 ms about the period, drawn
+      once per send (SendTimer library; AIR_Module 1.0.37, IMU_AHRS 1.0.17, GPS_Module 1.0.10, measured on the bus
+      2026-10-20: means within 1 ms of the period, minimum period - 20 ms; about 1.5% of frames are later than period + 25 ms
+      because the module's loop was busy). Before that the random number was drawn again on every pass of loop(), so the
+      jitter was only 1 to 3 ms and the mean 2 to 3 ms over the period.
       The jitter is not needed for collision handling, because CAN arbitration never drops a frame.
     - >
       Invalid-data markers (protocol 0.2.0). A field that cannot be trusted is sent as the

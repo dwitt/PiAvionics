@@ -4,7 +4,8 @@ Written 2026-10-20. Status 2026-10-20: steps 1 to 3 are written, committed, AIR_
 qnh_state.py and the page 0.8.0 are deployed to the Pi (old files in ~/EFIS/backup_20261020_qnh). Bench-tested on the real bus: block IDs
 0x2C/0x2D/0x2F adopted, out-of-range / hPa-mismatch / wrong-ID frames ignored, boot sends the altitude marker for 2 s then 29.92 flagged
 not set, the next frame clears the flag, 0x2B bytes 5-7 report the value, the server follows 0x2C/0x2D and keeps alive on 0x2E.
-Not yet done: the page itself on the Pi screen (needs a reload), a live mismatch, the jitter fix (step 4) and the backup display
+Page checked on the Pi screen (follows the bus, flashes when not set, one click sets). Encoder jump after a server restart fixed (page 0.8.1).
+Jitter fix (step 4) done: SendTimer library, AIR 1.0.37, IMU 1.0.17, GPS 1.0.10 flashed and measured. Not yet done: a live mismatch and the backup display
 (step 5). Decisions at the end are marked open or decided.
 
 ## Goal
