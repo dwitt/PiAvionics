@@ -61,6 +61,20 @@ Today the Pi EFIS is the only device that can set the QNH, and the AIR module is
    value is never sent.
 5. **Silence is not a fault.** A quiet bus means nobody has been touched and nobody's keep-alive is running. The held value is still
    good. The displays show no failure for it.
+6. **The AIR module reports the QNH it is really using** (see "AIR report" below), because the altitude is computed from it
+   (`AIR_Module.ino`, `pow(qnh/2992, 0.190263)`: about 10 ft per 0.01 inHg, about 1000 ft per inHg). A display that holds a
+   confirmed value which differs from the AIR module's reported value for more than 2 s flags a baro mismatch (look decided with the
+   display designs). This also catches a lost frame, an AIR restart, and a module on an old value.
+
+### AIR report
+
+The heartbeat (0x702) has all 8 bytes used, and 0x28 is full. **0x2B has 3 spare bytes** (5-7, "always 0", unpacked by the server as
+padding, so an unchanged server and the legacy format are not affected):
+
+- bytes 5-6: QNH in use, int16, inHg x 100 (2992 is 29.92), invalid marker 0x7FFF = not valid
+- byte 7: flags, bit 0 = restored from flash and not yet confirmed by a frame from the bus; other bits 0
+
+Sent at the 0x2B rate (200 ms). The AIR module still sends no frame in the 0x2C to 0x2F block (rule 4).
 
 ### Power-up and storage
 
@@ -70,10 +84,19 @@ Today the Pi EFIS is the only device that can set the QNH, and the AIR module is
    is not sent.
 3. The first change by a person in QNH mode confirms it and starts sending. A frame heard from the bus also confirms and replaces it.
 4. Storage: every device stores whatever it holds (set or adopted), after the value has been steady for 2 s, and only when it
-   changed. So all devices hold the same last value for the next cold start. Where:
-   - AIR module: RP2040 flash (the EEPROM emulation in arduino-pico). Wear is not a concern because QNH changes rarely and only steady values are written.
-   - Backup display: the same.
-   - Pi server: a small JSON file next to `display_orientation.json`, written the same way.
+   differs from what is already stored. So all devices hold the same last value for the next cold start. Where:
+   - **Pi server:** `/home/david/EFIS/qnh.json`, next to `display_orientation.json`, written the same way (temp file, fsync,
+     `os.replace`, so a power cut leaves the old file or the new one). `copytopiefis.sh` copies only the files it lists and does not
+     delete anything, so a deploy never touches it. The new `qnh_state.py` must be added to that script.
+   - **AIR module and backup display (Feather RP2040):** the board has no EEPROM, but arduino-pico (core 6.3.0 installed) emulates
+     one in the last 4 KB sector of the 8 MB flash, outside the program, so uploading a sketch does not erase it (to be verified on
+     the bench). Use `EEPROM.begin(256)`, `EEPROM.put`/`get` of a small struct (value, inverse of the value as a check, a version
+     byte), and `EEPROM.commit()` only when steady for 2 s and different. A bad check means "never stored": 2992.
+     - Cost: `commit()` turns interrupts off and halts the other core while it erases and programs, a few tens of ms. At most one
+       late 0x28 frame; the sensor health logic (20 bad samples) must not trip. To be measured on the bench before accepting.
+     - Wear: about 100,000 erases; a settled change is rare, so this is not a concern.
+     - Fallback if the stall is a problem: the external Adafruit 24LC32 I2C EEPROM (address 0x50) that the IMU_AHRS already uses
+       for its calibration (`Adafruit_EEPROM_I2C`). No stall, but extra hardware on the board.
 
 ### Encoder behaviour (for the backup display, and the page's own encoder)
 
@@ -86,6 +109,7 @@ The mode falls back to the default after a period with no input. The details bel
 
 - Replace the single 0x2E entry with the block 0x2C to 0x2F: senders (efis 0x2E, backup 0x2D, spares), receivers (air, efis, backup),
   the payload, the rules above and the checks. Note that the old "x100" doc text is stale (it is x400).
+- 0x2B: replace the 3 padding bytes with the QNH in use (bytes 5-6) and the flags (byte 7).
 - Update `Protocol/CAN_PROTOCOL.md` and `CAN Reference/Can Docs.md` through the existing generator.
 - Describe the jitter correctly (last section).
 
@@ -94,7 +118,8 @@ The mode falls back to the default after a period with no input. The details bel
 - Filter: `can.filter(0x2C, 0x7FC)` instead of `(0x2E, 0x7FF)`. Check the patched `Adafruit_MCP2515` filter call handles a mask other than 0x7FF.
 - Accept a frame from any ID in the block. Apply the receiver checks. Adopt the value.
 - Boot: restore `qnh` from flash (default 2992). Write it back after 2 s steady, only if it changed.
-- It does not send QNH (it has no person-operated control), so rules 3 and 4 do not apply to it.
+- It does not send in the QNH block (it has no person-operated control), so rules 3 and 4 do not apply to it.
+- Report the QNH in use in 0x2B bytes 5-7 (see "AIR report").
 - Keep the existing "discard unwanted packet" read loop.
 - Heartbeat and LED unchanged. Add the stored/adopted value to the DEBUG serial output.
 
@@ -108,7 +133,9 @@ The mode falls back to the default after a period with no input. The details bel
     page reported** (not from the server's state), so an old page that keeps repeating a stale value cannot override a bus value.
     Clamp to 2800..3100, adopt, send 0x2E at once, confirm, schedule saving.
   - `tick(now)`: if confirmed and silent for the drawn delay, send the held value on 0x2E and draw a new delay.
-  - Persistence file (`qnh.json`, load at start as unconfirmed, save when steady 2 s).
+  - Persistence file (`/home/david/EFIS/qnh.json`, load at start as unconfirmed, save when steady 2 s and different).
+  - Read the AIR module's reported QNH (0x2B bytes 5-7), compare it with the held value, and send `qnh_mismatch` in the JSON.
+- Add `qnh_state.py` to `copytopiefis.sh`.
 - The websocket JSON gets `qnh_confirmed` next to `controller_state`.
 - `process_qnh` as it is today (send at least once a second, whether or not changed) is replaced by the object above. The send
   failure reporting (`RepeatedErrorReporter`) stays.
@@ -120,6 +147,7 @@ The mode falls back to the default after a period with no input. The details bel
   the encoder. Set `last_qnh` when adopting, so an adopted value is not echoed back as a user change.
 - Stop the once-a-second QNH send. Send `qnh` when it changes; brightness keeps its own logic.
 - Show the unconfirmed state from `qnh_confirmed` (flashing or a mark), cleared by the first turn in QNH mode.
+- Show the baro mismatch from `qnh_mismatch` (look to be decided).
 - Viewers already show `controller_state.qnh`; they get the continuous updates for free.
 - Page version up one.
 
@@ -178,8 +206,11 @@ Decided (2026-10-20, David):
 - Restored values start unconfirmed; a turn in QNH mode confirms.
 - Jitter: flat +/- 20 ms about the nominal period, drawn once per send.
 
+- ID block 0x2C to 0x2F, EFIS on 0x2E, backup display on 0x2D, 0x2C and 0x2F spare.
+- The AIR module reports the QNH it is using, in 0x2B bytes 5-7, because its altitude is computed from it.
+- The flat +/- 20 ms applies to every periodic message, GPS included.
+
 Open:
-- ID block: 0x2C to 0x2F with the EFIS on 0x2E and the backup display on 0x2D (proposed, not yet confirmed).
-- Whether the AIR module should report the QNH it is really using (would need a spare byte; 0x28 is full). Proposed: leave out for now.
-- How the unconfirmed state looks on the EFIS page and the backup display.
-- Whether the GPS 1 Hz messages should use the flat +/- 20 ms or a narrower spread (proposed: the flat +/- 20 ms).
+- Flash EEPROM emulation or the external 24LC32 on the AIR module and backup display: measure the `commit()` stall on the bench first (proposed: flash).
+- How the unconfirmed state and the baro mismatch look on the EFIS page and the backup display.
+- The GPS time-sync message (0x19) with +/- 20 ms: the server only seems to build a datetime from it, but check that nothing uses its arrival time.
