@@ -14,7 +14,7 @@ Nothing is stored. After a restart the value comes from the bus, or is 29.92 fla
 
 import random
 
-VERSION = "1.0.0"
+VERSION = "1.0.1"
 
 QNH_MIN = 2800                 # inHg x 100 (28.00)
 QNH_MAX = 3100                 # inHg x 100 (31.00)
@@ -90,10 +90,11 @@ class QnhState:
     def on_user(self, qnh, now):
         """The controller page reported its QNH (inHg x 100). It is a change by a person only when it differs from the
         previous value the page reported, so a page repeating an old value cannot override a value that came from
-        the bus. Returns True if it was a change."""
-        previous = self._page_reported
+        the bus. Before the page has reported anything it is compared with the value held here (the page sends the
+        QNH only when it changes). Returns True if it was a change."""
+        previous = self.value if self._page_reported is None else self._page_reported
         self._page_reported = qnh
-        if previous is None or qnh == previous:
+        if qnh == previous:
             return False
         if not QNH_MIN <= qnh <= QNH_MAX:
             return False

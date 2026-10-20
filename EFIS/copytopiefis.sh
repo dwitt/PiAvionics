@@ -24,6 +24,7 @@ rsync flightplan.py "$user"@"$destination_server":"$piefis_main_dir"flightplan.p
 rsync module_status.py "$user"@"$destination_server":"$piefis_main_dir"module_status.py
 rsync display_orientation.py "$user"@"$destination_server":"$piefis_main_dir"display_orientation.py
 rsync qnh_state.py "$user"@"$destination_server":"$piefis_main_dir"qnh_state.py
+rsync efis_heartbeat.py "$user"@"$destination_server":"$piefis_main_dir"efis_heartbeat.py
 
 # Read the support files line by line
 while IFS= read -r line || [[ -n "$line" ]]; do

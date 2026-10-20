@@ -71,11 +71,17 @@ class TestHear(unittest.TestCase):
 
 
 class TestUser(unittest.TestCase):
-    def test_first_report_is_not_a_change(self):
+    def test_first_report_equal_to_the_held_value_is_not_a_change(self):
         s = make()
-        self.assertFalse(s.on_user(3010, 1000.1))
+        self.assertFalse(s.on_user(2992, 1000.1))
         self.assertFalse(s.is_set)
         self.assertIsNone(s.due(1000.1))
+
+    def test_first_report_that_differs_is_a_change(self):
+        s = make()
+        s.on_can(0x2D, *frame(3010), 1000.5)
+        self.assertFalse(s.on_user(3010, 1000.6))      # the page followed the bus
+        self.assertTrue(s.on_user(3011, 1000.7))
 
     def test_a_change_is_sent_at_once_and_sets(self):
         s = make()

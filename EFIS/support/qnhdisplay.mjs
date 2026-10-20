@@ -1,10 +1,15 @@
 'use strict';
 
 import { DisplayRectangle } from './displayRectangle.mjs';
+import { FAILURE_LOOK } from './failureLook.mjs';
+
+export const VERSION = '1.1.0';
 
 // QNH range limits in inHg × 100 format (2800 = 28.00 inHg, 3100 = 31.00 inHg)
 const QNH_MIN_INHG_X_100 = 2800;
 const QNH_MAX_INHG_X_100 = 3100;
+const NORMAL_COLOUR = 0x00ffff;
+const NOT_SET_FLASH_SECONDS = 1;    // the "not set" 29.92 flashes once a second
 
 /**     
  * Class representing the QNH display.
@@ -68,6 +73,21 @@ export class QNHDisplay extends DisplayRectangle {
             // Divide by 100 to convert from inHg × 100 to inHg for display (shows 2 decimal places)
             this.valueText.text = this.QNHFormat.format(Math.floor(this.my_value)/100);
         }
+    }
+
+    /**
+     * Show the state of the shared QNH (QNH_PLAN.md). Not set: the 29.92 flashes once a second until a person sets
+     * it or a value arrives from the bus. Mismatch: the AIR module is using a different QNH, so the value is amber.
+     * @param {boolean} notSet True while nobody has set the QNH
+     * @param {boolean} mismatch True while the AIR module reports a different QNH
+     * @param {number} nowSeconds Time in seconds, for the flashing
+     */
+    setStatus(notSet, mismatch, nowSeconds) {
+        const colour = mismatch ? FAILURE_LOOK.cautionColour : NORMAL_COLOUR;
+        this.valueText.style.fill = colour;
+        this.unitText.style.fill = colour;
+        const visible = !notSet || (Math.floor(nowSeconds / (NOT_SET_FLASH_SECONDS / 2)) % 2 === 0);
+        this.valueText.alpha = visible ? 1 : 0.15;
     }
 
     set value(new_value) {

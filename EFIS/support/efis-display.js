@@ -50,7 +50,7 @@ import { FAILURE_LOOK } from './failureLook.mjs';
 
 // ----------------------------------------------------------------------------
 
-const VERSION = "0.7.1";
+const VERSION = "0.8.0";
 
 // Viewer mode: a page that is not the Pi's own display only watches. It sends
 // nothing to the server, ignores the encoder, and shows the QNH and brightness
@@ -72,17 +72,22 @@ const VIEW_ONLY = pageParams.get('view') === '1' || serverOverride !== null
 // A reloaded controller page starts from the QNH and brightness the server last
 // received (controller_state), instead of 29.92 / 100. Until the first message from
 // the server has arrived the page sends nothing, so its defaults cannot overwrite them.
+// The QNH is shared with the other devices on the CAN bus (EFIS/docs/QNH_PLAN.md): the server holds it,
+// so after the first pass the page keeps following controller_state.qnh, except while the person is
+// turning the dial. The page sends the QNH only when the person changes it.
 var gotFirstMessage = false;
 var restoredFromServer = false;
 
 // What the server's facts mean for the display: which instruments can be trusted and what to announce
 const instrumentStatus = new InstrumentStatus();
 
-var CAN_QNH_PERIOD = 1000;      // time in milliseconds (1 second)
+var SEND_PERIOD = 1000;         // time in milliseconds between the brightness / ticker messages (no QNH in them)
+var QNH_USER_HOLD = 1500;       // ms after the person's last turn during which a QNH from the server is not adopted
 // last_qnh stores QNH in inHg × 100 format (e.g., 2992 = 29.92 inHg)
 var last_qnh = 2992;            // default qnh (29.92 inHg × 100)
 var last_brightness = null;     // force a brightness change of first pass
-var can_qnh_timestamp = Date.now();     // current time
+var send_timestamp = Date.now();        // time of the last message sent
+var last_qnh_user_change = 0;           // time (ms) the person last changed the QNH on this page
 var current_time_millis = Date.now();   // current time
 
 // Turn rate spring-mass-damper filter variables
@@ -813,6 +818,9 @@ function DisplayUpdateLoop(delta) {
         restoredFromServer = true;
     }
 
+    // Not set / baro mismatch look of the QNH (from the server's qnh_set and qnh_mismatch)
+    qnhDisplay.setStatus(dataObject.qnh_set === false, dataObject.qnh_mismatch === true, Date.now() / 1000);
+
     // Viewer: show the Pi's QNH and brightness; do not run the encoder or send anything
     if (VIEW_ONLY) {
         const cs = dataObject.controller_state;
@@ -824,16 +832,28 @@ function DisplayUpdateLoop(delta) {
     // // Process any change in the user input encoder
     userInput.processState(dataObject.position, dataObject.pressed)
 
-    // Send the qnh value out to python using the websocket and json
     current_time_millis = Date.now();
 
-    if (qnhDisplay.value != last_qnh || 
-        current_time_millis > can_qnh_timestamp + CAN_QNH_PERIOD ||
+    // Follow the QNH the server holds (set from the bus or by another device), unless the person is turning the dial.
+    // Set last_qnh when adopting so an adopted value is not sent back as if the person had changed it.
+    const sharedQnh = dataObject.controller_state ? dataObject.controller_state.qnh : undefined;
+    const qnhChanged = qnhDisplay.value != last_qnh;
+    if (qnhChanged) last_qnh_user_change = current_time_millis;
+    if (!qnhChanged && typeof sharedQnh === 'number' && sharedQnh != qnhDisplay.value &&
+        current_time_millis > last_qnh_user_change + QNH_USER_HOLD) {
+        qnhDisplay.value = sharedQnh;
+        last_qnh = qnhDisplay.value;
+    }
+
+    // Send to python using the websocket and json. The QNH goes only when the person changes it; the rest
+    // (brightness, ticker) also goes about once a second.
+    if (qnhChanged ||
+        current_time_millis > send_timestamp + SEND_PERIOD ||
         brightness.value != last_brightness) {
-        
+
         last_qnh = qnhDisplay.value;
         last_brightness = brightness.value;
-        can_qnh_timestamp = current_time_millis;
+        send_timestamp = current_time_millis;
 
         // Extract values safely to avoid circular references
         // qnhValue is in inHg × 100 format (e.g., 2992 = 29.92 inHg)
@@ -863,10 +883,10 @@ function DisplayUpdateLoop(delta) {
         // Create a clean object with only primitive values
         // Note: qnh is in inHg × 100 format (e.g., 2992 = 29.92 inHg)
         var obj = {
-            qnh: qnhValue,
             ticker: tickerValue,
             brightness: brightnessValue
         };
+        if (qnhChanged) obj.qnh = qnhValue;
 
         try {
             var json = JSON.stringify(obj);
@@ -875,7 +895,7 @@ function DisplayUpdateLoop(delta) {
             console.log("Object being serialized:", obj);
             // Fallback to a simple object if serialization fails
             // Note: qnh is in inHg × 100 format (2992 = 29.92 inHg)
-            var json = JSON.stringify({qnh: 2992, ticker: 0, brightness: 100});
+            var json = JSON.stringify({ticker: 0, brightness: 100});
         }
         if (myWebSocket.readyState == 1) {
             myWebSocket.send("json" + json);}

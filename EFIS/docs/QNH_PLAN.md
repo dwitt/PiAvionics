@@ -1,6 +1,8 @@
 # Plan: share the QNH (altimeter setting) between all devices on the CAN bus
 
-Written 2026-10-20. NOT built. Nothing in the code has changed. Decisions at the end are marked open or decided.
+Written 2026-10-20. Status 2026-10-20: steps 1 to 3 are written and committed but NOT yet flashed, deployed or tested on the
+bench (protocol 0.3.0, AIR_Module 1.0.36, aio_server 1.7.0 with qnh_state.py, efis-display.js 0.8.0). The jitter fix (step 4) and the
+backup display (step 5) are not started. Decisions at the end are marked open or decided.
 
 ## Goal
 
