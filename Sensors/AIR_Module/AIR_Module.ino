@@ -30,7 +30,7 @@
 /*****************************************************************************
  * Firmware version - increment the patch number on every change
  *****************************************************************************/
-#define VERSION "1.0.35"
+#define VERSION "1.0.36"
 
 // Set to 0 to run without the AOA sensor (Wire1, GPIO8/9). With 0, Wire1 is not
 // touched at all and a missing AOA sensor does not stop startup.
@@ -212,7 +212,13 @@ LowPassFilter oatLowPassFilter(0.3);
 #define CAN_AOA_MSG_ID    0x29
 #define CAN_TEMP_MSG_ID   0x2A
 #define CAN_RAW_MSG_ID    0x2B
-#define CAN_QNH_MSG_ID    0x2E
+// The QNH block (Protocol/can_messages.yaml): a frame from any ID 0x2C to 0x2F sets the QNH. One hardware filter
+// covers it: ID 0x2C, mask 0x7FC. This module never sends in the block.
+#define CAN_QNH_FIRST_ID  0x2C
+#define CAN_QNH_LAST_ID   0x2F
+#define CAN_QNH_FILTER_MASK 0x7FC
+#define QNH_LISTEN_MS     2000     // after start-up, wait this long for a QNH frame before using 29.92
+#define QNH_FLAG_NOT_SET  0x01     // 0x2B byte 7 bit 0
 
 // Invalid-data markers (Protocol/can_messages.yaml): a field that cannot be trusted is sent as the largest
 // positive value of its type, so a receiver shows it as failed and never as a number.
@@ -272,7 +278,8 @@ static float previousAOA = 0;
 static float aoaFiltered = 0;            // degrees
 
 static int16_t qnh = 2992;         // inHg * 100
-static int16_t previous_qnh = qnh;
+static bool qnhSet = false;        // true once a valid QNH frame has been heard; nothing is stored
+static uint32_t qnhListenEnd = 0;  // millis() when the start-up listen window ends (set at the end of setup())
 
 static float staticPressureLowPassFiltered = 0;   // hPa, after the low-pass, before the deadband
 
@@ -869,13 +876,13 @@ void setup() {
   #endif
 
   /*************************************************************************** 
-   * Configure the CAN bus filters to receive only the QNH message
+   * Configure the CAN bus filters to receive only the QNH block 0x2C to 0x2F
    ***************************************************************************/
 
   // Maybe consider checking if the filter is set correctly using the return
   // value of the filter function.
-  bool filterOk = can.filter(CAN_QNH_MSG_ID, 0x7FF);
-  moduleInfo.log(filterOk ? "CAN filter OK (QNH only)" : "**WARNING** CAN filter FAILED (all frames received)");
+  bool filterOk = can.filter(CAN_QNH_FIRST_ID, CAN_QNH_FILTER_MASK);
+  moduleInfo.log(filterOk ? "CAN filter OK (QNH block only)" : "**WARNING** CAN filter FAILED (all frames received)");
   // Frames that arrived before the filter was set are still in the chip's two receive buffers, and
   // nothing has read them. A QNH frame arriving before the loop starts reading would find a full
   // buffer and set RX0OVR, which stays set. Read out the old frames, then clear the flag.
@@ -883,6 +890,7 @@ void setup() {
   can.clearErrorFlags();
 
   timestamp = millis();     // initialize the timestamp
+  qnhListenEnd = millis() + QNH_LISTEN_MS;   // no altitude is sent until a QNH is heard or this passes
 
 }
 
@@ -930,7 +938,9 @@ void loop() {
     bool pitotOk = pitotChan.health.valid();
     bool staticOk = staticChan.health.valid();
     canData.packedData.integer1 = pitotOk ? airSpeed : (int16_t)CAN_MARKER_INT16;
-    canData.packedData.longInteger = staticOk ? altitude : (int32_t)CAN_MARKER_INT32;
+    // No altitude while listening for a QNH at start-up, so one computed from the unset 29.92 is never sent.
+    bool qnhKnown = qnhSet || (int32_t)(millis() - qnhListenEnd) >= 0;
+    canData.packedData.longInteger = (staticOk && qnhKnown) ? altitude : (int32_t)CAN_MARKER_INT32;
     canData.packedData.integer2 = staticOk ? verticalSpeed : (int16_t)CAN_MARKER_INT16;
 
     can.beginPacket(CAN_AIR_MSG_ID);
@@ -959,7 +969,7 @@ void loop() {
   if (millis() - canRawTimeStamp > CAN_RAW_PERIOD + random(50)) {
     // Pack to match legacy format: <hbhBBB>
     // int16 static_pressure (hPa×10), int8 temperature (°C),
-    // int16 differential_pressure (Pa), 3 bytes padding
+    // int16 differential_pressure (Pa), int16 QNH in use (inHg x 100), flags
     int16_t sp = staticChan.health.valid() ? (int16_t)(staticPressureFiltered * 10)  // hPa → hPa×10
                                            : (int16_t)CAN_MARKER_INT16;
     canData.bytes[0] = sp & 0xFF;
@@ -969,9 +979,12 @@ void loop() {
                                              : (int16_t)CAN_MARKER_INT16;
     canData.bytes[3] = diffP & 0xFF;
     canData.bytes[4] = (diffP >> 8) & 0xFF;
-    canData.bytes[5] = 0;
-    canData.bytes[6] = 0;
-    canData.bytes[7] = 0;
+    // QNH in use for the altitude, so a display can flag a baro mismatch. Not valid while still listening.
+    bool qnhKnown = qnhSet || (int32_t)(millis() - qnhListenEnd) >= 0;
+    int16_t qnhReport = qnhKnown ? qnh : (int16_t)CAN_MARKER_INT16;
+    canData.bytes[5] = qnhReport & 0xFF;
+    canData.bytes[6] = (qnhReport >> 8) & 0xFF;
+    canData.bytes[7] = qnhSet ? 0 : QNH_FLAG_NOT_SET;
 
     can.beginPacket(CAN_RAW_MSG_ID);
     can.write(canData.bytes, 8);
@@ -1175,26 +1188,37 @@ void loop() {
     Serial.println(packetSize);
     #endif
 
-    // Check if this is a QNH message
-    if (can.packetId() == CAN_QNH_MSG_ID) {
+    // Check if this is a QNH message (any ID in the block)
+    long id = can.packetId();
+    if (id >= CAN_QNH_FIRST_ID && id <= CAN_QNH_LAST_ID) {
       // Read the QNH data from the packet
       if (can.available() >= 4) {  // Check we have at least 4 bytes
         uint8_t qnhhPa_low = can.read();
         uint8_t qnhhPa_high = can.read();
         uint8_t qnhx4_low = can.read();
         uint8_t qnhx4_high = can.read();
+        int16_t qnhHpa = (qnhhPa_high << 8) | qnhhPa_low;
         int16_t qnhx4 = (qnhx4_high << 8) | qnhx4_low; 
         
-        // Convert from QNHx4 format to actual QNH (inHg)
+        // Convert from QNHx4 format to actual QNH (inHg x 100)
         int16_t new_qnh = qnhx4 / 4;
 
-        if (new_qnh != previous_qnh) {
-          qnh = new_qnh;
-          previous_qnh = qnh;
-          #if defined(DEBUG)
-          Serial.print("QNH updated to: ");
-          Serial.println(qnh);
-          #endif
+        // Checks: 28.00 to 31.00 inHg, and the hPa field agrees with the inHg field to within 1 hPa.
+        // A frame that fails is ignored.
+        float hpaFromInhg = qnhx4 * 0.25f * 0.33863886f;
+        bool valid = qnhx4 >= 2800 * 4 && qnhx4 <= 3100 * 4 && fabsf(hpaFromInhg - qnhHpa) <= 1.0f;
+
+        if (valid) {
+          if (new_qnh != qnh || !qnhSet) {
+            qnh = new_qnh;
+            #if defined(DEBUG)
+            Serial.print("QNH updated to: ");
+            Serial.print(qnh);
+            Serial.print(" from 0x");
+            Serial.println(id, HEX);
+            #endif
+          }
+          qnhSet = true;
         }
         
         // Read any remaining bytes to clear the packet
