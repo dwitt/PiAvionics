@@ -1,4 +1,6 @@
 'use strict';
+
+export const VERSION = '1.0.1';
 import { Container, Graphics, TextStyle, Text, CanvasTextMetrics } from './pixi.mjs';
 
 const DEBUG = true;
