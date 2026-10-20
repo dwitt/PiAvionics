@@ -2,9 +2,9 @@
 
 > **Generated file. Do not edit.** Edit `Protocol/can_messages.yaml` and run `Protocol/.venv/bin/python Protocol/generate_can_docs.py`.
 
-Version 0.2.0 · reviewed 2026-10-17
+Version 0.3.0 · reviewed 2026-10-20
 
-Sensor modules broadcast their data on fixed IDs. The Pi EFIS listens, sends QNH to the AIR module, and sends its own heartbeat (0x700). There are no addressed commands yet (see ISSUES.md issue 9).
+Sensor modules broadcast their data on fixed IDs. The Pi EFIS listens, shares the QNH with the AIR module and the other displays, and sends its own heartbeat (0x700). There are no addressed commands yet (see ISSUES.md issue 9).
 
 ## Bus at a glance
 
@@ -18,7 +18,7 @@ Sensor modules broadcast their data on fixed IDs. The Pi EFIS listens, sends QNH
 | Hardware | MCP2515 controller, 250 kbit/s (Pi uses can0 via SocketCAN) |
 
 - Lower IDs win bus arbitration. All PiAvionics IDs (0x19 to 0x83) are lower than every MGL device ID (0x200 and up).
-- Modules send each message on a timer (period_ms). The firmware adds up to 50 ms of random jitter; it has little effect in practice and is not needed for collision handling, because CAN arbitration never drops a frame.
+- Modules send each message on a timer (period_ms). The firmware is meant to vary each interval by a flat +/- 20 ms about the period, drawn once per send (decided 2026-10-20). Until the jitter fix is flashed the actual jitter is only about 1 to 3 ms, because the random number was drawn again on every pass of loop(). The jitter is not needed for collision handling, because CAN arbitration never drops a frame.
 - Invalid-data markers (protocol 0.2.0). A field that cannot be trusted is sent as the largest positive value of its type: 0x7FFF for a 16-bit field, 0x7FFFFFFF for a 32-bit field. No real value can reach it (see the Invalid marker column). A receiver must show such a field as failed and never as a number. The EFIS server understands the markers (1.6.0 onward); the module firmware sends them from AIR_Module 1.0.35 and IMU_AHRS 1.0.16 (2026-10-18); the GPS module sends none (its frames stop instead). A module's heartbeat (0x701 to 0x703) also says which sensor is lost.
 - Timeouts (decided 2026-10-17, not yet implemented in the EFIS). The EFIS treats data as lost after: 0.5 s without 0x28, 0x48 or 0x49; 1.5 s without 0x2A or 0x2B; 3.5 s without 0x63, 0x64 or 0x65; 3 s without a module heartbeat (the module is shown as missing). Today the EFIS times out only 0x48 and 0x49, after 0.2 s.
 - Three things make a value invalid on the EFIS: the marker, a heartbeat that says the sensor is lost, or the message not arriving within its timeout. All three look the same on the display.
@@ -40,7 +40,10 @@ Sensor modules broadcast their data on fixed IDs. The Pi EFIS listens, sends QNH
 | `0x029` | [AOA](#0x029-aoa) | AIR module | — | 200 ms | 8 | 🟡 Partial |
 | `0x02A` | [OAT](#0x02a-oat) | AIR module | Pi EFIS | 200 ms | 8 | ✅ Active |
 | `0x02B` | [STATIC_PRESSURE](#0x02b-static_pressure) | AIR module | Pi EFIS | 200 ms | 8 | ✅ Active |
-| `0x02E` | [QNH](#0x02e-qnh) | Pi EFIS | AIR module | 1 s | 8 | ✅ Active |
+| `0x02C` | [QNH_SPARE_2C](#0x02c-qnh_spare_2c) | Future panel | AIR module, Pi EFIS, Backup display | — | 8 | 🔘 Reserved |
+| `0x02D` | [QNH_BACKUP](#0x02d-qnh_backup) | Backup display | AIR module, Pi EFIS | 1 s | 8 | ⚪ Planned |
+| `0x02E` | [QNH](#0x02e-qnh) | Pi EFIS | AIR module, Backup display | 1 s | 8 | ✅ Active |
+| `0x02F` | [QNH_SPARE_2F](#0x02f-qnh_spare_2f) | Future panel | AIR module, Pi EFIS, Backup display | — | 8 | 🔘 Reserved |
 | `0x032` | [EMS_RPM](#0x032-ems_rpm) | EMS module | — | — | 8 | ⚪ Planned |
 | `0x048` | [AHRS_ORIENT](#0x048-ahrs_orient) | IMU / AHRS module | Pi EFIS, CAN display feather | 100 ms | 8 | ✅ Active |
 | `0x049` | [AHRS_ACCEL](#0x049-ahrs_accel) | IMU / AHRS module | Pi EFIS | 100 ms | 8 | ✅ Active |
@@ -142,7 +145,7 @@ Sensor modules broadcast their data on fixed IDs. The Pi EFIS listens, sends QNH
 | Bytes | Field | Type | Unit | Description | Invalid marker |
 |:-----:|-------|------|------|-------------|-------------|
 | 0-1 | `airspeed` | int16 | kt | Indicated airspeed from the pitot sensor | `0x7FFF` |
-| 2-5 | `altitude` | int32 | ft | Pressure altitude using the QNH from 0x2E | `0x7FFFFFFF` |
+| 2-5 | `altitude` | int32 | ft | Altitude using the QNH block 0x2C to 0x2F. Invalid while the AIR module is in its 2 s start-up listen window | `0x7FFFFFFF` |
 | 6-7 | `vertical_speed` | int16 | ft/min | Climb rate from the static pressure, positive = climbing (3 s window, about 3 s lag, about +-40 ft/min at rest) | `0x7FFF` |
 
 **Byte layout**
@@ -247,16 +250,18 @@ Sensor modules broadcast their data on fixed IDs. The Pi EFIS listens, sends QNH
 | 0-1 | `static_pressure` | int16 | hPa (raw × 0.1) | Filtered static pressure | `0x7FFF` |
 | 2 | `sensor_temperature` | int8 | degC | Whole degrees | — |
 | 3-4 | `differential_pressure` | int16 | Pa | Filtered pitot (differential) pressure | `0x7FFF` |
-| 5-7 | `padding` | uint8 |  | Always 0 | — |
+| 5-6 | `qnh_in_use` | int16 | inHg (raw × 0.01) | The QNH the AIR module is using for the altitude (inHg x 100, 2992 is 29.92) | `0x7FFF` |
+| 7 | `flags` | uint8 |  | Bit 0 = QNH not set (the AIR module has heard no QNH frame and is using 29.92). Other bits 0 | — |
 
 **Byte layout**
 
 | Byte | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 |
 |------|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
-| Field | `static_pressure` (1/2) | `static_pressure` (2/2) | `sensor_temperature` | `differential_pressure` (1/2) | `differential_pressure` (2/2) | `padding` (1/3) | `padding` (2/3) | `padding` (3/3) |
+| Field | `static_pressure` (1/2) | `static_pressure` (2/2) | `sensor_temperature` | `differential_pressure` (1/2) | `differential_pressure` (2/2) | `qnh_in_use` (1/2) | `qnh_in_use` (2/2) | `flags` |
 
 **Notes**
 
+- Bytes 5-7 report the QNH in use (2026-10-20, see EFIS/docs/QNH_PLAN.md). They were padding (always 0), so a receiver that unpacks them as padding is not affected. A receiver compares bytes 5-6 with its own QNH to detect a baro mismatch.
 - Matches the legacy CircuitPython format (struct "<hbhBBB"). The differential pressure (bytes 3-4) was missing from the old Can Docs.md.
 - Invalid markers (AIR_Module 1.0.35 onward, 2026-10-18): static pressure is 0x7FFF when the static sensor is lost, differential pressure when the pitot is lost. Before 1.0.35 the differential pressure was 0 when the pitot was lost and the static pressure held its last value. The 1.5 s timeout was not in the 2026-10-17 decision list; it was set equal to the OAT message because the EFIS uses both for density altitude.
 
@@ -265,21 +270,82 @@ Sensor modules broadcast their data on fixed IDs. The Pi EFIS listens, sends QNH
 - Sender: AIR_Module.ino (CAN_RAW_MSG_ID)
 - Receiver: aio_server.py process_static_pressure_message
 
+### 0x02C QNH_SPARE_2C
+
+**Altimeter setting (spare sender ID for a future panel)**
+
+| | |
+|---|---|
+| Sent by | Future panel |
+| Received by | AIR module, Pi EFIS, Backup display |
+| Rate | Same rules as 0x2E. Nothing sends it yet |
+| Data length | 8 bytes |
+| Status | 🔘 Reserved |
+
+| Bytes | Field | Type | Unit | Description |
+|:-----:|-------|------|------|-------------|
+| 0-1 | `qnh_hpa` | int16 | hPa | Informational |
+| 2-3 | `qnh_inhg` | int16 | inHg (raw × 0.0025) | inHg x 400 |
+| 4-7 | `reserved` | uint8 |  | Always 0 |
+
+**Byte layout**
+
+| Byte | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 |
+|------|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
+| Field | `qnh_hpa` (1/2) | `qnh_hpa` (2/2) | `qnh_inhg` (1/2) | `qnh_inhg` (2/2) | `reserved` (1/4) | `reserved` (2/4) | `reserved` (3/4) | `reserved` (4/4) |
+
+**Notes**
+
+- Part of the QNH block 0x2C to 0x2F. See 0x2E for the rules.
+
+### 0x02D QNH_BACKUP
+
+**Altimeter setting from the backup display**
+
+| | |
+|---|---|
+| Sent by | Backup display |
+| Received by | AIR module, Pi EFIS |
+| Rate | 1 s (Sent when a person changes the setting, and after 1000 ms +/- 20 ms of silence on the QNH block while the display holds a set value) |
+| Data length | 8 bytes |
+| Status | ⚪ Planned |
+
+| Bytes | Field | Type | Unit | Description |
+|:-----:|-------|------|------|-------------|
+| 0-1 | `qnh_hpa` | int16 | hPa | Informational |
+| 2-3 | `qnh_inhg` | int16 | inHg (raw × 0.0025) | inHg x 400 |
+| 4-7 | `reserved` | uint8 |  | Always 0 |
+
+**Byte layout**
+
+| Byte | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 |
+|------|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
+| Field | `qnh_hpa` (1/2) | `qnh_hpa` (2/2) | `qnh_inhg` (1/2) | `qnh_inhg` (2/2) | `reserved` (1/4) | `reserved` (2/4) | `reserved` (3/4) | `reserved` (4/4) |
+
+**Notes**
+
+- Part of the QNH block 0x2C to 0x2F. See 0x2E for the rules.
+
+**Code**
+
+- Sender: backup display (not written yet)
+- Receiver: AIR_Module.ino, aio_server.py
+
 ### 0x02E QNH
 
-**Altimeter setting**
+**Altimeter setting from the Pi EFIS**
 
 | | |
 |---|---|
 | Sent by | Pi EFIS |
-| Received by | AIR module |
-| Rate | 1 s (Sent when the setting changes, and at least once a second) |
+| Received by | AIR module, Backup display |
+| Rate | 1 s (Sent when a person changes the setting, and after 1000 ms +/- 20 ms of silence on the QNH block while the EFIS holds a set value) |
 | Data length | 8 bytes |
 | Status | ✅ Active |
 
 | Bytes | Field | Type | Unit | Description |
 |:-----:|-------|------|------|-------------|
-| 0-1 | `qnh_hpa` | int16 | hPa | Informational. The AIR module does not use it |
+| 0-1 | `qnh_hpa` | int16 | hPa | Informational. Receivers check it agrees with the inHg field |
 | 2-3 | `qnh_inhg` | int16 | inHg (raw × 0.0025) | inHg x 400 (2992 x 4 = 11968 is 29.92 inHg) |
 | 4-7 | `reserved` | uint8 |  | Always 0 |
 
@@ -291,13 +357,44 @@ Sensor modules broadcast their data on fixed IDs. The Pi EFIS listens, sends QNH
 
 **Notes**
 
-- The inHg field is x400, not x100 as the old Can Docs.md said. The AIR module divides it by 4 to get x100, so the extra resolution is not used.
-- EFIS accepts QNH between 28.00 and 31.00 inHg (the range is enforced in aio_server.py).
+- QNH block 0x2C to 0x2F (decided 2026-10-20, see EFIS/docs/QNH_PLAN.md). Any device with a QNH control may set the QNH and every device holds the value. One device sends on one ID only (0x2E EFIS, 0x2D backup display, 0x2C and 0x2F spare); two devices never send the same ID. The payload is the same on all four IDs. Receivers use one hardware filter: ID 0x2C, mask 0x7FC.
+- Rules. (1) Change: a person changes the QNH on a device, which sends the new value at once on its own ID, every change, at most one frame per 20 ms. (2) Hear: a device adopts a valid frame from any ID in the block; the last frame heard wins and CAN arbitration is the only arbiter. (3) Speak on silence: a device that holds a set value and has heard no QNH frame for 1000 ms +/- 20 ms (drawn once per silent period) sends its value. (4) Never invent: a device sends only a value a person entered or one it adopted; the 29.92 a device starts with ("not set") is never sent. (5) Silence is not a fault. (6) The AIR module reports the QNH it is using in 0x2B bytes 5-7, and a display flags a mismatch if its set value differs from that for more than 2 s.
+- Receiver checks: inHg x 400 must be 11200 to 12400 (28.00 to 31.00 inHg), and the hPa field must agree with the inHg field to within 1 hPa. A frame that fails is ignored.
+- Power-up: a device listens for 2 s and adopts any valid frame. If it hears none it uses 29.92 flagged "not set". Nothing is stored in non-volatile memory.
+- The inHg field is x400, not x100 as the old Can Docs.md said. The AIR module divides it by 4 to get x100.
 
 **Code**
 
-- Sender: aio_server.py pack_can_qnh_msg
-- Receiver: AIR_Module.ino (CAN_QNH_MSG_ID); the AIR module accepts only this ID
+- Sender: aio_server.py (qnh_state.py)
+- Receiver: AIR_Module.ino (CAN_QNH_FIRST_ID to CAN_QNH_LAST_ID)
+
+### 0x02F QNH_SPARE_2F
+
+**Altimeter setting (spare sender ID for a future panel)**
+
+| | |
+|---|---|
+| Sent by | Future panel |
+| Received by | AIR module, Pi EFIS, Backup display |
+| Rate | Same rules as 0x2E. Nothing sends it yet |
+| Data length | 8 bytes |
+| Status | 🔘 Reserved |
+
+| Bytes | Field | Type | Unit | Description |
+|:-----:|-------|------|------|-------------|
+| 0-1 | `qnh_hpa` | int16 | hPa | Informational |
+| 2-3 | `qnh_inhg` | int16 | inHg (raw × 0.0025) | inHg x 400 |
+| 4-7 | `reserved` | uint8 |  | Always 0 |
+
+**Byte layout**
+
+| Byte | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 |
+|------|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
+| Field | `qnh_hpa` (1/2) | `qnh_hpa` (2/2) | `qnh_inhg` (1/2) | `qnh_inhg` (2/2) | `reserved` (1/4) | `reserved` (2/4) | `reserved` (3/4) | `reserved` (4/4) |
+
+**Notes**
+
+- Part of the QNH block 0x2C to 0x2F. See 0x2E for the rules.
 
 ### 0x032 EMS_RPM
 
@@ -839,7 +936,9 @@ Sensor modules broadcast their data on fixed IDs. The Pi EFIS listens, sends QNH
 | AIR module | Airspeed, altitude, AOA, static and outside air temperature | `Sensors/AIR_Module/AIR_Module.ino` |
 | IMU / AHRS module | Attitude, heading, acceleration | `Sensors/IMU_AHRS/IMU_AHRS.ino` |
 | GPS module | Position, speed, track, time | `Sensors/GPS_Module/GPS_Module.ino` |
-| Pi EFIS | Display computer (Raspberry Pi). Listens to everything, sends QNH. | `EFIS/aio_server.py` |
+| Pi EFIS | Display computer (Raspberry Pi). Listens to everything, shares the QNH. | `EFIS/aio_server.py` |
+| Backup display | Feather RP2040 with a 20x4 LCD and rotary encoder; shows the flight data and sets the QNH | — |
+| Future panel | Spare sender for the QNH IDs 0x2C and 0x2F | — |
 | CAN display feather | Listens for airspeed/altitude and attitude for the small LCD display | `CAN_Display/CAN_Feather/CAN_Feather.ino` |
 | EMS module | Engine monitor (planned). Only a legacy CircuitPython version exists. | — |
 

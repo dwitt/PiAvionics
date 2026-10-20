@@ -22,8 +22,8 @@ schema_version: 1
 
 protocol:
   name: PiAvionics CAN
-  version: 0.2.0
-  last_reviewed: 2026-10-17
+  version: 0.3.0
+  last_reviewed: 2026-10-20
   bitrate: 250000
   identifier: Standard 11-bit
   byte_order: Little-endian
@@ -32,16 +32,17 @@ protocol:
   hardware: MCP2515 controller, 250 kbit/s (Pi uses can0 via SocketCAN)
   summary: >
     Sensor modules broadcast their data on fixed IDs. The Pi EFIS listens,
-    sends QNH to the AIR module, and sends its own heartbeat (0x700). There are
+    shares the QNH with the AIR module and the other displays, and sends its own heartbeat (0x700). There are
     no addressed commands yet (see ISSUES.md issue 9).
   notes:
     - >
       Lower IDs win bus arbitration. All PiAvionics IDs (0x19 to 0x83) are lower
       than every MGL device ID (0x200 and up).
     - >
-      Modules send each message on a timer (period_ms). The firmware adds up to
-      50 ms of random jitter; it has little effect in practice and is not needed
-      for collision handling, because CAN arbitration never drops a frame.
+      Modules send each message on a timer (period_ms). The firmware is meant to vary each interval by a flat
+      +/- 20 ms about the period, drawn once per send (decided 2026-10-20). Until the jitter fix is flashed the
+      actual jitter is only about 1 to 3 ms, because the random number was drawn again on every pass of loop().
+      The jitter is not needed for collision handling, because CAN arbitration never drops a frame.
     - >
       Invalid-data markers (protocol 0.2.0). A field that cannot be trusted is sent as the
       largest positive value of its type: 0x7FFF for a 16-bit field, 0x7FFFFFFF for a 32-bit field.
@@ -75,8 +76,16 @@ nodes:
     code: Sensors/GPS_Module/GPS_Module.ino
   efis:
     name: Pi EFIS
-    description: Display computer (Raspberry Pi). Listens to everything, sends QNH.
+    description: Display computer (Raspberry Pi). Listens to everything, shares the QNH.
     code: EFIS/aio_server.py
+  backup:
+    name: Backup display
+    description: Feather RP2040 with a 20x4 LCD and rotary encoder; shows the flight data and sets the QNH
+    code: null
+  panel:
+    name: Future panel
+    description: Spare sender for the QNH IDs 0x2C and 0x2F
+    code: null
   can_display:
     name: CAN display feather
     description: Listens for airspeed/altitude and attitude for the small LCD display
@@ -144,7 +153,7 @@ messages:
     status: active
     fields:
       - {bytes: "0-1", name: airspeed,       type: int16, unit: kt,     invalid: 0x7FFF,     desc: Indicated airspeed from the pitot sensor}
-      - {bytes: "2-5", name: altitude,       type: int32, unit: ft,     invalid: 0x7FFFFFFF, desc: Pressure altitude using the QNH from 0x2E}
+      - {bytes: "2-5", name: altitude,       type: int32, unit: ft,     invalid: 0x7FFFFFFF, desc: Altitude using the QNH block 0x2C to 0x2F. Invalid while the AIR module is in its 2 s start-up listen window}
       - {bytes: "6-7", name: vertical_speed, type: int16, unit: ft/min, invalid: 0x7FFF,     desc: "Climb rate from the static pressure, positive = climbing (3 s window, about 3 s lag, about +-40 ft/min at rest)"}
     timeout_ms: 500
     notes:
@@ -221,9 +230,13 @@ messages:
       - {bytes: "0-1", name: static_pressure,       type: int16, unit: hPa, scale: 0.1, invalid: 0x7FFF, desc: Filtered static pressure}
       - {bytes: "2",   name: sensor_temperature,    type: int8,  unit: degC, desc: Whole degrees, from the static pressure sensor}
       - {bytes: "3-4", name: differential_pressure, type: int16, unit: Pa,   invalid: 0x7FFF, desc: Filtered pitot (differential) pressure}
-      - {bytes: "5-7", name: padding,               type: uint8, desc: "Always 0"}
+      - {bytes: "5-6", name: qnh_in_use,            type: int16, unit: inHg, scale: 0.01, invalid: 0x7FFF, desc: "The QNH the AIR module is using for the altitude (inHg x 100, 2992 is 29.92)"}
+      - {bytes: "7",   name: flags,                 type: uint8, desc: "Bit 0 = QNH not set (the AIR module has heard no QNH frame and is using 29.92). Other bits 0"}
     timeout_ms: 1500
     notes:
+      - >
+        Bytes 5-7 report the QNH in use (2026-10-20, see EFIS/docs/QNH_PLAN.md). They were padding (always 0), so a receiver
+        that unpacks them as padding is not affected. A receiver compares bytes 5-6 with its own QNH to detect a baro mismatch.
       - >
         Matches the legacy CircuitPython format (struct "<hbhBBB").
         The differential pressure (bytes 3-4) was missing from the old Can Docs.md.
@@ -238,27 +251,95 @@ messages:
       receiver: "aio_server.py process_static_pressure_message"
 
   # ---------------------------------------------------------------------------
+  - id: 0x2C
+    name: QNH_SPARE_2C
+    title: Altimeter setting (spare sender ID for a future panel)
+    sender: panel
+    receivers: [air, efis, backup]
+    period_note: "Same rules as 0x2E. Nothing sends it yet"
+    dlc: 8
+    status: reserved
+    fields:
+      - {bytes: "0-1", name: qnh_hpa,  type: int16, unit: hPa,  desc: "Informational"}
+      - {bytes: "2-3", name: qnh_inhg, type: int16, unit: inHg, scale: 0.0025, desc: "inHg x 400"}
+      - {bytes: "4-7", name: reserved, type: uint8, desc: "Always 0"}
+    notes:
+      - Part of the QNH block 0x2C to 0x2F. See 0x2E for the rules.
+
+  # ---------------------------------------------------------------------------
+  - id: 0x2D
+    name: QNH_BACKUP
+    title: Altimeter setting from the backup display
+    sender: backup
+    receivers: [air, efis]
+    period_ms: 1000
+    period_note: "Sent when a person changes the setting, and after 1000 ms +/- 20 ms of silence on the QNH block while the display holds a set value"
+    dlc: 8
+    status: planned
+    fields:
+      - {bytes: "0-1", name: qnh_hpa,  type: int16, unit: hPa,  desc: "Informational"}
+      - {bytes: "2-3", name: qnh_inhg, type: int16, unit: inHg, scale: 0.0025, desc: "inHg x 400"}
+      - {bytes: "4-7", name: reserved, type: uint8, desc: "Always 0"}
+    notes:
+      - Part of the QNH block 0x2C to 0x2F. See 0x2E for the rules.
+    code:
+      sender: "backup display (not written yet)"
+      receiver: "AIR_Module.ino, aio_server.py"
+
+  # ---------------------------------------------------------------------------
   - id: 0x2E
     name: QNH
-    title: Altimeter setting
+    title: Altimeter setting from the Pi EFIS
     sender: efis
-    receivers: [air]
+    receivers: [air, backup]
     period_ms: 1000
-    period_note: "Sent when the setting changes, and at least once a second"
+    period_note: "Sent when a person changes the setting, and after 1000 ms +/- 20 ms of silence on the QNH block while the EFIS holds a set value"
     dlc: 8
     status: active
     fields:
-      - {bytes: "0-1", name: qnh_hpa,  type: int16, unit: hPa,  desc: "Informational. The AIR module does not use it"}
+      - {bytes: "0-1", name: qnh_hpa,  type: int16, unit: hPa,  desc: "Informational. Receivers check it agrees with the inHg field"}
       - {bytes: "2-3", name: qnh_inhg, type: int16, unit: inHg, scale: 0.0025, desc: "inHg x 400 (2992 x 4 = 11968 is 29.92 inHg)"}
       - {bytes: "4-7", name: reserved, type: uint8, desc: "Always 0"}
     notes:
       - >
-        The inHg field is x400, not x100 as the old Can Docs.md said. The AIR
-        module divides it by 4 to get x100, so the extra resolution is not used.
-      - EFIS accepts QNH between 28.00 and 31.00 inHg (the range is enforced in aio_server.py).
+        QNH block 0x2C to 0x2F (decided 2026-10-20, see EFIS/docs/QNH_PLAN.md). Any device with a QNH control
+        may set the QNH and every device holds the value. One device sends on one ID only (0x2E EFIS, 0x2D backup
+        display, 0x2C and 0x2F spare); two devices never send the same ID. The payload is the same on all four IDs.
+        Receivers use one hardware filter: ID 0x2C, mask 0x7FC.
+      - >
+        Rules. (1) Change: a person changes the QNH on a device, which sends the new value at once on its own ID,
+        every change, at most one frame per 20 ms. (2) Hear: a device adopts a valid frame from any ID in the block;
+        the last frame heard wins and CAN arbitration is the only arbiter. (3) Speak on silence: a device that holds
+        a set value and has heard no QNH frame for 1000 ms +/- 20 ms (drawn once per silent period) sends its value.
+        (4) Never invent: a device sends only a value a person entered or one it adopted; the 29.92 a device starts
+        with ("not set") is never sent. (5) Silence is not a fault. (6) The AIR module reports the QNH it is using in
+        0x2B bytes 5-7, and a display flags a mismatch if its set value differs from that for more than 2 s.
+      - >
+        Receiver checks: inHg x 400 must be 11200 to 12400 (28.00 to 31.00 inHg), and the hPa field must agree with
+        the inHg field to within 1 hPa. A frame that fails is ignored.
+      - >
+        Power-up: a device listens for 2 s and adopts any valid frame. If it hears none it uses 29.92 flagged
+        "not set". Nothing is stored in non-volatile memory.
+      - The inHg field is x400, not x100 as the old Can Docs.md said. The AIR module divides it by 4 to get x100.
     code:
-      sender: "aio_server.py pack_can_qnh_msg"
-      receiver: "AIR_Module.ino (CAN_QNH_MSG_ID); the AIR module accepts only this ID"
+      sender: "aio_server.py (qnh_state.py)"
+      receiver: "AIR_Module.ino (CAN_QNH_FIRST_ID to CAN_QNH_LAST_ID)"
+
+  # ---------------------------------------------------------------------------
+  - id: 0x2F
+    name: QNH_SPARE_2F
+    title: Altimeter setting (spare sender ID for a future panel)
+    sender: panel
+    receivers: [air, efis, backup]
+    period_note: "Same rules as 0x2E. Nothing sends it yet"
+    dlc: 8
+    status: reserved
+    fields:
+      - {bytes: "0-1", name: qnh_hpa,  type: int16, unit: hPa,  desc: "Informational"}
+      - {bytes: "2-3", name: qnh_inhg, type: int16, unit: inHg, scale: 0.0025, desc: "inHg x 400"}
+      - {bytes: "4-7", name: reserved, type: uint8, desc: "Always 0"}
+    notes:
+      - Part of the QNH block 0x2C to 0x2F. See 0x2E for the rules.
 
   # ---------------------------------------------------------------------------
   - id: 0x32

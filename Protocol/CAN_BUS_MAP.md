@@ -16,7 +16,10 @@ MGL splits an ID into a device address (upper 7 bits) and a message type (lower 
 | `0x029` | AOA | 2 | 9 | ⚠️ Reserved: Host / EFIS address space, no current use |
 | `0x02A` | OAT | 2 | 10 | ⚠️ Reserved: Host / EFIS address space, no current use |
 | `0x02B` | STATIC_PRESSURE | 2 | 11 | ⚠️ Reserved: Host / EFIS address space, no current use |
+| `0x02C` | QNH_SPARE_2C | 2 | 12 | ⚠️ Reserved: Host / EFIS address space, no current use |
+| `0x02D` | QNH_BACKUP | 2 | 13 | ⚠️ Reserved: Host / EFIS address space, no current use |
 | `0x02E` | QNH | 2 | 14 | ⚠️ Reserved: Host / EFIS address space, no current use |
+| `0x02F` | QNH_SPARE_2F | 2 | 15 | ⚠️ Reserved: Host / EFIS address space, no current use |
 | `0x032` | EMS_RPM | 3 | 2 | ⚠️ Reserved: Host / EFIS address space, no current use |
 | `0x048` | AHRS_ORIENT | 4 | 8 | ⚠️ Reserved: Host / EFIS address space, no current use |
 | `0x049` | AHRS_ACCEL | 4 | 9 | ⚠️ Reserved: Host / EFIS address space, no current use |
@@ -37,7 +40,7 @@ MGL splits an ID into a device address (upper 7 bits) and a message type (lower 
 ## Findings
 
 - ⛔ `0x019` TIME_SYNC uses the ID MGL reserves for host message GENERAL_COMMAND. See the note on `0x019` in the PiAvionics document.
-- ⚠️ 18 PiAvionics messages (`0x023`, `0x028`, `0x029`, `0x02A`, `0x02B`, `0x02E`, `0x032`, `0x048`, `0x049`, `0x051`, `0x052`, `0x053`, `0x063`, `0x064`, `0x065`, `0x081`, `0x082`, `0x083`) sit in MGL's reserved host address space (addresses 2 to 15). No current MGL device uses them, but MGL may in future.
+- ⚠️ 21 PiAvionics messages (`0x023`, `0x028`, `0x029`, `0x02A`, `0x02B`, `0x02C`, `0x02D`, `0x02E`, `0x02F`, `0x032`, `0x048`, `0x049`, `0x051`, `0x052`, `0x053`, `0x063`, `0x064`, `0x065`, `0x081`, `0x082`, `0x083`) sit in MGL's reserved host address space (addresses 2 to 15). No current MGL device uses them, but MGL may in future.
 - ✅ No PiAvionics message overlaps an MGL **device** block (RDAC, compass, AHRS and the rest).
 - ℹ️ Lower IDs win arbitration, so every PiAvionics ID (0x19 to 0x83) outranks all MGL device data (0x100 and up). That is harmless at this bus load.
 
@@ -60,7 +63,7 @@ MGL splits an ID into a device address (upper 7 bits) and a message type (lower 
 | `0x440`–`0x45F` | 68–69 | External MGL autopilot |
 | `0x460`–`0x7FF` | 70–127 | **Free.** Not used by MGL |
 
-PiAvionics IDs currently in use: `0x019`, `0x023`, `0x028`, `0x029`, `0x02A`, `0x02B`, `0x02E`, `0x032`, `0x048`, `0x049`, `0x051`, `0x052`, `0x053`, `0x063`, `0x064`, `0x065`, `0x081`, `0x082`, `0x083`, `0x700`, `0x701`, `0x702`, `0x703`.
+PiAvionics IDs currently in use: `0x019`, `0x023`, `0x028`, `0x029`, `0x02A`, `0x02B`, `0x02C`, `0x02D`, `0x02E`, `0x02F`, `0x032`, `0x048`, `0x049`, `0x051`, `0x052`, `0x053`, `0x063`, `0x064`, `0x065`, `0x081`, `0x082`, `0x083`, `0x700`, `0x701`, `0x702`, `0x703`.
 
 ## Estimated bus load
 
