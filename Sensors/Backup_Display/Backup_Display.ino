@@ -61,7 +61,7 @@
 #include <Adafruit_seesaw.h>
 #include "src/Adafruit_MCP2515/src/Adafruit_MCP2515.h"   // patched copy, see Sensors/Libraries/README.md
 
-#define VERSION "1.6.6"
+#define VERSION "1.6.7"
 
 const uint8_t LCD_COLS = 20;
 const uint8_t LCD_ROWS = 4;
@@ -348,11 +348,11 @@ void slipDraw(int position) {
   const uint8_t ballRows[5] = { 0b010, 0b111, 0b111, 0b111, 0b010 };
   const uint8_t cell = position / 5;
   const int left = position % 5 - 1;                              // the ball's left pixel in the cell: -1 to 3
-  uint8_t glyph[8] = { 0, 0, 0, 0, 0, 0, 0, 0b11111 };           // blank with the line along the bottom, like the _ of the other cells
+  uint8_t glyph[8] = { 0, 0, 0, 0, 0, 0, 0b11111, 0 };           // blank with a line on row 6, level with the built-in _ of the other cells
   for (uint8_t i = 0; i < 5; i++) {                               // a filled ball, 3 wide and 5 high, above the line
     for (uint8_t j = 0; j < 3; j++) {
       const int column = left + j;
-      if ((ballRows[i] & (0b100 >> j)) && column >= 0 && column <= 4) glyph[1 + i] |= 1 << (4 - column);
+      if ((ballRows[i] & (0b100 >> j)) && column >= 0 && column <= 4) glyph[i] |= 1 << (4 - column);
     }
   }
   lcd.createChar(SLIP_GLYPH, glyph);
