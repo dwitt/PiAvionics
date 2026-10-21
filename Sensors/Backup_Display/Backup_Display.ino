@@ -11,14 +11,14 @@
       HHH OAT 12C  G 1.0
       PG 1  IAGE QNH 29.92
   HHH is the mini horizon, 3 x 2 character cells (15 x 16 pixels) drawn with 6 of the 8 custom characters.
-  Slot 6 is the small solid "adjusting" marker and slot 7 is spare.
+  Slot 6 is the "adjusting" marker (a solid triangle filling the cell) and slot 7 is the same triangle reversed.
 
   Encoder (Adafruit seesaw rotary encoder with push button, I2C 0x36), same idea as the EFIS:
       Adjusting (the start state): QNH is selected and a turn changes it, 0.01 inHg per click. The marker next to the
           label is a small solid triangle.
       Push: toggles between adjusting and selecting.
-      Selecting: a turn moves the marker to the next field (clockwise: QNH, then PG, then back to QNH). The marker is the
-          same triangle, flashing, in the column between the label and the value.
+      Selecting: a turn moves the marker to the next field (clockwise: QNH, then PG, then back to QNH). The marker flashes
+          between the triangle and its reverse, in the column between the label and the value.
   There is no timeout.
 
   USB serial commands (115200) to check the horizon:
@@ -34,7 +34,7 @@
 #include <Adafruit_LiquidCrystal.h>
 #include <Adafruit_seesaw.h>
 
-#define VERSION "1.1.1"
+#define VERSION "1.1.2"
 
 const uint8_t LCD_COLS = 20;
 const uint8_t LCD_ROWS = 4;
@@ -50,7 +50,8 @@ const unsigned long MARKER_FLASH_MS = 500;
 // fields, in clockwise order around the display
 enum Field : uint8_t { FIELD_QNH, FIELD_PAGE, FIELD_COUNT };
 const uint8_t MARKER_COL[FIELD_COUNT] = { 14, 2 };   // column between the label and the value, on row 3
-const uint8_t MARKER_ADJUSTING = 6;                  // custom character slot
+const uint8_t MARKER_ADJUSTING = 6;                  // custom character slots
+const uint8_t MARKER_REVERSED = 7;
 const int QNH_MIN = 2800;                            // inHg x 100
 const int QNH_MAX = 3100;
 const int PAGE_COUNT = 1;
@@ -138,10 +139,13 @@ void serialCommands() {
   }
 }
 
-// Small solid right-pointing triangle for the "adjusting" marker
+// Solid right-pointing triangle filling the cell, and its reverse (the cell filled with the triangle cut out)
 void markerCreate() {
-  const uint8_t triangle[8] = { 0b00000, 0b01000, 0b01100, 0b01110, 0b01100, 0b01000, 0b00000, 0b00000 };
-  lcd.createChar(MARKER_ADJUSTING, (uint8_t *)triangle);
+  uint8_t triangle[8] = { 0b10000, 0b11000, 0b11100, 0b11110, 0b11110, 0b11100, 0b11000, 0b10000 };
+  uint8_t reversed[8];
+  for (uint8_t i = 0; i < 8; i++) reversed[i] = ~triangle[i] & 0x1F;
+  lcd.createChar(MARKER_ADJUSTING, triangle);
+  lcd.createChar(MARKER_REVERSED, reversed);
 }
 
 // Find the encoder on either I2C bus (the STEMMA QT connector is Wire1 on the Feather RP2040)
@@ -264,7 +268,7 @@ void loop() {
   for (uint8_t f = 0; f < FIELD_COUNT; f++) {
     if (f != selectedField) markers[f] = ' ';
     else if (adjusting) markers[f] = (char)MARKER_ADJUSTING;
-    else markers[f] = ((now / MARKER_FLASH_MS) % 2 == 0) ? (char)MARKER_ADJUSTING : ' ';
+    else markers[f] = ((now / MARKER_FLASH_MS) % 2 == 0) ? (char)MARKER_ADJUSTING : (char)MARKER_REVERSED;
   }
   snprintf(buf, sizeof(buf), "PG %d  IAGE QNH %d.%02d", page, qnh / 100, qnh % 100);
   buf[MARKER_COL[FIELD_PAGE]] = markers[FIELD_PAGE];
