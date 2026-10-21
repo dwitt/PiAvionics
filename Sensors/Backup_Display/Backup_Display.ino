@@ -45,7 +45,7 @@
 #include <Adafruit_seesaw.h>
 #include "src/Adafruit_MCP2515/src/Adafruit_MCP2515.h"   // patched copy, see Sensors/Libraries/README.md
 
-#define VERSION "1.2.1"
+#define VERSION "1.2.2"
 
 const uint8_t LCD_COLS = 20;
 const uint8_t LCD_ROWS = 4;
@@ -65,6 +65,8 @@ const uint32_t MAX_AGE_HEARTBEAT_MS = 3000;
 const uint32_t FAULT_FLASH_MS = 5000;                // a module that just failed flashes for this long
 const uint32_t FAULT_FLASH_HALF_PERIOD_MS = 250;
 const float STANDARD_GRAVITY = 9.80665f;
+const int VS_STEP_FT_MIN = 10;                       // the vertical speed is shown to the nearest 10 ft/min...
+const int VS_ZERO_BAND_FT_MIN = 30;                  // ...and as 0 when it is under 30 (it drifts by about +/-16 at rest)
 const uint32_t I2C_CLOCK_HZ = 400000;   // 100 kHz made one horizon update take 150 ms, 400 kHz takes 35 ms
 
 // encoder
@@ -145,7 +147,9 @@ void viewFromCan(View &v, uint32_t now) {
   v.hasAltitude = fresh(sigAltitude, MAX_AGE_AIR_MS, now);
   v.altitude = sigAltitude.value;
   v.hasVerticalSpeed = fresh(sigVerticalSpeed, MAX_AGE_AIR_MS, now);
-  v.verticalSpeed = sigVerticalSpeed.value;
+  const int rawVs = sigVerticalSpeed.value;
+  v.verticalSpeed = (abs(rawVs) < VS_ZERO_BAND_FT_MIN) ? 0
+                    : ((rawVs + (rawVs < 0 ? -VS_STEP_FT_MIN : VS_STEP_FT_MIN) / 2) / VS_STEP_FT_MIN) * VS_STEP_FT_MIN;
   v.hasHeading = fresh(sigHeading, MAX_AGE_ATTITUDE_MS, now);
   v.heading = ((sigHeading.value + 5) / 10) % 360;
   v.hasAttitude = fresh(sigPitch, MAX_AGE_ATTITUDE_MS, now) && fresh(sigRoll, MAX_AGE_ATTITUDE_MS, now);
