@@ -22,6 +22,12 @@
           between the triangle and its reverse, in the column between the label and the value.
   There is no timeout.
 
+  Pages (PG, bottom left of every page; adjusting it changes the page): 1 Flight, 2 System. Engine and GPS pages are to come.
+  The fields on each page, in clockwise order from the lower right:
+      Flight:  QNH (lower right, only on pages that show altitude), PG
+      System:  PG, BL (backlight on/off, upper left)
+  Brightness and contrast cannot be set from software with this backpack: the backlight is on/off and the contrast is a pot.
+
   QNH (EFIS/docs/QNH_PLAN.md): the value is shared with the other devices over CAN. This display sends on 0x2D, and adopts a
   valid frame from any ID in 0x2C to 0x2F. A change from the knob is sent at once (at most one frame per 20 ms). A set value
   is sent again after 1000 ms +/- 20 ms without a QNH frame on the bus. For the first 2 s after power-up nothing is sent
@@ -53,7 +59,7 @@
 #include <Adafruit_seesaw.h>
 #include "src/Adafruit_MCP2515/src/Adafruit_MCP2515.h"   // patched copy, see Sensors/Libraries/README.md
 
-#define VERSION "1.3.1"
+#define VERSION "1.4.0"
 
 const uint8_t LCD_COLS = 20;
 const uint8_t LCD_ROWS = 4;
@@ -88,13 +94,17 @@ const unsigned long ENCODER_POLL_MS = 10;
 const unsigned long MARKER_FLASH_MS = 500;
 
 // fields, in clockwise order around the display
-enum Field : uint8_t { FIELD_QNH, FIELD_PAGE, FIELD_COUNT };
-const uint8_t MARKER_COL[FIELD_COUNT] = { 13, 2 };   // column between the label and the value, on row 3
+enum Field : uint8_t { FIELD_QNH, FIELD_PAGE, FIELD_BACKLIGHT, FIELD_COUNT };
+struct Position { uint8_t col, row; };
+const Position MARKER_POS[FIELD_COUNT] = { { 13, 3 }, { 2, 3 }, { 2, 0 } };   // the column between the label and the value
+const Field FLIGHT_FIELDS[] = { FIELD_QNH, FIELD_PAGE };           // clockwise from the lower right
+const Field SYSTEM_FIELDS[] = { FIELD_PAGE, FIELD_BACKLIGHT };
+const uint8_t PAGE_FLIGHT = 1, PAGE_SYSTEM = 2;
 const uint8_t MARKER_ADJUSTING = 6;                  // custom character slots
 const uint8_t MARKER_REVERSED = 7;
 const int QNH_MIN = 2800;                            // inHg x 100
 const int QNH_MAX = 3100;
-const int PAGE_COUNT = 1;
+const int PAGE_COUNT = 2;
 
 // mini horizon
 const uint8_t HZ_COL = 0;            // top left cell
@@ -114,7 +124,8 @@ bool encoderFound = false;
 
 Field selectedField = FIELD_QNH;
 bool adjusting = true;
-int page = 1;
+int page = PAGE_FLIGHT;
+bool backlightOn = true;
 
 // --- Data shared between the cores ------------------------------------------------------------------------------------
 // Core 0 writes, core 1 reads. Each signal is a value, whether the sender marked it valid, and the time it arrived.
@@ -262,7 +273,7 @@ void serialCommands() {
     else if (cmd == 'U') { horizonPeriodMs = max(0L, Serial.parseInt()); }
     else if (cmd == 'S') { sweepHz = max(0.0f, Serial.parseFloat()); holdPitch = holdRoll = false; }
     else if (cmd == 'C') { Wire.setClock(1000L * Serial.parseInt()); }
-    else if (cmd == 'B') { lcd.setBacklight(Serial.parseInt() != 0 ? HIGH : LOW); }
+    else if (cmd == 'B') { backlightOn = Serial.parseInt() != 0; lcd.setBacklight(backlightOn ? HIGH : LOW); }
     else if (cmd == 'M') { simulate = Serial.parseInt() != 0; }
     else if (cmd == 'A') { holdPitch = holdRoll = false; sweepHz = 0; horizonPeriodMs = 100; }
   }
@@ -296,17 +307,33 @@ bool encoderBegin() {
   return false;
 }
 
+const Field *pageFields(int forPage, int &count) {
+  if (forPage == PAGE_SYSTEM) { count = sizeof(SYSTEM_FIELDS) / sizeof(SYSTEM_FIELDS[0]); return SYSTEM_FIELDS; }
+  count = sizeof(FLIGHT_FIELDS) / sizeof(FLIGHT_FIELDS[0]);
+  return FLIGHT_FIELDS;
+}
+
 // Apply a turn of 'clicks' (positive = clockwise) to the selected field, or move the selection
 void encoderTurned(int clicks) {
   if (adjusting) {
-    if (selectedField == FIELD_QNH) rp2040.fifo.push_nb((uint32_t)clicks);   // core 0 owns the QNH
-    else if (selectedField == FIELD_PAGE) page = constrain(page + clicks, 1, PAGE_COUNT);
+    if (selectedField == FIELD_QNH) {
+      rp2040.fifo.push_nb((uint32_t)clicks);   // core 0 owns the QNH
+    } else if (selectedField == FIELD_PAGE) {
+      page = ((page - 1 + clicks) % PAGE_COUNT + PAGE_COUNT) % PAGE_COUNT + 1;
+    } else if (selectedField == FIELD_BACKLIGHT) {
+      backlightOn = clicks > 0;                // clockwise on, anticlockwise off
+      lcd.setBacklight(backlightOn ? HIGH : LOW);
+    }
   } else {
-    int next = ((int)selectedField + clicks) % FIELD_COUNT;
-    if (next < 0) next += FIELD_COUNT;
-    selectedField = (Field)next;
+    int count;
+    const Field *fields = pageFields(page, count);
+    int index = 0;
+    for (int i = 0; i < count; i++) if (fields[i] == selectedField) index = i;
+    index = ((index + clicks) % count + count) % count;
+    selectedField = fields[index];
   }
-  Serial.printf("%s field=%d qnh=%d.%02d page=%d\n", adjusting ? "adjust" : "select", selectedField, qnhValue / 100, qnhValue % 100, page);
+  Serial.printf("%s field=%d qnh=%d.%02d page=%d backlight=%d\n", adjusting ? "adjust" : "select", selectedField, qnhValue / 100,
+                qnhValue % 100, page, backlightOn);
 }
 
 void encoderPoll() {
@@ -530,46 +557,19 @@ void setup1() {
   encoderFound = encoderBegin();
 }
 
-void loop1() {
-  static unsigned long lastText = 0, lastHorizon = 0, lastReport = 0;
-  static unsigned long updates = 0, updateMicros = 0, lastFrames = 0;
-  static bool horizonShown = true;
-  const unsigned long now = millis();
-  serialCommands();
-  encoderPoll();
+// The marker for a field: blank when it is not selected, the triangle when adjusting, flashing between the triangle and its
+// reverse when selecting
+char markerChar(Field f, uint32_t now) {
+  if (f != selectedField) return ' ';
+  if (adjusting) return (char)MARKER_ADJUSTING;
+  return ((now / MARKER_FLASH_MS) % 2 == 0) ? (char)MARKER_ADJUSTING : (char)MARKER_REVERSED;
+}
 
-  View v;
-  if (simulate) viewFromSimulation(v, now);
-  else viewFromCan(v, now);
+void putMarker(char *buf, Field f, uint32_t now) { buf[MARKER_POS[f].col] = markerChar(f, now); }
 
-  if (now - lastHorizon >= horizonPeriodMs) {
-    lastHorizon = now;
-    if (v.hasAttitude) {
-      if (!horizonShown) { horizonDraw(); horizonShown = true; }
-      const unsigned long start = micros();
-      horizonUpdate(v.pitch, v.roll);
-      updateMicros += micros() - start;
-      updates++;
-    } else if (horizonShown) {
-      printAt(HZ_COL, HZ_ROW, "ATT", HZ_CELLS_WIDE);
-      printAt(HZ_COL, HZ_ROW + 1, "---", HZ_CELLS_WIDE);
-      horizonShown = false;
-    }
-  }
+volatile uint32_t canRate = 0;                       // CAN frames in the last second, for the System page
 
-  if (now - lastReport >= 1000) {
-    const uint32_t frames = canFrames;
-    Serial.printf("%lu horizon updates/s, %lu us each, CAN %lu frames/s, QNH %d set=%d mismatch=%d\n", updates,
-                  updates ? updateMicros / updates : 0, (unsigned long)(frames - lastFrames), (int)qnhValue, (int)qnhIsSet,
-                  (int)qnhMismatch);
-    lastFrames = frames;
-    updates = updateMicros = 0;
-    lastReport = now;
-  }
-
-  if (now - lastText < 100) return;            // the text rows refresh at 10 Hz
-  lastText = now;
-
+void drawFlightText(const View &v, uint32_t now) {
   char buf[LCD_COLS + 1], a[8], b[8];
   if (v.hasAirspeed) snprintf(a, sizeof(a), "%3d", v.airspeed); else snprintf(a, sizeof(a), "---");
   if (v.hasAltitude) snprintf(b, sizeof(b), "%5d", v.altitude); else snprintf(b, sizeof(b), "-----");
@@ -587,19 +587,95 @@ void loop1() {
   printAt(3, 2, buf, 17);
 
   // Row 3: PG, the module status letters and the QNH (no label). The marker column is just before each value.
-  char markers[FIELD_COUNT];
-  for (uint8_t f = 0; f < FIELD_COUNT; f++) {
-    if (f != selectedField) markers[f] = ' ';
-    else if (adjusting) markers[f] = (char)MARKER_ADJUSTING;
-    else markers[f] = ((now / MARKER_FLASH_MS) % 2 == 0) ? (char)MARKER_ADJUSTING : (char)MARKER_REVERSED;
-  }
   char status[5];
   statusText(status, now);
   const int qnhNow = qnhValue;
   const char qnhFlag = !qnhIsSet ? '?' : (qnhMismatch ? '!' : ' ');
   snprintf(buf, sizeof(buf), "PG %d   %c%c%c%c   %d.%02d%c", page, status[0], status[1], status[2], status[3], qnhNow / 100,
            qnhNow % 100, qnhFlag);
-  buf[MARKER_COL[FIELD_PAGE]] = markers[FIELD_PAGE];
-  buf[MARKER_COL[FIELD_QNH]] = markers[FIELD_QNH];
+  putMarker(buf, FIELD_PAGE, now);
+  putMarker(buf, FIELD_QNH, now);
   printAt(0, 3, buf, 20);
+}
+
+// "OK", "DG" degraded, "ST" starting, "FL" failed, "--" no heartbeat for 3 s
+const char *moduleStateText(uint8_t node, uint32_t now) {
+  const Heartbeat &hb = heartbeats[node];
+  if (!ageWithin(hb.time, MAX_AGE_HEARTBEAT_MS, now)) return "--";
+  switch (hb.state) {
+    case 0: return "ST";
+    case 1: return "OK";
+    case 2: return "DG";
+    default: return "FL";
+  }
+}
+
+void drawSystemText(uint32_t now) {
+  char buf[LCD_COLS + 1];
+  snprintf(buf, sizeof(buf), "BL %-3s%14s", backlightOn ? "ON" : "OFF", "v" VERSION);
+  putMarker(buf, FIELD_BACKLIGHT, now);
+  printAt(0, 0, buf, 20);
+
+  snprintf(buf, sizeof(buf), "I:%s A:%s G:%s E:%s", moduleStateText(1, now), moduleStateText(2, now), moduleStateText(3, now),
+           moduleStateText(0, now));
+  printAt(0, 1, buf, 20);
+
+  const unsigned long s = now / 1000;
+  snprintf(buf, sizeof(buf), "CAN%3lu/s UP %lu:%02lu:%02lu", (unsigned long)canRate, s / 3600, (s / 60) % 60, s % 60);
+  printAt(0, 2, buf, 20);
+
+  snprintf(buf, sizeof(buf), "PG %d", page);
+  putMarker(buf, FIELD_PAGE, now);
+  printAt(0, 3, buf, 20);
+}
+
+void loop1() {
+  enum HorizonState : uint8_t { HZ_UNKNOWN, HZ_SHOWN, HZ_NO_DATA };
+  static unsigned long lastText = 0, lastHorizon = 0, lastReport = 0;
+  static unsigned long updates = 0, updateMicros = 0, lastFrames = 0;
+  static HorizonState horizonState = HZ_UNKNOWN;
+  static int drawnPage = 0;
+  const unsigned long now = millis();
+  serialCommands();
+  encoderPoll();
+
+  View v;
+  if (simulate) viewFromSimulation(v, now);
+  else viewFromCan(v, now);
+
+  if (page != drawnPage) {                     // a new page: start from a clean screen
+    lcd.clear();
+    drawnPage = page;
+    horizonState = HZ_UNKNOWN;
+  }
+
+  if (page == PAGE_FLIGHT && now - lastHorizon >= horizonPeriodMs) {
+    lastHorizon = now;
+    if (v.hasAttitude) {
+      if (horizonState != HZ_SHOWN) { horizonDraw(); horizonState = HZ_SHOWN; }
+      const unsigned long start = micros();
+      horizonUpdate(v.pitch, v.roll);
+      updateMicros += micros() - start;
+      updates++;
+    } else if (horizonState != HZ_NO_DATA) {
+      printAt(HZ_COL, HZ_ROW, "ATT", HZ_CELLS_WIDE);
+      printAt(HZ_COL, HZ_ROW + 1, "---", HZ_CELLS_WIDE);
+      horizonState = HZ_NO_DATA;
+    }
+  }
+
+  if (now - lastReport >= 1000) {
+    const uint32_t frames = canFrames;
+    canRate = frames - lastFrames;
+    Serial.printf("%lu horizon updates/s, %lu us each, CAN %lu frames/s, QNH %d set=%d mismatch=%d\n", updates,
+                  updates ? updateMicros / updates : 0, (unsigned long)canRate, (int)qnhValue, (int)qnhIsSet, (int)qnhMismatch);
+    lastFrames = frames;
+    updates = updateMicros = 0;
+    lastReport = now;
+  }
+
+  if (now - lastText < 100) return;            // the text rows refresh at 10 Hz
+  lastText = now;
+  if (page == PAGE_SYSTEM) drawSystemText(now);
+  else drawFlightText(v, now);
 }
