@@ -15,13 +15,17 @@
 
   USB serial commands (115200) to check the horizon:
       P <deg>  hold the pitch (positive = nose up)      R <deg>  hold the roll (positive = right wing down)
+      C <khz>  I2C clock in kHz (default 100)
       A        back to the moving simulation
+      U <ms>   horizon update period in ms (default 100, 0 = as fast as the display allows)
+      S <hz>   sweep the roll +/-45 degrees and the pitch +/-10 degrees at this many cycles per second (0 = off)
+  Once a second the serial port shows how many horizon updates were made and the mean time of one.
 */
 
 #include <Wire.h>
 #include <Adafruit_LiquidCrystal.h>
 
-#define VERSION "1.0.0"
+#define VERSION "1.0.2"
 
 const uint8_t LCD_COLS = 20;
 const uint8_t LCD_ROWS = 4;
@@ -86,6 +90,8 @@ void horizonDraw() {
 }
 
 bool holdPitch = false, holdRoll = false;
+unsigned long horizonPeriodMs = 100;
+float sweepHz = 0;
 float heldPitch = 0, heldRoll = 0;
 
 void serialCommands() {
@@ -93,7 +99,10 @@ void serialCommands() {
     char cmd = toupper(Serial.read());
     if (cmd == 'P') { heldPitch = Serial.parseFloat(); holdPitch = true; }
     else if (cmd == 'R') { heldRoll = Serial.parseFloat(); holdRoll = true; }
-    else if (cmd == 'A') { holdPitch = holdRoll = false; }
+    else if (cmd == 'U') { horizonPeriodMs = max(0L, Serial.parseInt()); }
+    else if (cmd == 'S') { sweepHz = max(0.0f, Serial.parseFloat()); holdPitch = holdRoll = false; }
+    else if (cmd == 'C') { Wire.setClock(1000L * Serial.parseInt()); }
+    else if (cmd == 'A') { holdPitch = holdRoll = false; sweepHz = 0; horizonPeriodMs = 100; }
   }
 }
 
@@ -116,24 +125,43 @@ void setup() {
 }
 
 void loop() {
-  static unsigned long lastUpdate = 0;
+  static unsigned long lastText = 0, lastHorizon = 0, lastReport = 0;
+  static unsigned long updates = 0, updateMicros = 0;
   const unsigned long now = millis();
   serialCommands();
-  if (now - lastUpdate < 100) return;          // 10 Hz refresh
-  lastUpdate = now;
+
+  const float t = now / 1000.0f;
+  if (now - lastHorizon >= horizonPeriodMs) {
+    lastHorizon = now;
+    float pitch = holdPitch ? heldPitch : 8.0f * sin(t * 0.4f);
+    float roll  = holdRoll  ? heldRoll  : 35.0f * sin(t * 0.25f);
+    if (sweepHz > 0) {
+      const float phase = 2.0f * (float)M_PI * sweepHz * t;
+      roll = 45.0f * sin(phase);
+      pitch = 10.0f * sin(phase * 0.5f);
+    }
+    const unsigned long start = micros();
+    horizonUpdate(pitch, roll);
+    updateMicros += micros() - start;
+    updates++;
+  }
+
+  if (now - lastReport >= 1000) {
+    Serial.printf("%lu horizon updates/s, %lu us each\n", updates, updates ? updateMicros / updates : 0);
+    updates = updateMicros = 0;
+    lastReport = now;
+  }
+
+  if (now - lastText < 100) return;            // the text rows refresh at 10 Hz
+  lastText = now;
 
   // Simulated data
-  const float t = now / 1000.0f;
   const int ias = 105 + (int)(8 * sin(t * 0.5f));
   const int alt = 4520 + (int)(150 * sin(t * 0.1f));
   const int vs  = (int)(500 * cos(t * 0.1f));
   const int hdg = ((int)(t * 6) + 270) % 360;
   const int oat = 12;
   const float g = 1.0f + 0.1f * sin(t * 0.7f);
-  const float pitch = holdPitch ? heldPitch : 8.0f * sin(t * 0.4f);
-  const float roll  = holdRoll  ? heldRoll  : 35.0f * sin(t * 0.25f);
-
-  horizonUpdate(pitch, roll);
 
   char buf[LCD_COLS + 1];
   snprintf(buf, sizeof(buf), "IAS %3d   ALT %5d", ias, alt);      printAt(0, 0, buf, 20);
