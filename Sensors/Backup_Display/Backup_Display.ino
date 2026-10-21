@@ -27,10 +27,11 @@
 
   A value that is missing or stale shows as dashes. Valid ages follow Protocol/CAN_PROTOCOL.md.
   Status letters I A G E (IMU, AIR, GPS, EFIS): the letter when the module's heartbeat says OK, a lower case letter when it
-  says degraded or starting. When no heartbeat has come for 3 s, or it says failed, the letter flashes between itself and a
-  dash for as long as the fault lasts, so the letter still says which module.
+  says degraded or starting. When no heartbeat has come for 3 s, or it says failed, the letter flashes: against a blank for
+  the first 2 s, then against a dash, slower, for as long as the fault lasts. The letter still says which module.
 
   USB serial commands (115200), the P R S A U commands act on the simulation:
+      Y <0|1>  1 = show four failed-letter styles side by side (I, A, G, E), 0 = normal
       M <0|1>  0 = real CAN data, 1 = simulated data (the default is simulated if the CAN chip is not found)
       P <deg>  hold the pitch (positive = nose up)      R <deg>  hold the roll (positive = right wing down)
       C <khz>  I2C clock in kHz (default 400)
@@ -45,7 +46,7 @@
 #include <Adafruit_seesaw.h>
 #include "src/Adafruit_MCP2515/src/Adafruit_MCP2515.h"   // patched copy, see Sensors/Libraries/README.md
 
-#define VERSION "1.2.4"
+#define VERSION "1.2.5"
 
 const uint8_t LCD_COLS = 20;
 const uint8_t LCD_ROWS = 4;
@@ -62,7 +63,9 @@ const uint32_t MAX_AGE_ATTITUDE_MS = 500;
 const uint32_t MAX_AGE_ACCEL_MS = 500;
 const uint32_t MAX_AGE_OAT_MS = 1500;
 const uint32_t MAX_AGE_HEARTBEAT_MS = 3000;
-const uint32_t STATUS_FLASH_MS = 500;                // a failed module alternates letter and dash at this rate
+const uint32_t STATUS_FIRST_PHASE_MS = 2000;         // a module that has just gone down flashes against a blank for this long...
+const uint32_t STATUS_FIRST_FLASH_MS = 500;
+const uint32_t STATUS_LATER_FLASH_MS = 1000;         // ...then against a dash, at this slower rate
 const float STANDARD_GRAVITY = 9.80665f;
 const int VS_STEP_FT_MIN = 50;                       // the vertical speed is shown to the nearest 50 ft/min...
 const int VS_STICK_FT_MIN = 40;                      // ...and stays where it is until the raw value is this far from it
@@ -244,6 +247,7 @@ void serialCommands() {
     else if (cmd == 'U') { horizonPeriodMs = max(0L, Serial.parseInt()); }
     else if (cmd == 'S') { sweepHz = max(0.0f, Serial.parseFloat()); holdPitch = holdRoll = false; }
     else if (cmd == 'C') { Wire.setClock(1000L * Serial.parseInt()); }
+    else if (cmd == 'Y') { styleDemo = Serial.parseInt() != 0; }
     else if (cmd == 'M') { simulate = Serial.parseInt() != 0; }
     else if (cmd == 'A') { holdPitch = holdRoll = false; sweepHz = 0; horizonPeriodMs = 100; }
   }
@@ -378,15 +382,39 @@ const char STATUS_LETTERS[4] = { 'I', 'A', 'G', 'E' };
 const uint8_t STATUS_NODE[4] = { 1, 2, 3, 0 };
 const uint8_t STATUS_COL = 6;
 
-// Build the four status characters. A failed module alternates its letter and a dash.
+bool styleDemo = false;
+
+// One character for a module that is down. downMs: how long it has been down.
+// style 0 (the real one): against a blank for the first phase, then against a dash, slower.
+// style 1: always against a blank. style 2: always against a dash. style 3: like 0 but the later flash is the same speed.
+char failedChar(char letter, uint32_t downMs, uint8_t style, uint32_t now) {
+  const bool firstPhase = downMs < STATUS_FIRST_PHASE_MS;
+  const uint32_t half = (firstPhase || style == 3) ? STATUS_FIRST_FLASH_MS : STATUS_LATER_FLASH_MS;
+  const bool on = (now / half) % 2 == 0;
+  if (on) return letter;
+  if (style == 1) return ' ';
+  if (style == 2) return '-';
+  return firstPhase ? ' ' : '-';
+}
+
+// Build the four status characters.
 void statusText(char *out, uint32_t now) {
+  static bool wasFailed[4] = { false, false, false, false };
+  static uint32_t failedSince[4] = { 0, 0, 0, 0 };
   for (uint8_t i = 0; i < 4; i++) {
     const Heartbeat &hb = heartbeats[STATUS_NODE[i]];
     const bool failed = !ageWithin(hb.time, MAX_AGE_HEARTBEAT_MS, now) || hb.state == 3;
-    if (simulate) {
+    if (failed && !wasFailed[i]) failedSince[i] = now;
+    wasFailed[i] = failed;
+    if (styleDemo) {
+      // I: blank only, A: dash only, G: first phase then dash (slower), E: first phase then dash (same speed).
+      // The down time restarts every 8 s so the change after 2 s can be seen again.
+      static const uint8_t demoStyle[4] = { 1, 2, 0, 3 };
+      out[i] = failedChar(STATUS_LETTERS[i], now % 8000, demoStyle[i], now);
+    } else if (simulate) {
       out[i] = STATUS_LETTERS[i];
     } else if (failed) {
-      out[i] = ((now / STATUS_FLASH_MS) % 2 == 0) ? STATUS_LETTERS[i] : '-';
+      out[i] = failedChar(STATUS_LETTERS[i], now - failedSince[i], 0, now);
     } else {
       out[i] = (hb.state == 1) ? STATUS_LETTERS[i] : tolower(STATUS_LETTERS[i]);
     }
