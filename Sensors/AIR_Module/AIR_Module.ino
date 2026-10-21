@@ -31,7 +31,7 @@
 /*****************************************************************************
  * Firmware version - increment the patch number on every change
  *****************************************************************************/
-#define VERSION "1.0.37"
+#define VERSION "1.0.38"
 
 // Set to 0 to run without the AOA sensor (Wire1, GPIO8/9). With 0, Wire1 is not
 // touched at all and a missing AOA sensor does not stop startup.
@@ -296,14 +296,21 @@ static float staticPressureLowPassFiltered = 0;   // hPa, after the low-pass, be
 // Method: every VSI_SAMPLE_MS the pressure altitude of the low-passed pressure is
 // stored in a ring buffer holding VSI_WINDOW_SAMPLES samples (3 s). The rate is
 // the altitude now minus the altitude one window ago, divided by the window.
-// That rate is then smoothed with a low-pass (VSI_ALPHA). Expected at rest: about
-// +-15 ft/min. Expected response: ~1.5 s to show a real climb change (the 1 s
-// pressure low-pass plus the smoothing). The altitude uses the standard
+// That rate is then smoothed with a low-pass (VSI_ALPHA, about 3 s) and sent as a
+// steady value: it holds until the smoothed rate is VSI_STICK_FPM away from it, and
+// then moves to the nearest VSI_STEP_FPM. A real vertical speed indicator lags by
+// 6 to 9 s and its needle does not flicker either. Measured at rest 2026-10-21 with
+// the old 1 s smoothing: the rate wandered +-56 ft/min (4 minutes, sd 19) because the
+// static pressure wanders by a few feet. With about 3 s of smoothing the wander is
+// within +-35, so a hold of 30 changes the value about 3 times in 4 minutes at rest.
+// A 500 ft/min climb reads 450 after about 8 s. The altitude uses the standard
 // atmosphere (1013.25 hPa); the QNH cancels out of a difference.
 // ----------------------------------------------------------------------------
 #define VSI_SAMPLE_MS        100     // how often an altitude sample is stored
 #define VSI_WINDOW_SAMPLES   30      // 30 x 100 ms = 3 s differencing window
-#define VSI_ALPHA            0.1f    // smoothing of the rate, per sample (~1 s)
+#define VSI_ALPHA            0.035f  // smoothing of the rate, per sample (~3 s)
+#define VSI_STEP_FPM         10      // the value sent is a multiple of this...
+#define VSI_STICK_FPM        30      // ...and holds until the smoothed rate is this far from it
 #define VSI_MAX_FPM          6000    // clamp to a sane range before packing into an int16
 
 static float vsiHistory[VSI_WINDOW_SAMPLES];
@@ -311,6 +318,7 @@ static uint8_t vsiHistoryIndex = 0;
 static uint8_t vsiHistoryCount = 0;      // samples stored so far, up to VSI_WINDOW_SAMPLES
 static unsigned long vsiLastSampleMs = 0;
 static float vsiSmoothed = 0;            // ft/min
+static int vsiHeld = 0;                  // ft/min, the steady value that is sent
 
 #define SEA_LEVEL_DENSITY_ISA 1.225   // kg/m^3
 #define V_M_S_TO_KNOTS 1.9438444924406
@@ -1069,6 +1077,7 @@ void loop() {
       vsiHistoryCount = 0;
       vsiHistoryIndex = 0;
       vsiSmoothed = 0;
+      vsiHeld = 0;
     }
 
     // ------------------------------------------------------------------------
@@ -1160,7 +1169,9 @@ void loop() {
         float rateFpm = (pressureAltitude - vsiHistory[vsiHistoryIndex]) / windowSeconds * 60.0f;
         vsiHistory[vsiHistoryIndex] = pressureAltitude;
         vsiSmoothed += VSI_ALPHA * (rateFpm - vsiSmoothed);
-        verticalSpeed = (int16_t)constrain(lroundf(vsiSmoothed), -VSI_MAX_FPM, VSI_MAX_FPM);
+        if (fabsf(vsiSmoothed - vsiHeld) >= VSI_STICK_FPM)
+          vsiHeld = lroundf(vsiSmoothed / VSI_STEP_FPM) * VSI_STEP_FPM;
+        verticalSpeed = (int16_t)constrain(vsiHeld, -VSI_MAX_FPM, VSI_MAX_FPM);
       }
       vsiHistoryIndex = (vsiHistoryIndex + 1) % VSI_WINDOW_SAMPLES;
     }
