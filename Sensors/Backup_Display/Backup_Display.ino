@@ -59,7 +59,7 @@
 #include <Adafruit_seesaw.h>
 #include "src/Adafruit_MCP2515/src/Adafruit_MCP2515.h"   // patched copy, see Sensors/Libraries/README.md
 
-#define VERSION "1.4.0"
+#define VERSION "1.4.1"
 
 const uint8_t LCD_COLS = 20;
 const uint8_t LCD_ROWS = 4;
@@ -321,7 +321,7 @@ void encoderTurned(int clicks) {
     } else if (selectedField == FIELD_PAGE) {
       page = ((page - 1 + clicks) % PAGE_COUNT + PAGE_COUNT) % PAGE_COUNT + 1;
     } else if (selectedField == FIELD_BACKLIGHT) {
-      backlightOn = clicks > 0;                // clockwise on, anticlockwise off
+      if (clicks % 2 != 0) backlightOn = !backlightOn;   // each click in either direction changes the state
       lcd.setBacklight(backlightOn ? HIGH : LOW);
     }
   } else {
