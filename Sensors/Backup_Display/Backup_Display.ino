@@ -9,11 +9,11 @@
   The flight page, fed from the CAN bus (or simulated, see M below):
       IAS 105 HHH ALT 4520
       VS +500 HHH  HDG 270
-      OAT 12C ___    G 1.0       (___ is the slip ball)
+      OAT 12C  o     G 1.0       (the o is the slip ball)
       PG 1   IAGE   29.92?
   HHH is the mini horizon, 3 x 2 character cells (15 x 16 pixels, drawn as 17 x 17 with the gaps between the cells counted) drawn with 6 of the 8 custom characters.
   Slot 6 is the "adjusting" marker (a small solid triangle) and slot 7 is the slip ball: the ball cell is drawn as a custom
-  character with the ball at the right pixel offset on a baseline, the other two cells of the track show _.
+  character with the ball at the right pixel offset, the other two cells of the track are blank.
 
   Encoder (Adafruit seesaw rotary encoder with push button, I2C 0x36), same idea as the EFIS:
       Adjusting (the start state): QNH is selected and a turn changes it, 0.01 inHg per click. The marker next to the
@@ -61,7 +61,7 @@
 #include <Adafruit_seesaw.h>
 #include "src/Adafruit_MCP2515/src/Adafruit_MCP2515.h"   // patched copy, see Sensors/Libraries/README.md
 
-#define VERSION "1.6.0"
+#define VERSION "1.6.1"
 
 const uint8_t LCD_COLS = 20;
 const uint8_t LCD_ROWS = 4;
@@ -339,15 +339,15 @@ void markerCreate() {
 int slipShown = -1;                                  // the position on the screen; -1 = not drawn (draw it again)
 
 void slipDraw(int position) {
-  static char cells[4] = "___";
+  static char cells[4] = "   ";
   if (position == slipShown) return;
   slipShown = position;
   const uint8_t ballRows[3] = { 0b010, 0b101, 0b010 };
   const uint8_t cell = position / 3, offset = position % 3;      // the ball is 3 pixels wide in a 5 pixel cell
-  uint8_t glyph[8] = { 0, 0, 0, 0, 0, 0, 0, 0b11111 };           // blank, with the baseline
-  for (uint8_t i = 0; i < 3; i++) glyph[4 + i] = ballRows[i] << (2 - offset);
+  uint8_t glyph[8] = { 0, 0, 0, 0, 0, 0, 0, 0 };
+  for (uint8_t i = 0; i < 3; i++) glyph[3 + i] = ballRows[i] << (2 - offset);   // the ball in the middle of the cell
   lcd.createChar(SLIP_GLYPH, glyph);
-  for (uint8_t i = 0; i < 3; i++) cells[i] = (i == cell) ? (char)SLIP_GLYPH : '_';
+  for (uint8_t i = 0; i < 3; i++) cells[i] = (i == cell) ? (char)SLIP_GLYPH : ' ';
   printAt(SLIP_COL, SLIP_ROW, cells, 3);
 }
 
