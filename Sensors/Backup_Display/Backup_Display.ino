@@ -22,9 +22,10 @@
           between the triangle and its reverse, in the column between the label and the value.
   There is no timeout.
 
-  Pages (PG, bottom left of every page; adjusting it changes the page): 1 Flight, 2 System. Engine and GPS pages are to come.
+  Pages (PG, bottom left of every page; adjusting it changes the page): 1 Flight, 2 GPS, 3 System. An Engine page is to come.
   The fields on each page, in clockwise order from the lower right:
       Flight:  QNH (lower right, only on pages that show altitude), PG
+      GPS:     PG
       System:  PG, BL (backlight on/off, upper left)
   Brightness and contrast cannot be set from software with this backpack: the backlight is on/off and the contrast is a pot.
 
@@ -59,7 +60,7 @@
 #include <Adafruit_seesaw.h>
 #include "src/Adafruit_MCP2515/src/Adafruit_MCP2515.h"   // patched copy, see Sensors/Libraries/README.md
 
-#define VERSION "1.4.1"
+#define VERSION "1.5.0"
 
 const uint8_t LCD_COLS = 20;
 const uint8_t LCD_ROWS = 4;
@@ -68,6 +69,7 @@ const uint8_t LCD_ROWS = 4;
 const uint8_t CAN_CS_PIN = 7;
 const long CAN_BAUDRATE = 250000;
 const uint16_t ID_AIR_DATA = 0x28, ID_OAT = 0x2A, ID_AHRS_ORIENT = 0x48, ID_AHRS_ACCEL = 0x49;
+const uint16_t ID_TIME_SYNC = 0x19, ID_GPS_POSITION = 0x63, ID_GPS_SPEED_TRACK = 0x64, ID_GPS_STATUS = 0x65;
 const uint16_t ID_HEARTBEAT_FIRST = 0x700;           // 0x700 EFIS, 0x701 IMU, 0x702 AIR, 0x703 GPS
 const int16_t MARKER_INT16 = 0x7FFF;
 const int32_t MARKER_INT32 = 0x7FFFFFFF;
@@ -75,7 +77,9 @@ const uint32_t MAX_AGE_AIR_MS = 500;                 // "treated as lost after",
 const uint32_t MAX_AGE_ATTITUDE_MS = 500;
 const uint32_t MAX_AGE_ACCEL_MS = 500;
 const uint32_t MAX_AGE_OAT_MS = 1500;
+const uint32_t MAX_AGE_GPS_MS = 3500;               // the GPS frames, the status and the time sync come once a second
 const uint32_t MAX_AGE_HEARTBEAT_MS = 3000;
+const int GPS_TRACK_MIN_SPEED_KT = 2;                // the module holds the track at 0 below this ground speed
 const uint32_t STATUS_WARNING_MS = 5000;             // a module that has just failed flashes quickly for this long...
 const uint32_t STATUS_WARNING_FLASH_MS = 500;        // (letter, then dash, each for this long)
 const uint32_t STATUS_FLASH_MS = 1500;               // ...then slowly
@@ -98,13 +102,14 @@ enum Field : uint8_t { FIELD_QNH, FIELD_PAGE, FIELD_BACKLIGHT, FIELD_COUNT };
 struct Position { uint8_t col, row; };
 const Position MARKER_POS[FIELD_COUNT] = { { 13, 3 }, { 2, 3 }, { 2, 0 } };   // the column between the label and the value
 const Field FLIGHT_FIELDS[] = { FIELD_QNH, FIELD_PAGE };           // clockwise from the lower right
+const Field GPS_FIELDS[] = { FIELD_PAGE };
 const Field SYSTEM_FIELDS[] = { FIELD_PAGE, FIELD_BACKLIGHT };
-const uint8_t PAGE_FLIGHT = 1, PAGE_SYSTEM = 2;
+const uint8_t PAGE_FLIGHT = 1, PAGE_GPS = 2, PAGE_SYSTEM = 3;
 const uint8_t MARKER_ADJUSTING = 6;                  // custom character slots
 const uint8_t MARKER_REVERSED = 7;
 const int QNH_MIN = 2800;                            // inHg x 100
 const int QNH_MAX = 3100;
-const int PAGE_COUNT = 2;
+const int PAGE_COUNT = 3;
 
 // mini horizon
 const uint8_t HZ_COL = 0;            // top left cell
@@ -138,6 +143,10 @@ Signal sigAirspeed, sigAltitude, sigVerticalSpeed;   // kt, ft, ft/min
 Signal sigHeading, sigPitch, sigRoll;                // deg x 10
 Signal sigOat;                                       // deg C x 10
 Signal sigAccelZ;                                    // m/s2 x 100
+Signal sigGpsLat, sigGpsLon;                         // deg x 1e6
+Signal sigGpsSpeed, sigGpsAlt, sigGpsTrack;          // kt, ft, deg (magnetic)
+Signal sigGpsHour, sigGpsMinute;                     // UTC
+Signal sigGpsFixType, sigGpsSats, sigGpsHdop;        // fix type 1 none / 2 2D / 3 3D, satellites, HDOP x 100
 struct Heartbeat {
   volatile uint8_t state = 0;
   volatile uint32_t time = 0;
@@ -155,6 +164,9 @@ struct View {
   bool hasAttitude = false, hasOat = false, hasG = false;
   int airspeed = 0, altitude = 0, verticalSpeed = 0, heading = 0, oat = 0;
   float pitch = 0, roll = 0, g = 1;
+  bool hasPosition = false, hasGpsSpeed = false, hasGpsTrack = false, hasGpsAlt = false, hasTime = false, hasFixStatus = false;
+  double lat = 0, lon = 0;
+  int gpsSpeed = 0, gpsTrack = 0, gpsAlt = 0, hour = 0, minute = 0, fixType = 1, sats = 0, hdop100 = 0;
 };
 
 // Core 0 can store a time a moment later than the 'now' core 1 read, so the age can be negative: use a signed difference
@@ -186,6 +198,23 @@ void viewFromCan(View &v, uint32_t now) {
   v.oat = lroundf(sigOat.value / 10.0f);
   v.hasG = fresh(sigAccelZ, MAX_AGE_ACCEL_MS, now);
   v.g = sigAccelZ.value / 100.0f / STANDARD_GRAVITY;
+
+  v.hasPosition = fresh(sigGpsLat, MAX_AGE_GPS_MS, now) && fresh(sigGpsLon, MAX_AGE_GPS_MS, now);
+  v.lat = sigGpsLat.value / 1e6;
+  v.lon = sigGpsLon.value / 1e6;
+  v.hasGpsSpeed = fresh(sigGpsSpeed, MAX_AGE_GPS_MS, now);
+  v.gpsSpeed = sigGpsSpeed.value;
+  v.hasGpsTrack = fresh(sigGpsTrack, MAX_AGE_GPS_MS, now) && v.hasGpsSpeed && v.gpsSpeed >= GPS_TRACK_MIN_SPEED_KT;
+  v.gpsTrack = sigGpsTrack.value;
+  v.hasGpsAlt = fresh(sigGpsAlt, MAX_AGE_GPS_MS, now);
+  v.gpsAlt = sigGpsAlt.value;
+  v.hasTime = fresh(sigGpsHour, MAX_AGE_GPS_MS, now) && fresh(sigGpsMinute, MAX_AGE_GPS_MS, now);
+  v.hour = sigGpsHour.value;
+  v.minute = sigGpsMinute.value;
+  v.hasFixStatus = fresh(sigGpsFixType, MAX_AGE_GPS_MS, now);
+  v.fixType = sigGpsFixType.value;
+  v.sats = sigGpsSats.value;
+  v.hdop100 = sigGpsHdop.value;
 }
 
 // --- Simulation (M 1) -------------------------------------------------------------------------------------------------
@@ -198,6 +227,17 @@ float sweepHz = 0;
 void viewFromSimulation(View &v, uint32_t now) {
   const float t = now / 1000.0f;
   v.hasAirspeed = v.hasAltitude = v.hasVerticalSpeed = v.hasHeading = v.hasAttitude = v.hasOat = v.hasG = true;
+  v.hasPosition = v.hasGpsSpeed = v.hasGpsTrack = v.hasGpsAlt = v.hasTime = v.hasFixStatus = true;
+  v.lat = 43.6532;
+  v.lon = -79.3832;
+  v.gpsSpeed = v.airspeed;
+  v.gpsTrack = v.heading;
+  v.gpsAlt = v.altitude - 20;
+  v.hour = 14;
+  v.minute = 32;
+  v.fixType = 3;
+  v.sats = 9;
+  v.hdop100 = 110;
   v.airspeed = 105 + (int)(8 * sin(t * 0.5f));
   v.altitude = 4520 + (int)(150 * sin(t * 0.1f));
   v.verticalSpeed = (int)(500 * cos(t * 0.1f));
@@ -309,6 +349,7 @@ bool encoderBegin() {
 
 const Field *pageFields(int forPage, int &count) {
   if (forPage == PAGE_SYSTEM) { count = sizeof(SYSTEM_FIELDS) / sizeof(SYSTEM_FIELDS[0]); return SYSTEM_FIELDS; }
+  if (forPage == PAGE_GPS) { count = sizeof(GPS_FIELDS) / sizeof(GPS_FIELDS[0]); return GPS_FIELDS; }
   count = sizeof(FLIGHT_FIELDS) / sizeof(FLIGHT_FIELDS[0]);
   return FLIGHT_FIELDS;
 }
@@ -475,6 +516,20 @@ void canHandleFrame(uint16_t id, const uint8_t *b, uint32_t now) {
   } else if (id == ID_AHRS_ACCEL) {
     const int16_t accelZ = int16At(b, 4);
     storeSignal(sigAccelZ, accelZ, accelZ != MARKER_INT16, now);
+  } else if (id == ID_GPS_POSITION) {
+    storeSignal(sigGpsLat, (int32_t)((uint32_t)b[0] | ((uint32_t)b[1] << 8) | ((uint32_t)b[2] << 16) | ((uint32_t)b[3] << 24)), true, now);
+    storeSignal(sigGpsLon, (int32_t)((uint32_t)b[4] | ((uint32_t)b[5] << 8) | ((uint32_t)b[6] << 16) | ((uint32_t)b[7] << 24)), true, now);
+  } else if (id == ID_GPS_SPEED_TRACK) {
+    storeSignal(sigGpsSpeed, int16At(b, 0), true, now);
+    storeSignal(sigGpsAlt, int16At(b, 2), true, now);
+    storeSignal(sigGpsTrack, int16At(b, 6), true, now);          // the magnetic track
+  } else if (id == ID_GPS_STATUS) {
+    storeSignal(sigGpsFixType, b[1], true, now);
+    storeSignal(sigGpsSats, b[2], true, now);
+    storeSignal(sigGpsHdop, int16At(b, 4), true, now);
+  } else if (id == ID_TIME_SYNC) {
+    storeSignal(sigGpsHour, b[3], true, now);
+    storeSignal(sigGpsMinute, b[4], true, now);
   } else if (id == ID_STATIC_PRESSURE) {
     qnhAirReport(b, now);
   } else if (id >= ID_QNH_FIRST && id <= ID_QNH_LAST) {
@@ -598,6 +653,39 @@ void drawFlightText(const View &v, uint32_t now) {
   printAt(0, 3, buf, 20);
 }
 
+void drawGpsText(const View &v, uint32_t now) {
+  char buf[LCD_COLS + 1], a[12], b[12], c[12];
+  if (v.hasGpsAlt) snprintf(a, sizeof(a), "%5d", v.gpsAlt); else snprintf(a, sizeof(a), "-----");
+  if (v.hasTime) snprintf(b, sizeof(b), "%02d:%02d", v.hour, v.minute); else snprintf(b, sizeof(b), "--:--");
+  snprintf(buf, sizeof(buf), "GPS  ALT%s %sZ", a, b);
+  printAt(0, 0, buf, 20);
+
+  if (v.hasGpsSpeed) snprintf(a, sizeof(a), "%3d", v.gpsSpeed); else snprintf(a, sizeof(a), "---");
+  if (v.hasGpsTrack) snprintf(b, sizeof(b), "%03d", v.gpsTrack); else snprintf(b, sizeof(b), "---");
+  snprintf(buf, sizeof(buf), "GS %skt   TRK %s", a, b);
+  printAt(0, 1, buf, 20);
+
+  if (v.hasPosition) {
+    snprintf(a, sizeof(a), "%c%07.4f", v.lat >= 0 ? 'N' : 'S', fabs(v.lat));
+    snprintf(b, sizeof(b), "%c%08.4f", v.lon >= 0 ? 'E' : 'W', fabs(v.lon));
+  } else {
+    snprintf(a, sizeof(a), "--.----");
+    snprintf(b, sizeof(b), "---.----");
+  }
+  snprintf(buf, sizeof(buf), "%-8s  %s", a, b);
+  printAt(0, 2, buf, 20);
+
+  if (!v.hasFixStatus) {
+    snprintf(buf, sizeof(buf), "PG %d  NOFIX", page);
+  } else if (v.fixType < 2) {
+    snprintf(buf, sizeof(buf), "PG %d  NOFIX %dsat", page, v.sats);
+  } else {
+    snprintf(buf, sizeof(buf), "PG %d  %dD %dsat HD%d.%d", page, v.fixType, v.sats, v.hdop100 / 100, (v.hdop100 % 100) / 10);
+  }
+  putMarker(buf, FIELD_PAGE, now);
+  printAt(0, 3, buf, 20);
+}
+
 // "OK", "DG" degraded, "ST" starting, "FL" failed, "--" no heartbeat for 3 s
 const char *moduleStateText(uint8_t node, uint32_t now) {
   const Heartbeat &hb = heartbeats[node];
@@ -677,5 +765,6 @@ void loop1() {
   if (now - lastText < 100) return;            // the text rows refresh at 10 Hz
   lastText = now;
   if (page == PAGE_SYSTEM) drawSystemText(now);
+  else if (page == PAGE_GPS) drawGpsText(v, now);
   else drawFlightText(v, now);
 }
