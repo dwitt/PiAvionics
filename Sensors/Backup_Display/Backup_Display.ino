@@ -11,7 +11,7 @@
       HHH VS +500 HDG 270
       HHH OAT 12C  G 1.0
       PG 1   IAGE    29.92
-  HHH is the mini horizon, 3 x 2 character cells (15 x 16 pixels) drawn with 6 of the 8 custom characters.
+  HHH is the mini horizon, 3 x 2 character cells (15 x 16 pixels, drawn as 17 x 17 with the gaps between the cells counted) drawn with 6 of the 8 custom characters.
   Slot 6 is the "adjusting" marker (a small solid triangle) and slot 7 is the same triangle reversed.
 
   Encoder (Adafruit seesaw rotary encoder with push button, I2C 0x36), same idea as the EFIS:
@@ -46,7 +46,7 @@
 #include <Adafruit_seesaw.h>
 #include "src/Adafruit_MCP2515/src/Adafruit_MCP2515.h"   // patched copy, see Sensors/Libraries/README.md
 
-#define VERSION "1.2.15"
+#define VERSION "1.2.16"
 
 const uint8_t LCD_COLS = 20;
 const uint8_t LCD_ROWS = 4;
@@ -94,8 +94,9 @@ const uint8_t HZ_COL = 0;            // top left cell
 const uint8_t HZ_ROW = 1;
 const uint8_t HZ_CELLS_WIDE = 3;
 const uint8_t HZ_CELLS_HIGH = 2;
-const int HZ_WIDTH_PX = HZ_CELLS_WIDE * 5;
-const int HZ_HEIGHT_PX = HZ_CELLS_HIGH * 8;
+const int HZ_GAP_PX = 1;             // the blank space between characters, counted as part of the picture but never drawn
+const int HZ_WIDTH_PX = HZ_CELLS_WIDE * 5 + (HZ_CELLS_WIDE - 1) * HZ_GAP_PX;
+const int HZ_HEIGHT_PX = HZ_CELLS_HIGH * 8 + (HZ_CELLS_HIGH - 1) * HZ_GAP_PX;
 const float HZ_PX_PER_DEG = 0.5f;    // pitch scale: the full height shows about +/- 16 degrees
 const float HZ_MAX_ROLL_DEG = 60.0f;
 
@@ -212,8 +213,8 @@ void horizonUpdate(float pitchDeg, float rollDeg) {
   const float cy = (HZ_HEIGHT_PX - 1) / 2.0f + pitchDeg * HZ_PX_PER_DEG;
 
   for (uint8_t cell = 0; cell < HZ_CELLS_WIDE * HZ_CELLS_HIGH; cell++) {
-    const int cellX = (cell % HZ_CELLS_WIDE) * 5;
-    const int cellY = (cell / HZ_CELLS_WIDE) * 8;
+    const int cellX = (cell % HZ_CELLS_WIDE) * (5 + HZ_GAP_PX);
+    const int cellY = (cell / HZ_CELLS_WIDE) * (8 + HZ_GAP_PX);
     uint8_t glyph[8];
     for (uint8_t row = 0; row < 8; row++) {
       uint8_t bits = 0;
