@@ -46,7 +46,7 @@
 #include <Adafruit_seesaw.h>
 #include "src/Adafruit_MCP2515/src/Adafruit_MCP2515.h"   // patched copy, see Sensors/Libraries/README.md
 
-#define VERSION "1.2.5"
+#define VERSION "1.2.6"
 
 const uint8_t LCD_COLS = 20;
 const uint8_t LCD_ROWS = 4;
@@ -169,6 +169,7 @@ void viewFromCan(View &v, uint32_t now) {
 
 // --- Simulation (M 1) -------------------------------------------------------------------------------------------------
 bool simulate = false;
+bool styleDemo = false;                              // Y 1: show the failed-letter styles side by side
 bool holdPitch = false, holdRoll = false;
 float heldPitch = 0, heldRoll = 0;
 unsigned long horizonPeriodMs = 100;
@@ -381,8 +382,6 @@ void loop() {
 const char STATUS_LETTERS[4] = { 'I', 'A', 'G', 'E' };
 const uint8_t STATUS_NODE[4] = { 1, 2, 3, 0 };
 const uint8_t STATUS_COL = 6;
-
-bool styleDemo = false;
 
 // One character for a module that is down. downMs: how long it has been down.
 // style 0 (the real one): against a blank for the first phase, then against a dash, slower.
