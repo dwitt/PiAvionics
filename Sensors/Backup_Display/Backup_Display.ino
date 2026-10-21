@@ -15,7 +15,7 @@
 
   USB serial commands (115200) to check the horizon:
       P <deg>  hold the pitch (positive = nose up)      R <deg>  hold the roll (positive = right wing down)
-      C <khz>  I2C clock in kHz (default 100)
+      C <khz>  I2C clock in kHz (default 400)
       A        back to the moving simulation
       U <ms>   horizon update period in ms (default 100, 0 = as fast as the display allows)
       S <hz>   sweep the roll +/-45 degrees and the pitch +/-10 degrees at this many cycles per second (0 = off)
@@ -25,10 +25,11 @@
 #include <Wire.h>
 #include <Adafruit_LiquidCrystal.h>
 
-#define VERSION "1.0.2"
+#define VERSION "1.0.3"
 
 const uint8_t LCD_COLS = 20;
 const uint8_t LCD_ROWS = 4;
+const uint32_t I2C_CLOCK_HZ = 400000;   // 100 kHz made one horizon update take 150 ms, 400 kHz takes 35 ms
 
 // mini horizon
 const uint8_t HZ_COL = 0;            // top left cell
@@ -118,6 +119,7 @@ void setup() {
     Serial.println("LCD backpack not found - check wiring/address");
     while (1) delay(100);
   }
+  Wire.setClock(I2C_CLOCK_HZ);
   lcd.setBacklight(HIGH);
   lcd.clear();
   horizonUpdate(0, 0);
