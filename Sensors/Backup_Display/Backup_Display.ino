@@ -9,11 +9,11 @@
   The flight page, fed from the CAN bus (or simulated, see M below):
       IAS 105|HHH|ALT 4520
       VS +500|HHH|HDG 270
-      OAT 12C|_o_|   G 1.0       (the o is the slip ball, the _ a line under it)
+      OAT 12C _o_    G 1.0       (the o is the slip ball, the _ a line under it)
       PG 1   IAGE   29.92?
   HHH is the mini horizon, 3 x 2 character cells (15 x 16 pixels, drawn as 17 x 17 with the gaps between the cells counted).
   Custom characters: slot 6 is the marker (a small solid triangle) and slot 7 a vertical bar down the middle of the cell, used
-  in columns 7 and 11 of rows 0 to 2 on each side of the horizon and the slip ball. The other 6 are handed out as needed (see slotAcquire): a
+  in columns 7 and 11 of rows 0 and 1 on each side of the horizon. The other 6 are handed out as needed (see slotAcquire): a
   horizon cell that is all sky is the built-in blank, all ground the built-in solid block, and only a cell the line crosses
   gets a custom character (at most 4). The slip ball is 5 x 5 pixels and can straddle two cells, so it takes up to 2
   slots. The cells of the slip track that have no ball show the built-in _, level with the line drawn in the ball's glyphs.
@@ -64,7 +64,7 @@
 #include <Adafruit_seesaw.h>
 #include "src/Adafruit_MCP2515/src/Adafruit_MCP2515.h"   // patched copy, see Sensors/Libraries/README.md
 
-#define VERSION "1.7.1"
+#define VERSION "1.7.2"
 
 const uint8_t LCD_COLS = 20;
 const uint8_t LCD_ROWS = 4;
@@ -110,7 +110,7 @@ const Field GPS_FIELDS[] = { FIELD_PAGE };
 const Field SYSTEM_FIELDS[] = { FIELD_PAGE, FIELD_BACKLIGHT };
 const uint8_t PAGE_FLIGHT = 1, PAGE_GPS = 2, PAGE_SYSTEM = 3;
 const uint8_t MARKER_ADJUSTING = 6;                  // custom character slot of the marker
-const uint8_t BAR_SLOT = 7;                          // custom character slot of the vertical bar (columns 7 and 11, rows 0 to 2)
+const uint8_t BAR_SLOT = 7;                          // custom character slot of the vertical bar (columns 7 and 11, rows 0 and 1)
 const uint8_t SLIP_COL = 8, SLIP_ROW = 2;            // the slip track: 3 cells under the horizon
 const int SLIP_SIGN = 1;                             // -1 if the ball moves the wrong way (depends on how the IMU is mounted)
 const float SLIP_G_PER_STEP = 0.035f;                // lateral acceleration for one pixel step; 6 steps either side of centre
@@ -735,9 +735,9 @@ void drawFlightText(const View &v, uint32_t now) {
 
   if (v.hasOat) snprintf(a, sizeof(a), "%2d", v.oat); else snprintf(a, sizeof(a), "--");
   if (v.hasG) snprintf(b, sizeof(b), "%4.1f", v.g); else snprintf(b, sizeof(b), " ---");
-  snprintf(buf, sizeof(buf), "OAT %sC%c", a, (char)BAR_SLOT);
+  snprintf(buf, sizeof(buf), "OAT %sC", a);
   printAt(0, 2, buf, 8);
-  snprintf(buf, sizeof(buf), "%c   G%s", (char)BAR_SLOT, b);
+  snprintf(buf, sizeof(buf), "    G%s", b);
   printAt(11, 2, buf, 9);
 
   // Slip ball: lateral acceleration, low passed, 0.05 g to a pixel step
