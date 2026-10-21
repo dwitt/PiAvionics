@@ -48,7 +48,7 @@
   USB serial commands (115200), the P R S A U commands act on the simulation:
       B <0|1>  backlight off / on
       M <0|1>  0 = real CAN data, 1 = simulated data (the default is simulated if the CAN chip is not found)
-      P <deg>  hold the pitch (positive = nose up)      R <deg>  hold the roll (positive = right wing down)
+      P <deg>  hold the pitch (positive = nose up)      R <deg>  hold the roll (positive turns the horizon clockwise, as on the EFIS)
       C <khz>  I2C clock in kHz (default 400)
       A        back to the moving simulation
       U <ms>   horizon update period in ms (default 100, 0 = as fast as the display allows)
@@ -61,7 +61,7 @@
 #include <Adafruit_seesaw.h>
 #include "src/Adafruit_MCP2515/src/Adafruit_MCP2515.h"   // patched copy, see Sensors/Libraries/README.md
 
-#define VERSION "1.6.4"
+#define VERSION "1.6.5"
 
 const uint8_t LCD_COLS = 20;
 const uint8_t LCD_ROWS = 4;
@@ -272,13 +272,13 @@ void printAt(uint8_t col, uint8_t row, const char *s, uint8_t width) {
 }
 
 // Draw the horizon into the six custom characters. Ground is filled, sky is blank, with a one pixel box round the edge.
-// pitchDeg: positive = nose up (the horizon moves down). rollDeg: positive = right wing down (the right end rises).
+// pitchDeg: positive = nose up (the horizon moves down). rollDeg: positive turns the horizon clockwise (the right end drops), the same as the EFIS page does with the bus value.
 void horizonUpdate(float pitchDeg, float rollDeg) {
   static uint8_t shown[HZ_CELLS_WIDE * HZ_CELLS_HIGH][8];
   static bool first = true;
 
   rollDeg = constrain(rollDeg, -HZ_MAX_ROLL_DEG, HZ_MAX_ROLL_DEG);
-  const float slope = tanf(rollDeg * (float)M_PI / 180.0f);
+  const float slope = -tanf(rollDeg * (float)M_PI / 180.0f);   // screen y points down: a clockwise turn lowers the right end
   const float cx = (HZ_WIDTH_PX - 1) / 2.0f;
   const float cy = (HZ_HEIGHT_PX - 1) / 2.0f + pitchDeg * HZ_PX_PER_DEG;
 
