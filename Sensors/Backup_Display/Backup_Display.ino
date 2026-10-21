@@ -38,6 +38,7 @@
   module.
 
   USB serial commands (115200), the P R S A U commands act on the simulation:
+      B <0|1>  backlight off / on
       M <0|1>  0 = real CAN data, 1 = simulated data (the default is simulated if the CAN chip is not found)
       P <deg>  hold the pitch (positive = nose up)      R <deg>  hold the roll (positive = right wing down)
       C <khz>  I2C clock in kHz (default 400)
@@ -52,7 +53,7 @@
 #include <Adafruit_seesaw.h>
 #include "src/Adafruit_MCP2515/src/Adafruit_MCP2515.h"   // patched copy, see Sensors/Libraries/README.md
 
-#define VERSION "1.3.0"
+#define VERSION "1.3.1"
 
 const uint8_t LCD_COLS = 20;
 const uint8_t LCD_ROWS = 4;
@@ -261,6 +262,7 @@ void serialCommands() {
     else if (cmd == 'U') { horizonPeriodMs = max(0L, Serial.parseInt()); }
     else if (cmd == 'S') { sweepHz = max(0.0f, Serial.parseFloat()); holdPitch = holdRoll = false; }
     else if (cmd == 'C') { Wire.setClock(1000L * Serial.parseInt()); }
+    else if (cmd == 'B') { lcd.setBacklight(Serial.parseInt() != 0 ? HIGH : LOW); }
     else if (cmd == 'M') { simulate = Serial.parseInt() != 0; }
     else if (cmd == 'A') { holdPitch = holdRoll = false; sweepHz = 0; horizonPeriodMs = 100; }
   }
