@@ -46,7 +46,7 @@
 #include <Adafruit_seesaw.h>
 #include "src/Adafruit_MCP2515/src/Adafruit_MCP2515.h"   // patched copy, see Sensors/Libraries/README.md
 
-#define VERSION "1.2.14"
+#define VERSION "1.2.15"
 
 const uint8_t LCD_COLS = 20;
 const uint8_t LCD_ROWS = 4;
@@ -200,7 +200,7 @@ void printAt(uint8_t col, uint8_t row, const char *s, uint8_t width) {
   lcd.print(buf);
 }
 
-// Draw the horizon into the six custom characters. Ground is filled, sky is blank.
+// Draw the horizon into the six custom characters. Ground is filled, sky is blank, with a one pixel box round the edge.
 // pitchDeg: positive = nose up (the horizon moves down). rollDeg: positive = right wing down (the right end rises).
 void horizonUpdate(float pitchDeg, float rollDeg) {
   static uint8_t shown[HZ_CELLS_WIDE * HZ_CELLS_HIGH][8];
@@ -221,6 +221,11 @@ void horizonUpdate(float pitchDeg, float rollDeg) {
         const float horizonY = cy - slope * ((cellX + col) - cx);
         if ((cellY + row) > horizonY) bits |= 1 << (4 - col);
       }
+      // one pixel box round the edge of the six cells
+      const uint8_t cellCol = cell % HZ_CELLS_WIDE, cellRow = cell / HZ_CELLS_WIDE;
+      if (cellCol == 0) bits |= 0b10000;
+      if (cellCol == HZ_CELLS_WIDE - 1) bits |= 0b00001;
+      if ((cellRow == 0 && row == 0) || (cellRow == HZ_CELLS_HIGH - 1 && row == 7)) bits = 0b11111;
       glyph[row] = bits;
     }
     if (first || memcmp(glyph, shown[cell], 8) != 0) {
