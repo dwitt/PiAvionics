@@ -12,18 +12,18 @@
       OAT 12C _o_    G 1.0       (the o is the slip ball, the _ a line under it)
       PG 1   IAGE   29.92?
   HHH is the mini horizon, 3 x 2 character cells (15 x 16 pixels, drawn as 17 x 17 with the gaps between the cells counted).
-  Custom characters: slot 6 is the marker (a small solid triangle) and slot 7 a vertical bar down the middle of the cell, used
-  in columns 7 and 11 of rows 0 and 1 on each side of the horizon. The other 6 are handed out as needed (see slotAcquire): a
+  Custom characters: slot 6 is a vertical line on the right pixel column of the cell and slot 7 one on the left pixel column.
+  They go in columns 7 and 11 of rows 0 and 1, close to the horizon on each side. The other 6 are handed out as needed (see slotAcquire): a
   horizon cell that is all sky is the built-in blank, all ground the built-in solid block, and only a cell the line crosses
   gets a custom character (at most 4). The slip ball is 5 x 5 pixels and can straddle two cells, so it takes up to 2
   slots. The cells of the slip track that have no ball show the built-in _, level with the line drawn in the ball's glyphs.
 
   Encoder (Adafruit seesaw rotary encoder with push button, I2C 0x36), same idea as the EFIS:
       Adjusting (the start state): QNH is selected and a turn changes it, 0.01 inHg per click. The marker next to the
-          label is a small solid triangle.
+          label is the built-in right arrow.
       Push: toggles between adjusting and selecting.
       Selecting: a turn moves the marker to the next field (clockwise: QNH, then PG, then back to QNH). The marker flashes
-          between the triangle and its reverse, in the column between the label and the value.
+          between the arrow and a blank, in the column between the label and the value.
   There is no timeout.
 
   Pages (PG, bottom left of every page; adjusting it changes the page): 1 Flight, 2 GPS, 3 System. An Engine page is to come.
@@ -64,7 +64,7 @@
 #include <Adafruit_seesaw.h>
 #include "src/Adafruit_MCP2515/src/Adafruit_MCP2515.h"   // patched copy, see Sensors/Libraries/README.md
 
-#define VERSION "1.7.2"
+#define VERSION "1.7.3"
 
 const uint8_t LCD_COLS = 20;
 const uint8_t LCD_ROWS = 4;
@@ -109,8 +109,8 @@ const Field FLIGHT_FIELDS[] = { FIELD_QNH, FIELD_PAGE };           // clockwise 
 const Field GPS_FIELDS[] = { FIELD_PAGE };
 const Field SYSTEM_FIELDS[] = { FIELD_PAGE, FIELD_BACKLIGHT };
 const uint8_t PAGE_FLIGHT = 1, PAGE_GPS = 2, PAGE_SYSTEM = 3;
-const uint8_t MARKER_ADJUSTING = 6;                  // custom character slot of the marker
-const uint8_t BAR_SLOT = 7;                          // custom character slot of the vertical bar (columns 7 and 11, rows 0 and 1)
+const char MARKER_CHAR = 0x7E;                       // the built-in right arrow
+const uint8_t BAR_LEFT_SLOT = 6, BAR_RIGHT_SLOT = 7; // custom characters: the lines on each side of the horizon (columns 7 and 11, rows 0 and 1)
 const uint8_t SLIP_COL = 8, SLIP_ROW = 2;            // the slip track: 3 cells under the horizon
 const int SLIP_SIGN = 1;                             // -1 if the ball moves the wrong way (depends on how the IMU is mounted)
 const float SLIP_G_PER_STEP = 0.035f;                // lateral acceleration for one pixel step; 6 steps either side of centre
@@ -276,7 +276,7 @@ void printAt(uint8_t col, uint8_t row, const char *s, uint8_t width) {
 }
 
 // --- Custom character slots ---------------------------------------------------------------------------------------------
-// The display has 8 custom characters. Slots 6 and 7 are the marker and the bar. The other 6 are handed out as needed to the horizon cells (owners 0 to
+// The display has 8 custom characters. Slots 6 and 7 are the lines on each side of the horizon. The other 6 are handed out as needed to the horizon cells (owners 0 to
 // 5) and to the cells of the slip track (owners 6 to 8). The CGRAM is written only when a glyph changes.
 const int CHAR_BLANK = 0x20, CHAR_SOLID = 0xFF;      // the built-in blank and solid block
 const int NO_OWNER = -1, RESERVED = -2;
@@ -286,8 +286,8 @@ uint8_t slotData[8][8];
 
 void slotsInit() {
   memset(slotData, 0xFF, sizeof(slotData));          // no real glyph has a row of 0xFF, so the first write always happens
-  slotOwner[MARKER_ADJUSTING] = RESERVED;            // the marker and the bar are loaded once and never handed out
-  slotOwner[BAR_SLOT] = RESERVED;
+  slotOwner[BAR_LEFT_SLOT] = RESERVED;               // the two lines are loaded once and never handed out
+  slotOwner[BAR_RIGHT_SLOT] = RESERVED;
 }
 
 int slotAcquire(int owner) {
@@ -413,12 +413,13 @@ void slipDraw(int position) {
   }
 }
 
-// Small solid right-pointing triangle for the "adjusting" marker
+// The lines on each side of the horizon: the right pixel column of the cell for the left one, the left pixel column for the right
+// one, so that both are one pixel (the gap between characters) from the horizon
 void markerCreate() {
-  uint8_t triangle[8] = { 0b00000, 0b01000, 0b01100, 0b01110, 0b01100, 0b01000, 0b00000, 0b00000 };
-  lcd.createChar(MARKER_ADJUSTING, triangle);
-  uint8_t bar[8] = { 0b00100, 0b00100, 0b00100, 0b00100, 0b00100, 0b00100, 0b00100, 0b00100 };   // down the middle pixel
-  lcd.createChar(BAR_SLOT, bar);
+  uint8_t left[8] = { 0b00001, 0b00001, 0b00001, 0b00001, 0b00001, 0b00001, 0b00001, 0b00001 };
+  uint8_t right[8] = { 0b10000, 0b10000, 0b10000, 0b10000, 0b10000, 0b10000, 0b10000, 0b10000 };
+  lcd.createChar(BAR_LEFT_SLOT, left);
+  lcd.createChar(BAR_RIGHT_SLOT, right);
 }
 
 // Find the encoder on either I2C bus (the STEMMA QT connector is Wire1 on the Feather RP2040)
@@ -704,12 +705,12 @@ void setup1() {
   encoderFound = encoderBegin();
 }
 
-// The marker for a field: blank when it is not selected, the triangle when adjusting, flashing between the triangle and its
-// reverse when selecting
+// The marker for a field: blank when it is not selected, the arrow when adjusting, flashing between the arrow and a
+// blank when selecting
 char markerChar(Field f, uint32_t now) {
   if (f != selectedField) return ' ';
-  if (adjusting) return (char)MARKER_ADJUSTING;
-  return ((now / MARKER_FLASH_MS) % 2 == 0) ? (char)MARKER_ADJUSTING : ' ';   // on trial: flash against a blank (the reverse in slot 7 is not used)
+  if (adjusting) return MARKER_CHAR;
+  return ((now / MARKER_FLASH_MS) % 2 == 0) ? MARKER_CHAR : ' ';
 }
 
 void putMarker(char *buf, Field f, uint32_t now) { buf[MARKER_POS[f].col] = markerChar(f, now); }
@@ -721,16 +722,16 @@ void drawFlightText(const View &v, uint32_t now) {
   // Rows 0 and 1 leave columns 8 to 10 for the horizon and row 2 leaves them for the slip ball
   if (v.hasAirspeed) snprintf(a, sizeof(a), "%3d", v.airspeed); else snprintf(a, sizeof(a), "---");
   if (v.hasAltitude) snprintf(b, sizeof(b), "%5d", v.altitude); else snprintf(b, sizeof(b), "-----");
-  snprintf(buf, sizeof(buf), "IAS %-3s%c", a, (char)BAR_SLOT);
+  snprintf(buf, sizeof(buf), "IAS %-3s%c", a, (char)BAR_LEFT_SLOT);
   printAt(0, 0, buf, 8);
-  snprintf(buf, sizeof(buf), "%cALT%s", (char)BAR_SLOT, b);
+  snprintf(buf, sizeof(buf), "%cALT%s", (char)BAR_RIGHT_SLOT, b);
   printAt(11, 0, buf, 9);
 
   if (v.hasVerticalSpeed) snprintf(a, sizeof(a), "%+5d", v.verticalSpeed); else snprintf(a, sizeof(a), "-----");
   if (v.hasHeading) snprintf(b, sizeof(b), "%03d", v.heading); else snprintf(b, sizeof(b), "---");
-  snprintf(buf, sizeof(buf), "VS%s%c", a, (char)BAR_SLOT);
+  snprintf(buf, sizeof(buf), "VS%s%c", a, (char)BAR_LEFT_SLOT);
   printAt(0, 1, buf, 8);
-  snprintf(buf, sizeof(buf), "%c HDG %s", (char)BAR_SLOT, b);
+  snprintf(buf, sizeof(buf), "%c HDG %s", (char)BAR_RIGHT_SLOT, b);
   printAt(11, 1, buf, 9);
 
   if (v.hasOat) snprintf(a, sizeof(a), "%2d", v.oat); else snprintf(a, sizeof(a), "--");
