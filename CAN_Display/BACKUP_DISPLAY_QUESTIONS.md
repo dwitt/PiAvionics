@@ -51,6 +51,8 @@ question is what happens once you have seen it.
 
 **Question for you.** A, B or the middle option?
 
+**Answered:** Option A. A failure clears itself, showing `---` and a flashing status row for a few seconds.
+
 ## 3. Where the sketch goes
 
 **What it is about.** `CAN_Display/` already holds the old design. You said it is superseded.
