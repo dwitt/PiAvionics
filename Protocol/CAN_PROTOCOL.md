@@ -2,7 +2,7 @@
 
 > **Generated file. Do not edit.** Edit `Protocol/can_messages.yaml` and run `Protocol/.venv/bin/python Protocol/generate_can_docs.py`.
 
-Version 0.3.0 · reviewed 2026-10-20
+Version 0.3.1 · reviewed 2026-10-21
 
 Sensor modules broadcast their data on fixed IDs. The Pi EFIS listens, shares the QNH with the AIR module and the other displays, and sends its own heartbeat (0x700). There are no addressed commands yet (see ISSUES.md issue 9).
 
@@ -34,32 +34,32 @@ Sensor modules broadcast their data on fixed IDs. The Pi EFIS listens, shares th
 
 | ID | Name | Sent by | Received by | Rate | Bytes | Status |
 |:--:|------|---------|-------------|------|:-----:|--------|
-| `0x019` | [TIME_SYNC](#0x019-time_sync) | GPS module | Pi EFIS | 1 s | 8 | ✅ Active |
+| `0x019` | [TIME_SYNC](#0x019-time_sync) | GPS module | Pi EFIS, Backup display | 1 s | 8 | ✅ Active |
 | `0x023` | [AHRS_CONTROL](#0x023-ahrs_control) | Pi EFIS | IMU / AHRS module | — | 8 | ⚪ Planned |
-| `0x028` | [AIR_DATA](#0x028-air_data) | AIR module | Pi EFIS, CAN display feather | 100 ms | 8 | ✅ Active |
+| `0x028` | [AIR_DATA](#0x028-air_data) | AIR module | Pi EFIS, Backup display | 100 ms | 8 | ✅ Active |
 | `0x029` | [AOA](#0x029-aoa) | AIR module | — | 200 ms | 8 | 🟡 Partial |
-| `0x02A` | [OAT](#0x02a-oat) | AIR module | Pi EFIS | 200 ms | 8 | ✅ Active |
-| `0x02B` | [STATIC_PRESSURE](#0x02b-static_pressure) | AIR module | Pi EFIS | 200 ms | 8 | ✅ Active |
+| `0x02A` | [OAT](#0x02a-oat) | AIR module | Pi EFIS, Backup display | 200 ms | 8 | ✅ Active |
+| `0x02B` | [STATIC_PRESSURE](#0x02b-static_pressure) | AIR module | Pi EFIS, Backup display | 200 ms | 8 | ✅ Active |
 | `0x02C` | [QNH_SPARE_2C](#0x02c-qnh_spare_2c) | Future panel | AIR module, Pi EFIS, Backup display | — | 8 | 🔘 Reserved |
-| `0x02D` | [QNH_BACKUP](#0x02d-qnh_backup) | Backup display | AIR module, Pi EFIS | 1 s | 8 | ⚪ Planned |
+| `0x02D` | [QNH_BACKUP](#0x02d-qnh_backup) | Backup display | AIR module, Pi EFIS | 1 s | 8 | ✅ Active |
 | `0x02E` | [QNH](#0x02e-qnh) | Pi EFIS | AIR module, Backup display | 1 s | 8 | ✅ Active |
 | `0x02F` | [QNH_SPARE_2F](#0x02f-qnh_spare_2f) | Future panel | AIR module, Pi EFIS, Backup display | — | 8 | 🔘 Reserved |
 | `0x032` | [EMS_RPM](#0x032-ems_rpm) | EMS module | — | — | 8 | ⚪ Planned |
-| `0x048` | [AHRS_ORIENT](#0x048-ahrs_orient) | IMU / AHRS module | Pi EFIS, CAN display feather | 100 ms | 8 | ✅ Active |
-| `0x049` | [AHRS_ACCEL](#0x049-ahrs_accel) | IMU / AHRS module | Pi EFIS | 100 ms | 8 | ✅ Active |
+| `0x048` | [AHRS_ORIENT](#0x048-ahrs_orient) | IMU / AHRS module | Pi EFIS, Backup display | 100 ms | 8 | ✅ Active |
+| `0x049` | [AHRS_ACCEL](#0x049-ahrs_accel) | IMU / AHRS module | Pi EFIS, Backup display | 100 ms | 8 | ✅ Active |
 | `0x051` | [EMS_OIL](#0x051-ems_oil) | EMS module | — | — | 8 | ⚪ Planned |
 | `0x052` | [EMS_EGT_CHT_12](#0x052-ems_egt_cht_12) | EMS module | — | — | 8 | ⚪ Planned |
 | `0x053` | [EMS_EGT_CHT_34](#0x053-ems_egt_cht_34) | EMS module | — | — | 8 | ⚪ Planned |
-| `0x063` | [GPS_POSITION](#0x063-gps_position) | GPS module | Pi EFIS | 1 s | 8 | ✅ Active |
-| `0x064` | [GPS_SPEED_TRACK](#0x064-gps_speed_track) | GPS module | Pi EFIS | 1 s | 8 | ✅ Active |
-| `0x065` | [GPS_STATUS](#0x065-gps_status) | GPS module | Pi EFIS | 1 s | 8 | ✅ Active |
+| `0x063` | [GPS_POSITION](#0x063-gps_position) | GPS module | Pi EFIS, Backup display | 1 s | 8 | ✅ Active |
+| `0x064` | [GPS_SPEED_TRACK](#0x064-gps_speed_track) | GPS module | Pi EFIS, Backup display | 1 s | 8 | ✅ Active |
+| `0x065` | [GPS_STATUS](#0x065-gps_status) | GPS module | Pi EFIS, Backup display | 1 s | 8 | ✅ Active |
 | `0x081` | [MAG_X](#0x081-mag_x) | IMU / AHRS module | Pi EFIS | — | 4 | 🔘 Reserved |
 | `0x082` | [MAG_Y](#0x082-mag_y) | IMU / AHRS module | Pi EFIS | — | 4 | 🔘 Reserved |
 | `0x083` | [MAG_Z](#0x083-mag_z) | IMU / AHRS module | Pi EFIS | — | 4 | 🔘 Reserved |
-| `0x700` | [EFIS_HEARTBEAT](#0x700-efis_heartbeat) | Pi EFIS | CAN display feather | 1 s | 8 | ✅ Active |
-| `0x701` | [IMU_HEARTBEAT](#0x701-imu_heartbeat) | IMU / AHRS module | Pi EFIS | 1 s | 8 | 🟡 Partial |
-| `0x702` | [AIR_HEARTBEAT](#0x702-air_heartbeat) | AIR module | Pi EFIS | 1 s | 8 | 🟡 Partial |
-| `0x703` | [GPS_HEARTBEAT](#0x703-gps_heartbeat) | GPS module | Pi EFIS | 1 s | 8 | 🟡 Partial |
+| `0x700` | [EFIS_HEARTBEAT](#0x700-efis_heartbeat) | Pi EFIS | Backup display | 1 s | 8 | ✅ Active |
+| `0x701` | [IMU_HEARTBEAT](#0x701-imu_heartbeat) | IMU / AHRS module | Pi EFIS, Backup display | 1 s | 8 | 🟡 Partial |
+| `0x702` | [AIR_HEARTBEAT](#0x702-air_heartbeat) | AIR module | Pi EFIS, Backup display | 1 s | 8 | 🟡 Partial |
+| `0x703` | [GPS_HEARTBEAT](#0x703-gps_heartbeat) | GPS module | Pi EFIS, Backup display | 1 s | 8 | 🟡 Partial |
 
 ## Messages
 
@@ -70,7 +70,7 @@ Sensor modules broadcast their data on fixed IDs. The Pi EFIS listens, shares th
 | | |
 |---|---|
 | Sent by | GPS module |
-| Received by | Pi EFIS |
+| Received by | Pi EFIS, Backup display |
 | Rate | 1 s |
 | Data length | 8 bytes |
 | Status | ✅ Active |
@@ -100,7 +100,7 @@ Sensor modules broadcast their data on fixed IDs. The Pi EFIS listens, shares th
 **Code**
 
 - Sender: GPS_Module.ino (CAN_TIME_SYNC_MSG_ID)
-- Receiver: aio_server.py process_time_sync_message
+- Receiver: aio_server.py process_time_sync_message; Backup_Display.ino canHandleFrame
 
 ### 0x023 AHRS_CONTROL
 
@@ -136,7 +136,7 @@ Sensor modules broadcast their data on fixed IDs. The Pi EFIS listens, shares th
 | | |
 |---|---|
 | Sent by | AIR module |
-| Received by | Pi EFIS, CAN display feather |
+| Received by | Pi EFIS, Backup display |
 | Rate | 100 ms |
 | Data length | 8 bytes |
 | Status | ✅ Active |
@@ -146,7 +146,7 @@ Sensor modules broadcast their data on fixed IDs. The Pi EFIS listens, shares th
 |:-----:|-------|------|------|-------------|-------------|
 | 0-1 | `airspeed` | int16 | kt | Indicated airspeed from the pitot sensor | `0x7FFF` |
 | 2-5 | `altitude` | int32 | ft | Altitude using the QNH block 0x2C to 0x2F. Invalid while the AIR module is in its 2 s start-up listen window | `0x7FFFFFFF` |
-| 6-7 | `vertical_speed` | int16 | ft/min | Climb rate from the static pressure, positive = climbing (3 s window, about 3 s lag, about +-40 ft/min at rest) | `0x7FFF` |
+| 6-7 | `vertical_speed` | int16 | ft/min | Climb rate from the static pressure, positive = climbing. A steady value: smoothed over about 3 s and held until it moves 30 ft/min, in steps of 10 (0 at rest) | `0x7FFF` |
 
 **Byte layout**
 
@@ -158,12 +158,12 @@ Sensor modules broadcast their data on fixed IDs. The Pi EFIS listens, shares th
 
 - Invalid markers (AIR_Module 1.0.35 onward, 2026-10-18): airspeed is 0x7FFF when the pitot sensor is lost; altitude (0x7FFFFFFF) and vertical speed (0x7FFF) when the static pressure sensor is lost. Before 1.0.35 a pitot loss sent airspeed 0, and a static loss held the last altitude (0 if the sensor was never found) and sent vertical speed 0. The AIR heartbeat (0x702) mask bits 0 and 2 say which sensor is lost.
 - Altitude is a full 4-byte integer with no padding byte. The older Can Docs.md showed a 3-byte altitude and is wrong.
-- Vertical speed is computed by AIR_Module v1.0.21 and later from the low-passed static pressure (standard atmosphere, not QNH): the altitude change over the last 3 s, smoothed. It lags a real change in climb rate by about 3 s.
+- Vertical speed is computed by AIR_Module from the low-passed static pressure (standard atmosphere, not QNH): the altitude change over the last 3 s, divided by 3 s. From AIR_Module 1.0.38 (2026-10-21) that rate is smoothed with a time constant of about 3 s (it was about 1 s) and then sent as a steady value: it holds until the smoothed rate is 30 ft/min away from it, and then moves to the nearest 10 ft/min. At rest it was +-56 ft/min with the old smoothing (4 minutes, the static pressure wanders by a few feet); with 1.0.38 it sat at 0 and -30 for 150 s. A real change of 500 ft/min reads 450 after about 8 s, like a mechanical VSI (6 to 9 s). The displays show the value as sent; they do no smoothing of their own.
 
 **Code**
 
 - Sender: AIR_Module.ino (CAN_AIR_MSG_ID)
-- Receiver: aio_server.py process_altitude_message, CAN_Feather.ino
+- Receiver: aio_server.py process_altitude_message, Backup_Display.ino
 
 ### 0x029 AOA
 
@@ -205,7 +205,7 @@ Sensor modules broadcast their data on fixed IDs. The Pi EFIS listens, shares th
 | | |
 |---|---|
 | Sent by | AIR module |
-| Received by | Pi EFIS |
+| Received by | Pi EFIS, Backup display |
 | Rate | 200 ms |
 | Data length | 8 bytes |
 | Status | ✅ Active |
@@ -230,7 +230,7 @@ Sensor modules broadcast their data on fixed IDs. The Pi EFIS listens, shares th
 **Code**
 
 - Sender: AIR_Module.ino (CAN_TEMP_MSG_ID)
-- Receiver: aio_server.py process_oat_message
+- Receiver: aio_server.py process_oat_message; Backup_Display.ino canHandleFrame
 
 ### 0x02B STATIC_PRESSURE
 
@@ -239,7 +239,7 @@ Sensor modules broadcast their data on fixed IDs. The Pi EFIS listens, shares th
 | | |
 |---|---|
 | Sent by | AIR module |
-| Received by | Pi EFIS |
+| Received by | Pi EFIS, Backup display |
 | Rate | 200 ms |
 | Data length | 8 bytes |
 | Status | ✅ Active |
@@ -268,7 +268,7 @@ Sensor modules broadcast their data on fixed IDs. The Pi EFIS listens, shares th
 **Code**
 
 - Sender: AIR_Module.ino (CAN_RAW_MSG_ID)
-- Receiver: aio_server.py process_static_pressure_message
+- Receiver: aio_server.py process_static_pressure_message; Backup_Display.ino canHandleFrame
 
 ### 0x02C QNH_SPARE_2C
 
@@ -308,7 +308,7 @@ Sensor modules broadcast their data on fixed IDs. The Pi EFIS listens, shares th
 | Received by | AIR module, Pi EFIS |
 | Rate | 1 s (Sent when a person changes the setting, and after 1000 ms +/- 20 ms of silence on the QNH block while the display holds a set value) |
 | Data length | 8 bytes |
-| Status | ⚪ Planned |
+| Status | ✅ Active |
 
 | Bytes | Field | Type | Unit | Description |
 |:-----:|-------|------|------|-------------|
@@ -328,7 +328,7 @@ Sensor modules broadcast their data on fixed IDs. The Pi EFIS listens, shares th
 
 **Code**
 
-- Sender: backup display (not written yet)
+- Sender: Backup_Display.ino (qnhService, qnhSend)
 - Receiver: AIR_Module.ino, aio_server.py
 
 ### 0x02E QNH
@@ -430,7 +430,7 @@ Sensor modules broadcast their data on fixed IDs. The Pi EFIS listens, shares th
 | | |
 |---|---|
 | Sent by | IMU / AHRS module |
-| Received by | Pi EFIS, CAN display feather |
+| Received by | Pi EFIS, Backup display |
 | Rate | 100 ms |
 | Data length | 8 bytes |
 | Status | ✅ Active |
@@ -458,7 +458,7 @@ Sensor modules broadcast their data on fixed IDs. The Pi EFIS listens, shares th
 **Code**
 
 - Sender: IMU_AHRS.ino (CAN_EULER_MSG_ID)
-- Receiver: aio_server.py process_ahrs_orient_message, CAN_Feather.ino
+- Receiver: aio_server.py process_ahrs_orient_message, Backup_Display.ino
 
 ### 0x049 AHRS_ACCEL
 
@@ -467,7 +467,7 @@ Sensor modules broadcast their data on fixed IDs. The Pi EFIS listens, shares th
 | | |
 |---|---|
 | Sent by | IMU / AHRS module |
-| Received by | Pi EFIS |
+| Received by | Pi EFIS, Backup display |
 | Rate | 100 ms |
 | Data length | 8 bytes |
 | Status | ✅ Active |
@@ -495,7 +495,7 @@ Sensor modules broadcast their data on fixed IDs. The Pi EFIS listens, shares th
 **Code**
 
 - Sender: IMU_AHRS.ino (CAN_ACC_MSG_ID)
-- Receiver: aio_server.py process_ahrs_accel_message
+- Receiver: aio_server.py process_ahrs_accel_message; Backup_Display.ino canHandleFrame
 
 ### 0x051 EMS_OIL
 
@@ -591,7 +591,7 @@ Sensor modules broadcast their data on fixed IDs. The Pi EFIS listens, shares th
 | | |
 |---|---|
 | Sent by | GPS module |
-| Received by | Pi EFIS |
+| Received by | Pi EFIS, Backup display |
 | Rate | 1 s |
 | Data length | 8 bytes |
 | Status | ✅ Active |
@@ -615,7 +615,7 @@ Sensor modules broadcast their data on fixed IDs. The Pi EFIS listens, shares th
 **Code**
 
 - Sender: GPS_Module.ino (CAN_GPS1_MSG_ID)
-- Receiver: aio_server.py process_gps1_message
+- Receiver: aio_server.py process_gps1_message; Backup_Display.ino canHandleFrame
 
 ### 0x064 GPS_SPEED_TRACK
 
@@ -624,7 +624,7 @@ Sensor modules broadcast their data on fixed IDs. The Pi EFIS listens, shares th
 | | |
 |---|---|
 | Sent by | GPS module |
-| Received by | Pi EFIS |
+| Received by | Pi EFIS, Backup display |
 | Rate | 1 s |
 | Data length | 8 bytes |
 | Status | ✅ Active |
@@ -650,7 +650,7 @@ Sensor modules broadcast their data on fixed IDs. The Pi EFIS listens, shares th
 **Code**
 
 - Sender: GPS_Module.ino (CAN_GPS2_MSG_ID)
-- Receiver: aio_server.py process_gps2_message
+- Receiver: aio_server.py process_gps2_message; Backup_Display.ino canHandleFrame
 
 ### 0x065 GPS_STATUS
 
@@ -659,7 +659,7 @@ Sensor modules broadcast their data on fixed IDs. The Pi EFIS listens, shares th
 | | |
 |---|---|
 | Sent by | GPS module |
-| Received by | Pi EFIS |
+| Received by | Pi EFIS, Backup display |
 | Rate | 1 s |
 | Data length | 8 bytes |
 | Status | ✅ Active |
@@ -689,7 +689,7 @@ Sensor modules broadcast their data on fixed IDs. The Pi EFIS listens, shares th
 **Code**
 
 - Sender: GPS_Module.ino (CAN_GPS3_MSG_ID)
-- Receiver: aio_server.py process_gps3_message
+- Receiver: aio_server.py process_gps3_message; Backup_Display.ino canHandleFrame
 
 ### 0x081 MAG_X
 
@@ -776,7 +776,7 @@ Sensor modules broadcast their data on fixed IDs. The Pi EFIS listens, shares th
 | | |
 |---|---|
 | Sent by | Pi EFIS |
-| Received by | CAN display feather |
+| Received by | Backup display |
 | Rate | 1 s |
 | Data length | 8 bytes |
 | Status | ✅ Active |
@@ -808,7 +808,7 @@ Sensor modules broadcast their data on fixed IDs. The Pi EFIS listens, shares th
 **Code**
 
 - Sender: aio_server.py send_efis_heartbeat (efis_heartbeat.py), EFIS server 1.6.1 onward
-- Receiver: not written yet (CAN_Feather.ino)
+- Receiver: Backup_Display.ino
 
 ### 0x701 IMU_HEARTBEAT
 
@@ -817,7 +817,7 @@ Sensor modules broadcast their data on fixed IDs. The Pi EFIS listens, shares th
 | | |
 |---|---|
 | Sent by | IMU / AHRS module |
-| Received by | Pi EFIS |
+| Received by | Pi EFIS, Backup display |
 | Rate | 1 s |
 | Data length | 8 bytes |
 | Status | 🟡 Partial |
@@ -849,7 +849,7 @@ Sensor modules broadcast their data on fixed IDs. The Pi EFIS listens, shares th
 **Code**
 
 - Sender: IMU_AHRS.ino (sendHeartbeat), ModuleInfo library
-- Receiver: not written yet (aio_server.py)
+- Receiver: not written yet (aio_server.py); Backup_Display.ino canHandleFrame
 
 ### 0x702 AIR_HEARTBEAT
 
@@ -858,7 +858,7 @@ Sensor modules broadcast their data on fixed IDs. The Pi EFIS listens, shares th
 | | |
 |---|---|
 | Sent by | AIR module |
-| Received by | Pi EFIS |
+| Received by | Pi EFIS, Backup display |
 | Rate | 1 s |
 | Data length | 8 bytes |
 | Status | 🟡 Partial |
@@ -888,7 +888,7 @@ Sensor modules broadcast their data on fixed IDs. The Pi EFIS listens, shares th
 **Code**
 
 - Sender: AIR_Module.ino (sendHeartbeat), ModuleInfo library
-- Receiver: not written yet (aio_server.py)
+- Receiver: not written yet (aio_server.py); Backup_Display.ino canHandleFrame
 
 ### 0x703 GPS_HEARTBEAT
 
@@ -897,7 +897,7 @@ Sensor modules broadcast their data on fixed IDs. The Pi EFIS listens, shares th
 | | |
 |---|---|
 | Sent by | GPS module |
-| Received by | Pi EFIS |
+| Received by | Pi EFIS, Backup display |
 | Rate | 1 s |
 | Data length | 8 bytes |
 | Status | 🟡 Partial |
@@ -927,7 +927,7 @@ Sensor modules broadcast their data on fixed IDs. The Pi EFIS listens, shares th
 **Code**
 
 - Sender: GPS_Module.ino (sendHeartbeat), ModuleInfo library
-- Receiver: not written yet (aio_server.py)
+- Receiver: not written yet (aio_server.py); Backup_Display.ino canHandleFrame
 
 ## Nodes
 
@@ -937,9 +937,9 @@ Sensor modules broadcast their data on fixed IDs. The Pi EFIS listens, shares th
 | IMU / AHRS module | Attitude, heading, acceleration | `Sensors/IMU_AHRS/IMU_AHRS.ino` |
 | GPS module | Position, speed, track, time | `Sensors/GPS_Module/GPS_Module.ino` |
 | Pi EFIS | Display computer (Raspberry Pi). Listens to everything, shares the QNH. | `EFIS/aio_server.py` |
-| Backup display | Feather RP2040 with a 20x4 LCD and rotary encoder; shows the flight data and sets the QNH | — |
+| Backup display | Feather RP2040 with a 20x4 LCD and rotary encoder; shows the flight, GPS and system pages from the bus alone and sets the QNH | `Sensors/Backup_Display/Backup_Display.ino` |
 | Future panel | Spare sender for the QNH IDs 0x2C and 0x2F | — |
-| CAN display feather | Listens for airspeed/altitude and attitude for the small LCD display | `Legacy/CAN_Display_v1/CAN_Feather/CAN_Feather.ino` |
+| CAN display feather | The old KS0108 display design, superseded by the backup display (kept for reference) | `Legacy/CAN_Display_v1/CAN_Feather/CAN_Feather.ino` |
 | EMS module | Engine monitor (planned). Only a legacy CircuitPython version exists. | — |
 
 ## IDs named in code but unused

@@ -75,7 +75,8 @@ Worst case (every frame at maximum bit stuffing) at 250 kbit/s. Only messages th
 | PiAvionics: IMU / AHRS module | 21.0 | 1.1 % |
 | PiAvionics: GPS module | 5.0 | 0.3 % |
 | PiAvionics: Pi EFIS | 2.0 | 0.1 % |
-| **PiAvionics total** | **54.0** | **2.9 %** |
+| PiAvionics: Backup display | 1.0 | 0.1 % |
+| **PiAvionics total** | **55.0** | **3.0 %** |
 | MGL: RDAC XF engine unit | 17.2 | 0.9 % |
 | MGL: SP-6 compass | 20.0 | 1.1 % |
 | MGL: SP-7 / SP-9 AHRS | 60.0 | 3.2 % |
@@ -83,6 +84,6 @@ Worst case (every frame at maximum bit stuffing) at 250 kbit/s. Only messages th
 | MGL: SP-10 flap/trim/motor controller | 3.0 | 0.1 % |
 | MGL: ECB electronic breakers | 0.5 | 0.0 % |
 | MGL: iEFIS extender | 24.0 | 1.2 % |
-| **All of the above on one bus** | **179.2** | **9.5 %** |
+| **All of the above on one bus** | **180.2** | **9.6 %** |
 
 A healthy CAN bus stays below about 30 to 40 % load.

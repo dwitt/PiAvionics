@@ -22,8 +22,8 @@ schema_version: 1
 
 protocol:
   name: PiAvionics CAN
-  version: 0.3.0
-  last_reviewed: 2026-10-20
+  version: 0.3.1
+  last_reviewed: 2026-10-21
   bitrate: 250000
   identifier: Standard 11-bit
   byte_order: Little-endian
@@ -82,15 +82,15 @@ nodes:
     code: EFIS/aio_server.py
   backup:
     name: Backup display
-    description: Feather RP2040 with a 20x4 LCD and rotary encoder; shows the flight data and sets the QNH
-    code: null
+    description: Feather RP2040 with a 20x4 LCD and rotary encoder; shows the flight, GPS and system pages from the bus alone and sets the QNH
+    code: Sensors/Backup_Display/Backup_Display.ino
   panel:
     name: Future panel
     description: Spare sender for the QNH IDs 0x2C and 0x2F
     code: null
   can_display:
     name: CAN display feather
-    description: Listens for airspeed/altitude and attitude for the small LCD display
+    description: The old KS0108 display design, superseded by the backup display (kept for reference)
     code: Legacy/CAN_Display_v1/CAN_Feather/CAN_Feather.ino
   ems:
     name: EMS module
@@ -104,7 +104,7 @@ messages:
     name: TIME_SYNC
     title: UTC date and time
     sender: gps
-    receivers: [efis]
+    receivers: [efis, backup]
     period_ms: 1000
     dlc: 8
     status: active
@@ -125,7 +125,7 @@ messages:
         is not a valid MGL destination (0 to 3).
     code:
       sender: "GPS_Module.ino (CAN_TIME_SYNC_MSG_ID)"
-      receiver: "aio_server.py process_time_sync_message"
+      receiver: "aio_server.py process_time_sync_message; Backup_Display.ino canHandleFrame"
 
   # ---------------------------------------------------------------------------
   - id: 0x23
@@ -149,14 +149,14 @@ messages:
     name: AIR_DATA
     title: Airspeed, altitude and vertical speed
     sender: air
-    receivers: [efis, can_display]
+    receivers: [efis, backup]
     period_ms: 100
     dlc: 8
     status: active
     fields:
       - {bytes: "0-1", name: airspeed,       type: int16, unit: kt,     invalid: 0x7FFF,     desc: Indicated airspeed from the pitot sensor}
       - {bytes: "2-5", name: altitude,       type: int32, unit: ft,     invalid: 0x7FFFFFFF, desc: Altitude using the QNH block 0x2C to 0x2F. Invalid while the AIR module is in its 2 s start-up listen window}
-      - {bytes: "6-7", name: vertical_speed, type: int16, unit: ft/min, invalid: 0x7FFF,     desc: "Climb rate from the static pressure, positive = climbing (3 s window, about 3 s lag, about +-40 ft/min at rest)"}
+      - {bytes: "6-7", name: vertical_speed, type: int16, unit: ft/min, invalid: 0x7FFF,     desc: "Climb rate from the static pressure, positive = climbing. A steady value: smoothed over about 3 s and held until it moves 30 ft/min, in steps of 10 (0 at rest)"}
     timeout_ms: 500
     notes:
       - >
@@ -169,12 +169,18 @@ messages:
         Altitude is a full 4-byte integer with no padding byte. The older
         Can Docs.md showed a 3-byte altitude and is wrong.
       - >
-        Vertical speed is computed by AIR_Module v1.0.21 and later from the low-passed
-        static pressure (standard atmosphere, not QNH): the altitude change over the last
-        3 s, smoothed. It lags a real change in climb rate by about 3 s.
+        Vertical speed is computed by AIR_Module from the low-passed static pressure
+        (standard atmosphere, not QNH): the altitude change over the last 3 s, divided by 3 s.
+        From AIR_Module 1.0.38 (2026-10-21) that rate is smoothed with a time constant of about 3 s
+        (it was about 1 s) and then sent as a steady value: it holds until the smoothed rate is
+        30 ft/min away from it, and then moves to the nearest 10 ft/min. At rest it was
+        +-56 ft/min with the old smoothing (4 minutes, the static pressure wanders by a few feet);
+        with 1.0.38 it sat at 0 and -30 for 150 s. A real change of 500 ft/min reads 450 after
+        about 8 s, like a mechanical VSI (6 to 9 s). The displays show the value as sent; they do
+        no smoothing of their own.
     code:
       sender: "AIR_Module.ino (CAN_AIR_MSG_ID)"
-      receiver: "aio_server.py process_altitude_message, CAN_Feather.ino"
+      receiver: "aio_server.py process_altitude_message, Backup_Display.ino"
 
   # ---------------------------------------------------------------------------
   - id: 0x29
@@ -200,7 +206,7 @@ messages:
     name: OAT
     title: Outside air temperature
     sender: air
-    receivers: [efis]
+    receivers: [efis, backup]
     period_ms: 200
     dlc: 8
     status: active
@@ -217,14 +223,14 @@ messages:
         sensor from a silent module. Before 1.0.35 it stopped sending. Heartbeat 0x702 bit 3 says the same.
     code:
       sender: "AIR_Module.ino (CAN_TEMP_MSG_ID)"
-      receiver: "aio_server.py process_oat_message"
+      receiver: "aio_server.py process_oat_message; Backup_Display.ino canHandleFrame"
 
   # ---------------------------------------------------------------------------
   - id: 0x2B
     name: STATIC_PRESSURE
     title: Raw static and pitot pressure
     sender: air
-    receivers: [efis]
+    receivers: [efis, backup]
     period_ms: 200
     dlc: 8
     status: active
@@ -250,7 +256,7 @@ messages:
         density altitude.
     code:
       sender: "AIR_Module.ino (CAN_RAW_MSG_ID)"
-      receiver: "aio_server.py process_static_pressure_message"
+      receiver: "aio_server.py process_static_pressure_message; Backup_Display.ino canHandleFrame"
 
   # ---------------------------------------------------------------------------
   - id: 0x2C
@@ -277,7 +283,7 @@ messages:
     period_ms: 1000
     period_note: "Sent when a person changes the setting, and after 1000 ms +/- 20 ms of silence on the QNH block while the display holds a set value"
     dlc: 8
-    status: planned
+    status: active
     fields:
       - {bytes: "0-1", name: qnh_hpa,  type: int16, unit: hPa,  desc: "Informational"}
       - {bytes: "2-3", name: qnh_inhg, type: int16, unit: inHg, scale: 0.0025, desc: "inHg x 400"}
@@ -285,7 +291,7 @@ messages:
     notes:
       - Part of the QNH block 0x2C to 0x2F. See 0x2E for the rules.
     code:
-      sender: "backup display (not written yet)"
+      sender: "Backup_Display.ino (qnhService, qnhSend)"
       receiver: "AIR_Module.ino, aio_server.py"
 
   # ---------------------------------------------------------------------------
@@ -363,7 +369,7 @@ messages:
     name: AHRS_ORIENT
     title: Heading, pitch, roll and turn rate
     sender: imu
-    receivers: [efis, can_display]
+    receivers: [efis, backup]
     period_ms: 100
     dlc: 8
     status: active
@@ -388,14 +394,14 @@ messages:
       - Today the EFIS treats this message as stale after 0.2 s and blanks the values; the new timeout is 0.5 s.
     code:
       sender: "IMU_AHRS.ino (CAN_EULER_MSG_ID)"
-      receiver: "aio_server.py process_ahrs_orient_message, CAN_Feather.ino"
+      receiver: "aio_server.py process_ahrs_orient_message, Backup_Display.ino"
 
   # ---------------------------------------------------------------------------
   - id: 0x49
     name: AHRS_ACCEL
     title: Acceleration
     sender: imu
-    receivers: [efis]
+    receivers: [efis, backup]
     period_ms: 100
     dlc: 8
     status: active
@@ -411,7 +417,7 @@ messages:
       - Today the EFIS treats this message as stale after 0.2 s; the new timeout is 0.5 s.
     code:
       sender: "IMU_AHRS.ino (CAN_ACC_MSG_ID)"
-      receiver: "aio_server.py process_ahrs_accel_message"
+      receiver: "aio_server.py process_ahrs_accel_message; Backup_Display.ino canHandleFrame"
 
   # ---------------------------------------------------------------------------
   - id: 0x51
@@ -467,7 +473,7 @@ messages:
     name: GPS_POSITION
     title: GPS position
     sender: gps
-    receivers: [efis]
+    receivers: [efis, backup]
     period_ms: 1000
     dlc: 8
     timeout_ms: 3500
@@ -482,13 +488,13 @@ messages:
         time the data out after 3.5 s. 0x65 and the GPS heartbeat (0x703) say why.
     code:
       sender: "GPS_Module.ino (CAN_GPS1_MSG_ID)"
-      receiver: "aio_server.py process_gps1_message"
+      receiver: "aio_server.py process_gps1_message; Backup_Display.ino canHandleFrame"
 
   - id: 0x64
     name: GPS_SPEED_TRACK
     title: GPS ground speed, altitude and track
     sender: gps
-    receivers: [efis]
+    receivers: [efis, backup]
     period_ms: 1000
     dlc: 8
     timeout_ms: 3500
@@ -502,13 +508,13 @@ messages:
       - Sent only while the GPS has a fix.
     code:
       sender: "GPS_Module.ino (CAN_GPS2_MSG_ID)"
-      receiver: "aio_server.py process_gps2_message"
+      receiver: "aio_server.py process_gps2_message; Backup_Display.ino canHandleFrame"
 
   - id: 0x65
     name: GPS_STATUS
     title: GPS fix status
     sender: gps
-    receivers: [efis]
+    receivers: [efis, backup]
     period_ms: 1000
     dlc: 8
     timeout_ms: 3500
@@ -527,7 +533,7 @@ messages:
         display convert true courses to magnetic. The EFIS hides the flight-plan course until it is known.
     code:
       sender: "GPS_Module.ino (CAN_GPS3_MSG_ID)"
-      receiver: "aio_server.py process_gps3_message"
+      receiver: "aio_server.py process_gps3_message; Backup_Display.ino canHandleFrame"
 
   # ---------------------------------------------------------------------------
   - id: 0x81
@@ -580,7 +586,7 @@ messages:
     name: IMU_HEARTBEAT
     title: IMU / AHRS module heartbeat, version and health
     sender: imu
-    receivers: [efis]
+    receivers: [efis, backup]
     period_ms: 1000
     dlc: 8
     status: partial
@@ -620,14 +626,14 @@ messages:
         The same text is in the USB product string and the '?' report (ModuleInfo library).
     code:
       sender: "IMU_AHRS.ino (sendHeartbeat), ModuleInfo library"
-      receiver: "not written yet (aio_server.py)"
+      receiver: "not written yet (aio_server.py); Backup_Display.ino canHandleFrame"
 
   # ---------------------------------------------------------------------------
   - id: 0x702
     name: AIR_HEARTBEAT
     title: AIR module heartbeat, version and health
     sender: air
-    receivers: [efis]
+    receivers: [efis, backup]
     period_ms: 1000
     dlc: 8
     status: partial
@@ -645,14 +651,14 @@ messages:
         only when neither the pitot nor the static pressure works (or CAN did not start).
     code:
       sender: "AIR_Module.ino (sendHeartbeat), ModuleInfo library"
-      receiver: "not written yet (aio_server.py)"
+      receiver: "not written yet (aio_server.py); Backup_Display.ino canHandleFrame"
 
   # ---------------------------------------------------------------------------
   - id: 0x703
     name: GPS_HEARTBEAT
     title: GPS module heartbeat, version and health
     sender: gps
-    receivers: [efis]
+    receivers: [efis, backup]
     period_ms: 1000
     dlc: 8
     status: partial
@@ -668,14 +674,14 @@ messages:
         the GPS chip every 5 s. LED: blue no fix, yellow 2D, green 3D, amber silent.
     code:
       sender: "GPS_Module.ino (sendHeartbeat), ModuleInfo library"
-      receiver: "not written yet (aio_server.py)"
+      receiver: "not written yet (aio_server.py); Backup_Display.ino canHandleFrame"
 
   # ---------------------------------------------------------------------------
   - id: 0x700
     name: EFIS_HEARTBEAT
     title: Pi EFIS heartbeat and view of the modules
     sender: efis
-    receivers: [can_display]
+    receivers: [backup]
     period_ms: 1000
     dlc: 8
     status: active
@@ -700,7 +706,7 @@ messages:
         defined with the implementation).
     code:
       sender: "aio_server.py send_efis_heartbeat (efis_heartbeat.py), EFIS server 1.6.1 onward"
-      receiver: "not written yet (CAN_Feather.ino)"
+      receiver: "Backup_Display.ino"
 
 # IDs that code refers to but which carry no CAN traffic
 reserved_ids:
