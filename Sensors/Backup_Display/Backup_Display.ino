@@ -45,7 +45,7 @@
 #include <Adafruit_seesaw.h>
 #include "src/Adafruit_MCP2515/src/Adafruit_MCP2515.h"   // patched copy, see Sensors/Libraries/README.md
 
-#define VERSION "1.2.7"
+#define VERSION "1.2.8"
 
 const uint8_t LCD_COLS = 20;
 const uint8_t LCD_ROWS = 4;
@@ -62,7 +62,7 @@ const uint32_t MAX_AGE_ATTITUDE_MS = 500;
 const uint32_t MAX_AGE_ACCEL_MS = 500;
 const uint32_t MAX_AGE_OAT_MS = 1500;
 const uint32_t MAX_AGE_HEARTBEAT_MS = 3000;
-const uint32_t STATUS_FLASH_MS = 1000;               // a failed module shows its letter, then a dash, each for this long
+const uint32_t STATUS_FLASH_MS = 4000;               // a failed module shows its letter, then a dash, each for this long
 const float STANDARD_GRAVITY = 9.80665f;
 const int VS_STEP_FT_MIN = 50;                       // the vertical speed is shown to the nearest 50 ft/min...
 const int VS_STICK_FT_MIN = 40;                      // ...and stays where it is until the raw value is this far from it
