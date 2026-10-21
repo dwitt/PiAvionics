@@ -66,6 +66,8 @@ question is what happens once you have seen it.
 
 **Questions for you.** Which location, and should the old files stay?
 
+**Answered:** the sketch goes in `Sensors/Backup_Display/`. Whether the old files stay is still open.
+
 ## What depends on the answers
 
 The screen layouts depend on the field list (question 1) and the failure handling (question 2). The bench sketch (CAN to LCD)
