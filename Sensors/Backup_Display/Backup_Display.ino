@@ -10,7 +10,7 @@
       IAS 105   ALT  4520
       HHH VS +500 HDG 270
       HHH OAT 12C  G 1.0
-      PG 1   IAGE    29.92
+      PG 1   IAGE   29.92?
   HHH is the mini horizon, 3 x 2 character cells (15 x 16 pixels, drawn as 17 x 17 with the gaps between the cells counted) drawn with 6 of the 8 custom characters.
   Slot 6 is the "adjusting" marker (a small solid triangle) and slot 7 is the same triangle reversed.
 
@@ -21,6 +21,12 @@
       Selecting: a turn moves the marker to the next field (clockwise: QNH, then PG, then back to QNH). The marker flashes
           between the triangle and its reverse, in the column between the label and the value.
   There is no timeout.
+
+  QNH (EFIS/docs/QNH_PLAN.md): the value is shared with the other devices over CAN. This display sends on 0x2D, and adopts a
+  valid frame from any ID in 0x2C to 0x2F. A change from the knob is sent at once (at most one frame per 20 ms). A set value
+  is sent again after 1000 ms +/- 20 ms without a QNH frame on the bus. For the first 2 s after power-up nothing is sent
+  unless the knob is turned, to give the others time to speak. With nothing heard the QNH is 29.92 followed by ? (not set,
+  and never sent). A ! after the value means the AIR module (0x2B) reports a different QNH for more than 2 s.
 
   Two cores: core 0 only receives CAN (setup/loop), core 1 does everything on I2C, the LCD and the encoder
   (setup1/loop1). The LCD writes are slow (tens of ms) and would let the MCP2515's two receive buffers overflow.
@@ -46,7 +52,7 @@
 #include <Adafruit_seesaw.h>
 #include "src/Adafruit_MCP2515/src/Adafruit_MCP2515.h"   // patched copy, see Sensors/Libraries/README.md
 
-#define VERSION "1.2.16"
+#define VERSION "1.3.0"
 
 const uint8_t LCD_COLS = 20;
 const uint8_t LCD_ROWS = 4;
@@ -82,7 +88,7 @@ const unsigned long MARKER_FLASH_MS = 500;
 
 // fields, in clockwise order around the display
 enum Field : uint8_t { FIELD_QNH, FIELD_PAGE, FIELD_COUNT };
-const uint8_t MARKER_COL[FIELD_COUNT] = { 14, 2 };   // column between the label and the value, on row 3
+const uint8_t MARKER_COL[FIELD_COUNT] = { 13, 2 };   // column between the label and the value, on row 3
 const uint8_t MARKER_ADJUSTING = 6;                  // custom character slots
 const uint8_t MARKER_REVERSED = 7;
 const int QNH_MIN = 2800;                            // inHg x 100
@@ -107,7 +113,6 @@ bool encoderFound = false;
 
 Field selectedField = FIELD_QNH;
 bool adjusting = true;
-int qnh = 2992;                      // inHg x 100
 int page = 1;
 
 // --- Data shared between the cores ------------------------------------------------------------------------------------
@@ -128,6 +133,9 @@ struct Heartbeat {
 Heartbeat heartbeats[4];                             // indexed by the node number: 0 EFIS, 1 IMU, 2 AIR, 3 GPS
 volatile uint32_t canFrames = 0;                     // frames received, for the once-a-second report
 bool canUp = false;
+volatile int qnhValue = 2992;                        // inHg x 100; core 0 writes, core 1 reads (see QNH below)
+volatile bool qnhIsSet = false;                      // false: 29.92 "not set", never sent
+volatile bool qnhMismatch = false;
 
 // What the page shows: a value and whether it may be shown
 struct View {
@@ -289,14 +297,14 @@ bool encoderBegin() {
 // Apply a turn of 'clicks' (positive = clockwise) to the selected field, or move the selection
 void encoderTurned(int clicks) {
   if (adjusting) {
-    if (selectedField == FIELD_QNH) qnh = constrain(qnh + clicks, QNH_MIN, QNH_MAX);
+    if (selectedField == FIELD_QNH) rp2040.fifo.push_nb((uint32_t)clicks);   // core 0 owns the QNH
     else if (selectedField == FIELD_PAGE) page = constrain(page + clicks, 1, PAGE_COUNT);
   } else {
     int next = ((int)selectedField + clicks) % FIELD_COUNT;
     if (next < 0) next += FIELD_COUNT;
     selectedField = (Field)next;
   }
-  Serial.printf("%s field=%d qnh=%d.%02d page=%d\n", adjusting ? "adjust" : "select", selectedField, qnh / 100, qnh % 100, page);
+  Serial.printf("%s field=%d qnh=%d.%02d page=%d\n", adjusting ? "adjust" : "select", selectedField, qnhValue / 100, qnhValue % 100, page);
 }
 
 void encoderPoll() {
@@ -315,6 +323,98 @@ void encoderPoll() {
     Serial.println(adjusting ? "adjusting" : "selecting");
   }
   wasPressed = pressed;
+}
+
+// --- QNH, owned by core 0 ---------------------------------------------------------------------------------------------
+const uint16_t ID_STATIC_PRESSURE = 0x2B;            // AIR report of the QNH it uses, bytes 5-6 (inHg x 100) and 7 (flags)
+const uint16_t ID_QNH_FIRST = 0x2C, ID_QNH_LAST = 0x2F, ID_QNH_SEND = 0x2D;
+const uint32_t QNH_LISTEN_MS = 2000;
+const uint32_t QNH_SILENCE_MS = 1000;
+const uint32_t QNH_SILENCE_JITTER_MS = 20;           // plus or minus, drawn once for each silent period
+const uint32_t QNH_MIN_SEND_GAP_MS = 20;             // never more than 50 frames a second
+const uint32_t QNH_MISMATCH_AFTER_MS = 2000;
+const uint32_t QNH_AIR_REPORT_MAX_AGE_MS = 1500;
+const uint8_t AIR_FLAG_QNH_NOT_SET = 0x01;
+const float INHG_X100_TO_HPA = 1.0f / 2.95299875f;
+
+static bool qnhPending = false;                      // a changed value waiting to go out
+static bool qnhEverSent = false;
+static uint32_t qnhLastSend = 0, qnhLastActivity = 0, qnhSilenceDelay = QNH_SILENCE_MS;   // activity = QNH frame heard or sent
+static int airQnh = -1;                              // -1 = the AIR module sent the invalid marker
+static bool airNotSet = false;
+static uint32_t airReportTime = 0, mismatchSince = 0;
+
+uint32_t qnhDrawSilenceDelay() {
+  return QNH_SILENCE_MS - QNH_SILENCE_JITTER_MS + rp2040.hwrand32() % (2 * QNH_SILENCE_JITTER_MS + 1);
+}
+
+// The receiver checks of the plan: 28.00 to 31.00 inHg, and the hPa field agrees with the inHg field to within 1 hPa
+bool qnhFrameValid(int hpa, int x4) {
+  if (x4 < QNH_MIN * 4 || x4 > QNH_MAX * 4) return false;
+  return fabsf(x4 * 0.25f * INHG_X100_TO_HPA - hpa) <= 1.0f;
+}
+
+void qnhHeard(const uint8_t *b, uint32_t now) {
+  const int hpa = int16At(b, 0), x4 = int16At(b, 2);
+  if (!qnhFrameValid(hpa, x4)) return;
+  qnhValue = x4 / 4;
+  qnhIsSet = true;
+  qnhPending = false;                                // whatever was waiting is older than this frame
+  qnhLastActivity = now;
+  qnhSilenceDelay = qnhDrawSilenceDelay();
+}
+
+void qnhAirReport(const uint8_t *b, uint32_t now) {
+  const int16_t inUse = int16At(b, 5);
+  airQnh = (inUse == MARKER_INT16) ? -1 : inUse;
+  airNotSet = (b[7] & AIR_FLAG_QNH_NOT_SET) != 0;
+  airReportTime = now;
+}
+
+void qnhSend(uint32_t now) {
+  if (canUp) {
+    const int16_t hpa = lroundf(qnhValue * INHG_X100_TO_HPA);
+    const int16_t x4 = qnhValue * 4;
+    const uint8_t frame[8] = { (uint8_t)(hpa & 0xFF), (uint8_t)(hpa >> 8), (uint8_t)(x4 & 0xFF), (uint8_t)(x4 >> 8), 0, 0, 0, 0 };
+    can.beginPacket(ID_QNH_SEND);
+    can.write(frame, 8);
+    can.endPacket();
+  }
+  qnhPending = false;
+  qnhEverSent = true;
+  qnhLastSend = now;
+  qnhLastActivity = now;
+  qnhSilenceDelay = qnhDrawSilenceDelay();
+}
+
+// Call every pass of loop() on core 0
+void qnhService(uint32_t now) {
+  // turns of the knob from core 1, in clicks
+  while (rp2040.fifo.available()) {
+    const int clicks = (int32_t)rp2040.fifo.pop();
+    const int next = constrain(qnhValue + clicks, QNH_MIN, QNH_MAX);
+    if (next != qnhValue) {
+      qnhValue = next;
+      qnhIsSet = true;
+      qnhPending = true;
+    }
+  }
+
+  const bool guardOk = !qnhEverSent || now - qnhLastSend >= QNH_MIN_SEND_GAP_MS;
+  const bool silent = qnhIsSet && now >= QNH_LISTEN_MS && now - qnhLastActivity >= qnhSilenceDelay;
+  if (guardOk && (qnhPending || silent)) qnhSend(now);
+
+  // mismatch with the AIR module's report
+  const bool airKnown = airReportTime != 0 && (int32_t)(now - airReportTime) <= (int32_t)QNH_AIR_REPORT_MAX_AGE_MS
+                        && (airQnh >= 0 || airNotSet);
+  const bool differs = qnhIsSet && airKnown && (airNotSet || airQnh != qnhValue);
+  if (!differs) {
+    mismatchSince = 0;
+    qnhMismatch = false;
+  } else {
+    if (mismatchSince == 0) mismatchSince = now;
+    qnhMismatch = now - mismatchSince > QNH_MISMATCH_AFTER_MS;
+  }
 }
 
 // --- Core 0: CAN receive ----------------------------------------------------------------------------------------------
@@ -346,6 +446,10 @@ void canHandleFrame(uint16_t id, const uint8_t *b, uint32_t now) {
   } else if (id == ID_AHRS_ACCEL) {
     const int16_t accelZ = int16At(b, 4);
     storeSignal(sigAccelZ, accelZ, accelZ != MARKER_INT16, now);
+  } else if (id == ID_STATIC_PRESSURE) {
+    qnhAirReport(b, now);
+  } else if (id >= ID_QNH_FIRST && id <= ID_QNH_LAST) {
+    qnhHeard(b, now);
   } else if (id >= ID_HEARTBEAT_FIRST && id < ID_HEARTBEAT_FIRST + 4) {
     Heartbeat &hb = heartbeats[id - ID_HEARTBEAT_FIRST];
     hb.state = b[4];
@@ -378,6 +482,7 @@ void setup() {
 
 void loop() {
   if (canUp) canPoll();
+  qnhService(millis());
 }
 
 // --- Core 1: LCD, encoder, serial commands ----------------------------------------------------------------------------
@@ -452,8 +557,9 @@ void loop1() {
 
   if (now - lastReport >= 1000) {
     const uint32_t frames = canFrames;
-    Serial.printf("%lu horizon updates/s, %lu us each, CAN %lu frames/s\n", updates, updates ? updateMicros / updates : 0,
-                  (unsigned long)(frames - lastFrames));
+    Serial.printf("%lu horizon updates/s, %lu us each, CAN %lu frames/s, QNH %d set=%d mismatch=%d\n", updates,
+                  updates ? updateMicros / updates : 0, (unsigned long)(frames - lastFrames), (int)qnhValue, (int)qnhIsSet,
+                  (int)qnhMismatch);
     lastFrames = frames;
     updates = updateMicros = 0;
     lastReport = now;
@@ -487,7 +593,10 @@ void loop1() {
   }
   char status[5];
   statusText(status, now);
-  snprintf(buf, sizeof(buf), "PG %d   %c%c%c%c    %d.%02d", page, status[0], status[1], status[2], status[3], qnh / 100, qnh % 100);
+  const int qnhNow = qnhValue;
+  const char qnhFlag = !qnhIsSet ? '?' : (qnhMismatch ? '!' : ' ');
+  snprintf(buf, sizeof(buf), "PG %d   %c%c%c%c   %d.%02d%c", page, status[0], status[1], status[2], status[3], qnhNow / 100,
+           qnhNow % 100, qnhFlag);
   buf[MARKER_COL[FIELD_PAGE]] = markers[FIELD_PAGE];
   buf[MARKER_COL[FIELD_QNH]] = markers[FIELD_QNH];
   printAt(0, 3, buf, 20);
