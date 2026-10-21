@@ -7,12 +7,13 @@
   Library:  Adafruit LiquidCrystal
 
   The flight page, fed from the CAN bus (or simulated, see M below):
-      IAS 105   ALT  4520
-      HHH VS +500 HDG 270
-      HHH OAT 12C  G 1.0
+      IAS 105 HHH ALT 4520
+      VS +500 HHH  HDG 270
+      OAT 12C ___    G 1.0       (___ is the slip ball)
       PG 1   IAGE   29.92?
   HHH is the mini horizon, 3 x 2 character cells (15 x 16 pixels, drawn as 17 x 17 with the gaps between the cells counted) drawn with 6 of the 8 custom characters.
-  Slot 6 is the "adjusting" marker (a small solid triangle) and slot 7 is the same triangle reversed.
+  Slot 6 is the "adjusting" marker (a small solid triangle) and slot 7 is the slip ball: the ball cell is drawn as a custom
+  character with the ball at the right pixel offset on a baseline, the other two cells of the track show _.
 
   Encoder (Adafruit seesaw rotary encoder with push button, I2C 0x36), same idea as the EFIS:
       Adjusting (the start state): QNH is selected and a turn changes it, 0.01 inHg per click. The marker next to the
@@ -60,7 +61,7 @@
 #include <Adafruit_seesaw.h>
 #include "src/Adafruit_MCP2515/src/Adafruit_MCP2515.h"   // patched copy, see Sensors/Libraries/README.md
 
-#define VERSION "1.5.1"
+#define VERSION "1.6.0"
 
 const uint8_t LCD_COLS = 20;
 const uint8_t LCD_ROWS = 4;
@@ -106,14 +107,18 @@ const Field GPS_FIELDS[] = { FIELD_PAGE };
 const Field SYSTEM_FIELDS[] = { FIELD_PAGE, FIELD_BACKLIGHT };
 const uint8_t PAGE_FLIGHT = 1, PAGE_GPS = 2, PAGE_SYSTEM = 3;
 const uint8_t MARKER_ADJUSTING = 6;                  // custom character slots
-const uint8_t MARKER_REVERSED = 7;
+const uint8_t SLIP_GLYPH = 7;                        // custom character slot of the slip ball
+const uint8_t SLIP_COL = 8, SLIP_ROW = 2;            // the slip track: 3 cells under the horizon
+const int SLIP_SIGN = 1;                             // -1 if the ball moves the wrong way (depends on how the IMU is mounted)
+const float SLIP_G_PER_STEP = 0.05f;                 // lateral acceleration for one pixel step; 4 steps either side of centre
+const float SLIP_FILTER = 0.2f;                      // low pass at each 100 ms redraw (about 0.5 s)
 const int QNH_MIN = 2800;                            // inHg x 100
 const int QNH_MAX = 3100;
 const int PAGE_COUNT = 3;
 
 // mini horizon
-const uint8_t HZ_COL = 0;            // top left cell
-const uint8_t HZ_ROW = 1;
+const uint8_t HZ_COL = 8;            // top left cell: in the middle of the screen, rows 0 and 1
+const uint8_t HZ_ROW = 0;
 const uint8_t HZ_CELLS_WIDE = 3;
 const uint8_t HZ_CELLS_HIGH = 2;
 const int HZ_GAP_PX = 1;             // the blank space between characters, counted as part of the picture but never drawn
@@ -142,7 +147,7 @@ struct Signal {
 Signal sigAirspeed, sigAltitude, sigVerticalSpeed;   // kt, ft, ft/min
 Signal sigHeading, sigPitch, sigRoll;                // deg x 10
 Signal sigOat;                                       // deg C x 10
-Signal sigAccelZ;                                    // m/s2 x 100
+Signal sigAccelY, sigAccelZ;                         // m/s2 x 100
 Signal sigGpsLat, sigGpsLon;                         // deg x 1e6
 Signal sigGpsSpeed, sigGpsAlt, sigGpsTrack;          // kt, ft, deg (magnetic)
 Signal sigGpsHour, sigGpsMinute;                     // UTC
@@ -161,9 +166,9 @@ volatile bool qnhMismatch = false;
 // What the page shows: a value and whether it may be shown
 struct View {
   bool hasAirspeed = false, hasAltitude = false, hasVerticalSpeed = false, hasHeading = false;
-  bool hasAttitude = false, hasOat = false, hasG = false;
+  bool hasAttitude = false, hasOat = false, hasG = false, hasAccelY = false;
   int airspeed = 0, altitude = 0, verticalSpeed = 0, heading = 0, oat = 0;
-  float pitch = 0, roll = 0, g = 1;
+  float pitch = 0, roll = 0, g = 1, accelYg = 0;
   bool hasPosition = false, hasGpsSpeed = false, hasGpsTrack = false, hasGpsAlt = false, hasTime = false, hasFixStatus = false;
   double lat = 0, lon = 0;
   int gpsSpeed = 0, gpsTrack = 0, gpsAlt = 0, hour = 0, minute = 0, fixType = 1, sats = 0, hdop100 = 0;
@@ -198,6 +203,8 @@ void viewFromCan(View &v, uint32_t now) {
   v.oat = lroundf(sigOat.value / 10.0f);
   v.hasG = fresh(sigAccelZ, MAX_AGE_ACCEL_MS, now);
   v.g = sigAccelZ.value / 100.0f / STANDARD_GRAVITY;
+  v.hasAccelY = fresh(sigAccelY, MAX_AGE_ACCEL_MS, now);
+  v.accelYg = sigAccelY.value / 100.0f / STANDARD_GRAVITY;
 
   v.hasPosition = fresh(sigGpsLat, MAX_AGE_GPS_MS, now) && fresh(sigGpsLon, MAX_AGE_GPS_MS, now);
   v.lat = sigGpsLat.value / 1e6;
@@ -244,6 +251,8 @@ void viewFromSimulation(View &v, uint32_t now) {
   v.heading = ((int)(t * 6) + 270) % 360;
   v.oat = 12;
   v.g = 1.0f + 0.1f * sin(t * 0.7f);
+  v.hasAccelY = true;
+  v.accelYg = 0.12f * sin(t * 0.6f);
   v.pitch = holdPitch ? heldPitch : 8.0f * sin(t * 0.4f);
   v.roll = holdRoll ? heldRoll : 35.0f * sin(t * 0.25f);
   if (sweepHz > 0) {
@@ -319,14 +328,27 @@ void serialCommands() {
   }
 }
 
-// Small solid right-pointing triangle, and its reverse (the cell filled with the triangle cut out, bottom row blank)
+// Small solid right-pointing triangle for the "adjusting" marker
 void markerCreate() {
   uint8_t triangle[8] = { 0b00000, 0b01000, 0b01100, 0b01110, 0b01100, 0b01000, 0b00000, 0b00000 };
-  uint8_t reversed[8];
-  for (uint8_t i = 0; i < 8; i++) reversed[i] = ~triangle[i] & 0x1F;
-  reversed[7] = 0;                    // the bottom row stays blank
   lcd.createChar(MARKER_ADJUSTING, triangle);
-  lcd.createChar(MARKER_REVERSED, reversed);
+}
+
+// The slip ball: position 0 to 8 across the three cells (4 is the middle). Returns the string for the three track cells and
+// loads the ball into its custom character.
+int slipShown = -1;                                  // the position on the screen; -1 = not drawn (draw it again)
+
+void slipDraw(int position) {
+  static char cells[4] = "___";
+  if (position == slipShown) return;
+  slipShown = position;
+  const uint8_t ballRows[3] = { 0b010, 0b101, 0b010 };
+  const uint8_t cell = position / 3, offset = position % 3;      // the ball is 3 pixels wide in a 5 pixel cell
+  uint8_t glyph[8] = { 0, 0, 0, 0, 0, 0, 0, 0b11111 };           // blank, with the baseline
+  for (uint8_t i = 0; i < 3; i++) glyph[4 + i] = ballRows[i] << (2 - offset);
+  lcd.createChar(SLIP_GLYPH, glyph);
+  for (uint8_t i = 0; i < 3; i++) cells[i] = (i == cell) ? (char)SLIP_GLYPH : '_';
+  printAt(SLIP_COL, SLIP_ROW, cells, 3);
 }
 
 // Find the encoder on either I2C bus (the STEMMA QT connector is Wire1 on the Feather RP2040)
@@ -514,7 +536,8 @@ void canHandleFrame(uint16_t id, const uint8_t *b, uint32_t now) {
     storeSignal(sigPitch, pitch, pitch != MARKER_INT16, now);
     storeSignal(sigRoll, roll, roll != MARKER_INT16, now);
   } else if (id == ID_AHRS_ACCEL) {
-    const int16_t accelZ = int16At(b, 4);
+    const int16_t accelY = int16At(b, 2), accelZ = int16At(b, 4);
+    storeSignal(sigAccelY, accelY, accelY != MARKER_INT16, now);
     storeSignal(sigAccelZ, accelZ, accelZ != MARKER_INT16, now);
   } else if (id == ID_GPS_POSITION) {
     storeSignal(sigGpsLat, (int32_t)((uint32_t)b[0] | ((uint32_t)b[1] << 8) | ((uint32_t)b[2] << 16) | ((uint32_t)b[3] << 24)), true, now);
@@ -626,20 +649,38 @@ volatile uint32_t canRate = 0;                       // CAN frames in the last s
 
 void drawFlightText(const View &v, uint32_t now) {
   char buf[LCD_COLS + 1], a[8], b[8];
+  // Rows 0 and 1 leave columns 8 to 10 for the horizon and row 2 leaves them for the slip ball
   if (v.hasAirspeed) snprintf(a, sizeof(a), "%3d", v.airspeed); else snprintf(a, sizeof(a), "---");
   if (v.hasAltitude) snprintf(b, sizeof(b), "%5d", v.altitude); else snprintf(b, sizeof(b), "-----");
-  snprintf(buf, sizeof(buf), "IAS %-3s   ALT %5s", a, b);
-  printAt(0, 0, buf, 20);
+  snprintf(buf, sizeof(buf), "IAS %-3s", a);
+  printAt(0, 0, buf, 8);
+  snprintf(buf, sizeof(buf), " ALT%s", b);
+  printAt(11, 0, buf, 9);
 
   if (v.hasVerticalSpeed) snprintf(a, sizeof(a), "%+5d", v.verticalSpeed); else snprintf(a, sizeof(a), "-----");
   if (v.hasHeading) snprintf(b, sizeof(b), "%03d", v.heading); else snprintf(b, sizeof(b), "---");
-  snprintf(buf, sizeof(buf), " VS %5s HDG %s", a, b);
-  printAt(3, 1, buf, 17);
+  snprintf(buf, sizeof(buf), "VS%s", a);
+  printAt(0, 1, buf, 8);
+  snprintf(buf, sizeof(buf), " HDG %s", b);
+  printAt(12, 1, buf, 8);
 
   if (v.hasOat) snprintf(a, sizeof(a), "%2d", v.oat); else snprintf(a, sizeof(a), "--");
-  if (v.hasG) snprintf(b, sizeof(b), "%.1f", v.g); else snprintf(b, sizeof(b), "---");
-  snprintf(buf, sizeof(buf), " OAT %sC  G %s", a, b);
-  printAt(3, 2, buf, 17);
+  if (v.hasG) snprintf(b, sizeof(b), "%4.1f", v.g); else snprintf(b, sizeof(b), " ---");
+  snprintf(buf, sizeof(buf), "OAT %sC", a);
+  printAt(0, 2, buf, 8);
+  snprintf(buf, sizeof(buf), "    G%s", b);
+  printAt(11, 2, buf, 9);
+
+  // Slip ball: lateral acceleration, low passed, 0.05 g to a pixel step
+  static float slip = 0;
+  if (v.hasAccelY) {
+    slip += (v.accelYg - slip) * SLIP_FILTER;
+    slipDraw(constrain(4 + lroundf(SLIP_SIGN * slip / SLIP_G_PER_STEP), 0, 8));
+  } else {
+    slip = 0;
+    printAt(SLIP_COL, SLIP_ROW, "---", 3);
+    slipShown = -1;                            // draw the ball again when the data returns
+  }
 
   // Row 3: PG, the module status letters and the QNH (no label). The marker column is just before each value.
   char status[5];
@@ -655,14 +696,15 @@ void drawFlightText(const View &v, uint32_t now) {
 
 void drawGpsText(const View &v, uint32_t now) {
   char buf[LCD_COLS + 1], a[12], b[12], c[12];
-  if (v.hasGpsAlt) snprintf(a, sizeof(a), "%5d", v.gpsAlt); else snprintf(a, sizeof(a), "-----");
-  if (v.hasTime) snprintf(b, sizeof(b), "%02d:%02d", v.hour, v.minute); else snprintf(b, sizeof(b), "--:--");
-  snprintf(buf, sizeof(buf), "GPS  ALT%s %sZ", a, b);
+  // Same grid as the Flight page: GPS and DATA take the place of the horizon in columns 8 to 11
+  if (v.hasGpsSpeed) snprintf(a, sizeof(a), "%3d", v.gpsSpeed); else snprintf(a, sizeof(a), "---");
+  if (v.hasGpsAlt) snprintf(b, sizeof(b), "%5d", v.gpsAlt); else snprintf(b, sizeof(b), "-----");
+  snprintf(buf, sizeof(buf), "GS %3s  GPS ALT%s", a, b);
   printAt(0, 0, buf, 20);
 
-  if (v.hasGpsSpeed) snprintf(a, sizeof(a), "%3d", v.gpsSpeed); else snprintf(a, sizeof(a), "---");
+  if (v.hasTime) snprintf(a, sizeof(a), "%02d:%02dZ", v.hour, v.minute); else snprintf(a, sizeof(a), "--:--Z");
   if (v.hasGpsTrack) snprintf(b, sizeof(b), "%03d", v.gpsTrack); else snprintf(b, sizeof(b), "---");
-  snprintf(buf, sizeof(buf), "GS %skt   TRK %s", a, b);
+  snprintf(buf, sizeof(buf), "%-6s  DATA TRK %s", a, b);
   printAt(0, 1, buf, 20);
 
   if (v.hasPosition) {
@@ -672,7 +714,7 @@ void drawGpsText(const View &v, uint32_t now) {
     snprintf(a, sizeof(a), "--.----");
     snprintf(b, sizeof(b), "---.----");
   }
-  snprintf(buf, sizeof(buf), "%-8s  %s", a, b);
+  snprintf(buf, sizeof(buf), "%-8s   %9s", a, b);
   printAt(0, 2, buf, 20);
 
   if (!v.hasFixStatus) {
@@ -735,6 +777,7 @@ void loop1() {
     lcd.clear();
     drawnPage = page;
     horizonState = HZ_UNKNOWN;
+    slipShown = -1;
   }
 
   if (page == PAGE_FLIGHT && now - lastHorizon >= horizonPeriodMs) {
