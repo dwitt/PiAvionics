@@ -45,7 +45,7 @@
 #include <Adafruit_seesaw.h>
 #include "src/Adafruit_MCP2515/src/Adafruit_MCP2515.h"   // patched copy, see Sensors/Libraries/README.md
 
-#define VERSION "1.2.0"
+#define VERSION "1.2.1"
 
 const uint8_t LCD_COLS = 20;
 const uint8_t LCD_ROWS = 4;
@@ -130,8 +130,13 @@ struct View {
   float pitch = 0, roll = 0, g = 1;
 };
 
+// Core 0 can store a time a moment later than the 'now' core 1 read, so the age can be negative: use a signed difference
+bool ageWithin(uint32_t time, uint32_t maxAgeMs, uint32_t now) {
+  return time != 0 && (int32_t)(now - time) <= (int32_t)maxAgeMs;
+}
+
 bool fresh(const Signal &sig, uint32_t maxAgeMs, uint32_t now) {
-  return sig.valid && sig.time != 0 && now - sig.time <= maxAgeMs;
+  return sig.valid && ageWithin(sig.time, maxAgeMs, now);
 }
 
 void viewFromCan(View &v, uint32_t now) {
@@ -372,7 +377,7 @@ void statusText(char *out, uint32_t now) {
   static uint32_t failedSince[4] = { 0, 0, 0, 0 };
   for (uint8_t i = 0; i < 4; i++) {
     const Heartbeat &hb = heartbeats[STATUS_NODE[i]];
-    const bool missing = hb.time == 0 || now - hb.time > MAX_AGE_HEARTBEAT_MS;
+    const bool missing = !ageWithin(hb.time, MAX_AGE_HEARTBEAT_MS, now);
     const bool failed = missing || hb.state == 3;
     if (failed && !wasFailed[i]) failedSince[i] = now;
     wasFailed[i] = failed;
