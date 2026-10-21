@@ -61,7 +61,7 @@
 #include <Adafruit_seesaw.h>
 #include "src/Adafruit_MCP2515/src/Adafruit_MCP2515.h"   // patched copy, see Sensors/Libraries/README.md
 
-#define VERSION "1.6.2"
+#define VERSION "1.6.3"
 
 const uint8_t LCD_COLS = 20;
 const uint8_t LCD_ROWS = 4;
@@ -110,7 +110,8 @@ const uint8_t MARKER_ADJUSTING = 6;                  // custom character slots
 const uint8_t SLIP_GLYPH = 7;                        // custom character slot of the slip ball
 const uint8_t SLIP_COL = 8, SLIP_ROW = 2;            // the slip track: 3 cells under the horizon
 const int SLIP_SIGN = 1;                             // -1 if the ball moves the wrong way (depends on how the IMU is mounted)
-const float SLIP_G_PER_STEP = 0.05f;                 // lateral acceleration for one pixel step; 4 steps either side of centre
+const float SLIP_G_PER_STEP = 0.03f;                 // lateral acceleration for one pixel step; 7 steps either side of centre
+const int SLIP_POSITIONS = 15;                       // 5 in each of the 3 cells (see slipDraw)
 const float SLIP_FILTER = 0.2f;                      // low pass at each 100 ms redraw (about 0.5 s)
 const int QNH_MIN = 2800;                            // inHg x 100
 const int QNH_MAX = 3100;
@@ -334,8 +335,10 @@ void markerCreate() {
   lcd.createChar(MARKER_ADJUSTING, triangle);
 }
 
-// The slip ball: position 0 to 8 across the three cells (4 is the middle). Returns the string for the three track cells and
-// loads the ball into its custom character.
+// The slip ball: position 0 to 14 across the three cells (7 is the middle). The ball is 3 pixels wide and is drawn in one
+// character cell. Next to a gap between characters it may have a third of it in the gap, where it is not drawn: in each cell
+// the ball's left pixel is at -1, 0, 1, 2 or 3 and the part outside the cell is clipped. Going on to the next cell the ball
+// comes back with a third missing on the opposite side.
 int slipShown = -1;                                  // the position on the screen; -1 = not drawn (draw it again)
 
 void slipDraw(int position) {
@@ -343,9 +346,15 @@ void slipDraw(int position) {
   if (position == slipShown) return;
   slipShown = position;
   const uint8_t ballRows[5] = { 0b010, 0b111, 0b111, 0b111, 0b010 };
-  const uint8_t cell = position / 3, offset = position % 3;      // the ball is 3 pixels wide in a 5 pixel cell
+  const uint8_t cell = position / 5;
+  const int left = position % 5 - 1;                              // the ball's left pixel in the cell: -1 to 3
   uint8_t glyph[8] = { 0, 0, 0, 0, 0, 0, 0, 0 };
-  for (uint8_t i = 0; i < 5; i++) glyph[2 + i] = ballRows[i] << (2 - offset);   // a filled ball, 3 wide and 5 high
+  for (uint8_t i = 0; i < 5; i++) {                               // a filled ball, 3 wide and 5 high
+    for (uint8_t j = 0; j < 3; j++) {
+      const int column = left + j;
+      if ((ballRows[i] & (0b100 >> j)) && column >= 0 && column <= 4) glyph[2 + i] |= 1 << (4 - column);
+    }
+  }
   lcd.createChar(SLIP_GLYPH, glyph);
   for (uint8_t i = 0; i < 3; i++) cells[i] = (i == cell) ? (char)SLIP_GLYPH : ' ';
   printAt(SLIP_COL, SLIP_ROW, cells, 3);
@@ -675,7 +684,7 @@ void drawFlightText(const View &v, uint32_t now) {
   static float slip = 0;
   if (v.hasAccelY) {
     slip += (v.accelYg - slip) * SLIP_FILTER;
-    slipDraw(constrain(4 + lroundf(SLIP_SIGN * slip / SLIP_G_PER_STEP), 0, 8));
+    slipDraw(constrain(SLIP_POSITIONS / 2 + lroundf(SLIP_SIGN * slip / SLIP_G_PER_STEP), 0, SLIP_POSITIONS - 1));
   } else {
     slip = 0;
     printAt(SLIP_COL, SLIP_ROW, "---", 3);
