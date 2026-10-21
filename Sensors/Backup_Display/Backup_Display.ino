@@ -10,7 +10,7 @@
       IAS 105   ALT  4520
       HHH VS +500 HDG 270
       HHH OAT 12C  G 1.0
-      PG 1  I A G E  29.92
+      PG 1   IAGE    29.92
   HHH is the mini horizon, 3 x 2 character cells (15 x 16 pixels) drawn with 6 of the 8 custom characters.
   Slot 6 is the "adjusting" marker (a small solid triangle) and slot 7 is the same triangle reversed.
 
@@ -46,7 +46,7 @@
 #include <Adafruit_seesaw.h>
 #include "src/Adafruit_MCP2515/src/Adafruit_MCP2515.h"   // patched copy, see Sensors/Libraries/README.md
 
-#define VERSION "1.2.12"
+#define VERSION "1.2.13"
 
 const uint8_t LCD_COLS = 20;
 const uint8_t LCD_ROWS = 4;
@@ -481,7 +481,7 @@ void loop1() {
   }
   char status[5];
   statusText(status, now);
-  snprintf(buf, sizeof(buf), "PG %d  %c %c %c %c  %d.%02d", page, status[0], status[1], status[2], status[3], qnh / 100, qnh % 100);
+  snprintf(buf, sizeof(buf), "PG %d   %c%c%c%c    %d.%02d", page, status[0], status[1], status[2], status[3], qnh / 100, qnh % 100);
   buf[MARKER_COL[FIELD_PAGE]] = markers[FIELD_PAGE];
   buf[MARKER_COL[FIELD_QNH]] = markers[FIELD_QNH];
   printAt(0, 3, buf, 20);
