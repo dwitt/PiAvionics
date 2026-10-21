@@ -27,8 +27,8 @@
 
   A value that is missing or stale shows as dashes. Valid ages follow Protocol/CAN_PROTOCOL.md.
   Status letters I A G E (IMU, AIR, GPS, EFIS): the letter when the module's heartbeat says OK, a lower case letter when it
-  says degraded or starting, a dash when no heartbeat has come for 3 s or it says failed. A module that has just failed
-  flashes its position for 5 s, then the dash stays.
+  says degraded or starting. When no heartbeat has come for 3 s, or it says failed, the letter flashes between itself and a
+  dash for as long as the fault lasts, so the letter still says which module.
 
   USB serial commands (115200), the P R S A U commands act on the simulation:
       M <0|1>  0 = real CAN data, 1 = simulated data (the default is simulated if the CAN chip is not found)
@@ -45,7 +45,7 @@
 #include <Adafruit_seesaw.h>
 #include "src/Adafruit_MCP2515/src/Adafruit_MCP2515.h"   // patched copy, see Sensors/Libraries/README.md
 
-#define VERSION "1.2.3"
+#define VERSION "1.2.4"
 
 const uint8_t LCD_COLS = 20;
 const uint8_t LCD_ROWS = 4;
@@ -62,8 +62,7 @@ const uint32_t MAX_AGE_ATTITUDE_MS = 500;
 const uint32_t MAX_AGE_ACCEL_MS = 500;
 const uint32_t MAX_AGE_OAT_MS = 1500;
 const uint32_t MAX_AGE_HEARTBEAT_MS = 3000;
-const uint32_t FAULT_FLASH_MS = 5000;                // a module that just failed flashes for this long
-const uint32_t FAULT_FLASH_HALF_PERIOD_MS = 250;
+const uint32_t STATUS_FLASH_MS = 500;                // a failed module alternates letter and dash at this rate
 const float STANDARD_GRAVITY = 9.80665f;
 const int VS_STEP_FT_MIN = 50;                       // the vertical speed is shown to the nearest 50 ft/min...
 const int VS_STICK_FT_MIN = 40;                      // ...and stays where it is until the raw value is this far from it
@@ -379,30 +378,21 @@ const char STATUS_LETTERS[4] = { 'I', 'A', 'G', 'E' };
 const uint8_t STATUS_NODE[4] = { 1, 2, 3, 0 };
 const uint8_t STATUS_COL = 6;
 
-// Build the four status characters. A module that has just failed flashes for FAULT_FLASH_MS.
+// Build the four status characters. A failed module alternates its letter and a dash.
 void statusText(char *out, uint32_t now) {
-  static bool wasFailed[4] = { true, true, true, true };
-  static uint32_t failedSince[4] = { 0, 0, 0, 0 };
   for (uint8_t i = 0; i < 4; i++) {
     const Heartbeat &hb = heartbeats[STATUS_NODE[i]];
-    const bool missing = !ageWithin(hb.time, MAX_AGE_HEARTBEAT_MS, now);
-    const bool failed = missing || hb.state == 3;
-    if (failed && !wasFailed[i]) failedSince[i] = now;
-    wasFailed[i] = failed;
+    const bool failed = !ageWithin(hb.time, MAX_AGE_HEARTBEAT_MS, now) || hb.state == 3;
     if (simulate) {
       out[i] = STATUS_LETTERS[i];
     } else if (failed) {
-      const bool flashing = now - failedSince[i] < FAULT_FLASH_MS;
-      out[i] = (flashing && (now / FAULT_FLASH_HALF_PERIOD_MS) % 2 == 0) ? ' ' : '-';
+      out[i] = ((now / STATUS_FLASH_MS) % 2 == 0) ? STATUS_LETTERS[i] : '-';
     } else {
       out[i] = (hb.state == 1) ? STATUS_LETTERS[i] : tolower(STATUS_LETTERS[i]);
     }
   }
   out[4] = 0;
 }
-
-// The first time through failedSince is 0 and every module counts as already failed, so a module absent from the start
-// shows a steady dash. wasFailed starts true for that reason; a module that appears and then fails flashes.
 
 void setup1() {
   Wire.begin();
