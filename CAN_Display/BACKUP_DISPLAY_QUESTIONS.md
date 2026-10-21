@@ -31,6 +31,12 @@ the encoder is on the QNH field, so a bumped knob can never change the altimeter
 - Is "page" the right default field, or should it rest on QNH?
 - Is 10 s the right timeout?
 
+**Answered (2026-10-21), replaces the proposal above:** the backup uses the EFIS model, push to enter and push to exit, with no
+timeout. Like the EFIS it starts with QNH selected and adjustable, so the QNH is live all the time. A marker `>` sits
+between the label and the value of the selected field: flashing while selecting (turn moves between fields), solid while
+adjusting (turn changes the value; possibly a smaller custom character). To try first, then iterate if it does not work in use.
+The field list and its order are still to be settled.
+
 ## 2. How failures are acknowledged
 
 **What it is about.** When a sensor or module fails the 20x4 display must show it clearly and must not show a wrong number. The
