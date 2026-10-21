@@ -91,7 +91,7 @@ nodes:
   can_display:
     name: CAN display feather
     description: Listens for airspeed/altitude and attitude for the small LCD display
-    code: CAN_Display/CAN_Feather/CAN_Feather.ino
+    code: Legacy/CAN_Display_v1/CAN_Feather/CAN_Feather.ino
   ems:
     name: EMS module
     description: Engine monitor (planned). Only a legacy CircuitPython version exists.
@@ -685,7 +685,7 @@ messages:
       - >
         Planned (decided 2026-10-17, EFIS/docs/MODULE_STATUS_PLAN.md). Same layout as the module
         heartbeats (0x701 and the rules there), module number 0. Sent by a task in aio_server.py every
-        second, so it stops if the EFIS software stops. The backup display (CAN_Display) uses it to
+        second, so it stops if the EFIS software stops. The backup display (Sensors/Backup_Display) uses it to
         tell "the Pi is alive but a module is missing" from "the Pi is dead".
       - >
         Version bytes: the EFIS software version (to be defined). Uptime: seconds since the EFIS

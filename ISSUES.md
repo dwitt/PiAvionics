@@ -93,7 +93,7 @@ Status: **Open**, **Monitoring** (fix applied, watching), **Fixed**.
 - 2026-10-18: the EFIS side (display step A, the Modules page, server step B with the marker decoding and the EFIS heartbeat 0x700) is done, and the
   modules now send the markers (AIR_Module 1.0.35, IMU_AHRS 1.0.16; the GPS module sends none by decision). Verified on the real bus with injected faults:
   pitot, static, OAT, accel/gyro and magnetometer. A marker bug found on the way (a thin red X drawn across the display) is ISSUES #17, fixed.
-  Not built yet: the backup display (CAN_Display) status row and per-field markers; David will design it next.
+  Not built yet: the backup display (Sensors/Backup_Display) status row and per-field markers; David will design it next.
 
 ### 14. `/var/log/piefis.log` has no rotation and grows without limit (fixed 2026-10-18)
 - Found 2026-10-18: the file was 33 MB, 369,835 lines (the service writes its output there: `StandardOutput=append:/var/log/piefis.log`). 366,280

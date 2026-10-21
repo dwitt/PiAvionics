@@ -92,7 +92,7 @@ still sends the gyro-only heading as a number). The GPS module sends none. Verif
 A bug found on the way, a thin red X drawn across the display when a marker nulled a value before the validity caught up, is fixed (ISSUES #17: server 1.6.2, page 0.6.1).
 Log rotation is done (ISSUES #14): server 1.6.3 reports a repeating send failure once a minute, and `/etc/logrotate.d/piefis` (from `EFIS/linux/piefis.logrotate`) rotates
 `/var/log/piefis.log` at 5 MB, keeping 4. The service ordering against `can0.service` is parked as ISSUES #18.
-Next: the backup display, which is NOT built yet; David will start its design (CAN_Display: CAN_Feather and Display_Feather, DisplayProtocol.h; per-field validity from the
+Next: the backup display, which is NOT built yet; David will start its design (new design in Sensors/Backup_Display, questions in CAN_Display/BACKUP_DISPLAY_QUESTIONS.md; the old CAN_Feather/Display_Feather design is archived in Legacy/CAN_Display_v1; per-field validity from the
 markers, listen to 0x700 to 0x703, a status row; the first heartbeat after a server restart reads state 2, so allow it a second). Only the Pi EFIS receives the markers today.
 Other open items: AOA value on 0x29 is still always 0; command messages over CAN (ISSUES #9 steps 2 to 4).
 

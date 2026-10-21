@@ -800,7 +800,7 @@ Sensor modules broadcast their data on fixed IDs. The Pi EFIS listens, shares th
 
 **Notes**
 
-- Planned (decided 2026-10-17, EFIS/docs/MODULE_STATUS_PLAN.md). Same layout as the module heartbeats (0x701 and the rules there), module number 0. Sent by a task in aio_server.py every second, so it stops if the EFIS software stops. The backup display (CAN_Display) uses it to tell "the Pi is alive but a module is missing" from "the Pi is dead".
+- Planned (decided 2026-10-17, EFIS/docs/MODULE_STATUS_PLAN.md). Same layout as the module heartbeats (0x701 and the rules there), module number 0. Sent by a task in aio_server.py every second, so it stops if the EFIS software stops. The backup display (Sensors/Backup_Display) uses it to tell "the Pi is alive but a module is missing" from "the Pi is dead".
 - Version bytes: the EFIS software version (to be defined). Uptime: seconds since the EFIS server started.
 - Sensors mask for the EFIS: bit 0 the AIR module is seen healthy (heartbeat state 1 and arriving), bit 1 the IMU module, bit 2 the GPS module, bit 3 a display (browser) client is connected. Bits 4 to 7 are 0.
 - State: 1 all three modules healthy, 2 a module is degraded, failed or missing, 3 the EFIS cannot produce a display (for example no display client for a while after start-up, to be defined with the implementation).
@@ -939,7 +939,7 @@ Sensor modules broadcast their data on fixed IDs. The Pi EFIS listens, shares th
 | Pi EFIS | Display computer (Raspberry Pi). Listens to everything, shares the QNH. | `EFIS/aio_server.py` |
 | Backup display | Feather RP2040 with a 20x4 LCD and rotary encoder; shows the flight data and sets the QNH | — |
 | Future panel | Spare sender for the QNH IDs 0x2C and 0x2F | — |
-| CAN display feather | Listens for airspeed/altitude and attitude for the small LCD display | `CAN_Display/CAN_Feather/CAN_Feather.ino` |
+| CAN display feather | Listens for airspeed/altitude and attitude for the small LCD display | `Legacy/CAN_Display_v1/CAN_Feather/CAN_Feather.ino` |
 | EMS module | Engine monitor (planned). Only a legacy CircuitPython version exists. | — |
 
 ## IDs named in code but unused
