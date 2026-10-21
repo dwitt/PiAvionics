@@ -34,7 +34,7 @@
 #include <Adafruit_LiquidCrystal.h>
 #include <Adafruit_seesaw.h>
 
-#define VERSION "1.1.3"
+#define VERSION "1.1.4"
 
 const uint8_t LCD_COLS = 20;
 const uint8_t LCD_ROWS = 4;
@@ -139,11 +139,12 @@ void serialCommands() {
   }
 }
 
-// Small solid right-pointing triangle, and its reverse (the cell filled with the triangle cut out)
+// Small solid right-pointing triangle, and its reverse (the cell filled with the triangle cut out, bottom row blank)
 void markerCreate() {
   uint8_t triangle[8] = { 0b00000, 0b01000, 0b01100, 0b01110, 0b01100, 0b01000, 0b00000, 0b00000 };
   uint8_t reversed[8];
   for (uint8_t i = 0; i < 8; i++) reversed[i] = ~triangle[i] & 0x1F;
+  reversed[7] = 0;                    // the bottom row stays blank
   lcd.createChar(MARKER_ADJUSTING, triangle);
   lcd.createChar(MARKER_REVERSED, reversed);
 }
