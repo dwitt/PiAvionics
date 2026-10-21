@@ -9,7 +9,7 @@
   The flight page, fed from the CAN bus (or simulated, see M below):
       IAS 105 HHH ALT 4520
       VS +500 HHH  HDG 270
-      OAT 12C  o     G 1.0       (the o is the slip ball)
+      OAT 12C[ o ]   G 1.0       (the o is the slip ball)
       PG 1   IAGE   29.92?
   HHH is the mini horizon, 3 x 2 character cells (15 x 16 pixels, drawn as 17 x 17 with the gaps between the cells counted) drawn with 6 of the 8 custom characters.
   Slot 6 is the "adjusting" marker (a small solid triangle) and slot 7 is the slip ball: the ball cell is drawn as a custom
@@ -61,7 +61,7 @@
 #include <Adafruit_seesaw.h>
 #include "src/Adafruit_MCP2515/src/Adafruit_MCP2515.h"   // patched copy, see Sensors/Libraries/README.md
 
-#define VERSION "1.6.3"
+#define VERSION "1.6.4"
 
 const uint8_t LCD_COLS = 20;
 const uint8_t LCD_ROWS = 4;
@@ -675,9 +675,9 @@ void drawFlightText(const View &v, uint32_t now) {
 
   if (v.hasOat) snprintf(a, sizeof(a), "%2d", v.oat); else snprintf(a, sizeof(a), "--");
   if (v.hasG) snprintf(b, sizeof(b), "%4.1f", v.g); else snprintf(b, sizeof(b), " ---");
-  snprintf(buf, sizeof(buf), "OAT %sC", a);
+  snprintf(buf, sizeof(buf), "OAT %sC[", a);                  // [ and ] are the ends of the slip track
   printAt(0, 2, buf, 8);
-  snprintf(buf, sizeof(buf), "    G%s", b);
+  snprintf(buf, sizeof(buf), "]   G%s", b);
   printAt(11, 2, buf, 9);
 
   // Slip ball: lateral acceleration, low passed, 0.05 g to a pixel step
