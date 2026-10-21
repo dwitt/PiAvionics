@@ -60,7 +60,7 @@
 #include <Adafruit_seesaw.h>
 #include "src/Adafruit_MCP2515/src/Adafruit_MCP2515.h"   // patched copy, see Sensors/Libraries/README.md
 
-#define VERSION "1.5.0"
+#define VERSION "1.5.1"
 
 const uint8_t LCD_COLS = 20;
 const uint8_t LCD_ROWS = 4;
@@ -617,7 +617,7 @@ void setup1() {
 char markerChar(Field f, uint32_t now) {
   if (f != selectedField) return ' ';
   if (adjusting) return (char)MARKER_ADJUSTING;
-  return ((now / MARKER_FLASH_MS) % 2 == 0) ? (char)MARKER_ADJUSTING : (char)MARKER_REVERSED;
+  return ((now / MARKER_FLASH_MS) % 2 == 0) ? (char)MARKER_ADJUSTING : ' ';   // on trial: flash against a blank (the reverse in slot 7 is not used)
 }
 
 void putMarker(char *buf, Field f, uint32_t now) { buf[MARKER_POS[f].col] = markerChar(f, now); }
