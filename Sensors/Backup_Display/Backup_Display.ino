@@ -17,8 +17,8 @@
       Adjusting (the start state): QNH is selected and a turn changes it, 0.01 inHg per click. The marker next to the
           label is a small solid triangle.
       Push: toggles between adjusting and selecting.
-      Selecting: a turn moves the marker to the next field (clockwise: QNH, then PG, then back to QNH). The marker is a
-          flashing > in the column between the label and the value.
+      Selecting: a turn moves the marker to the next field (clockwise: QNH, then PG, then back to QNH). The marker is the
+          same triangle, flashing, in the column between the label and the value.
   There is no timeout.
 
   USB serial commands (115200) to check the horizon:
@@ -34,7 +34,7 @@
 #include <Adafruit_LiquidCrystal.h>
 #include <Adafruit_seesaw.h>
 
-#define VERSION "1.1.0"
+#define VERSION "1.1.1"
 
 const uint8_t LCD_COLS = 20;
 const uint8_t LCD_ROWS = 4;
@@ -43,7 +43,7 @@ const uint32_t I2C_CLOCK_HZ = 400000;   // 100 kHz made one horizon update take 
 // encoder
 const uint8_t ENCODER_I2C_ADDRESS = 0x36;
 const uint8_t SEESAW_SWITCH_PIN = 24;
-const int ENCODER_SIGN = 1;           // -1 if a clockwise turn counts down
+const int ENCODER_SIGN = -1;          // a clockwise turn gives a negative count on this encoder
 const unsigned long ENCODER_POLL_MS = 10;
 const unsigned long MARKER_FLASH_MS = 500;
 
@@ -264,7 +264,7 @@ void loop() {
   for (uint8_t f = 0; f < FIELD_COUNT; f++) {
     if (f != selectedField) markers[f] = ' ';
     else if (adjusting) markers[f] = (char)MARKER_ADJUSTING;
-    else markers[f] = ((now / MARKER_FLASH_MS) % 2 == 0) ? '>' : ' ';
+    else markers[f] = ((now / MARKER_FLASH_MS) % 2 == 0) ? (char)MARKER_ADJUSTING : ' ';
   }
   snprintf(buf, sizeof(buf), "PG %d  IAGE QNH %d.%02d", page, qnh / 100, qnh % 100);
   buf[MARKER_COL[FIELD_PAGE]] = markers[FIELD_PAGE];
