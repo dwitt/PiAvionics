@@ -64,7 +64,7 @@
 #include <Adafruit_seesaw.h>
 #include "src/Adafruit_MCP2515/src/Adafruit_MCP2515.h"   // patched copy, see Sensors/Libraries/README.md
 
-#define VERSION "1.7.4"
+#define VERSION "1.7.5"
 
 const uint8_t LCD_COLS = 20;
 const uint8_t LCD_ROWS = 4;
@@ -88,10 +88,6 @@ const uint32_t STATUS_WARNING_MS = 5000;             // a module that has just f
 const uint32_t STATUS_WARNING_FLASH_MS = 500;        // (letter, then dash, each for this long)
 const uint32_t STATUS_FLASH_MS = 1500;               // ...then slowly
 const float STANDARD_GRAVITY = 9.80665f;
-const int VS_STEP_FT_MIN = 50;                       // the vertical speed is shown to the nearest 50 ft/min...
-const int VS_STICK_FT_MIN = 40;                      // ...and stays where it is until the raw value is this far from it
-                                                     // (the raw value drifts by about +/-16 at rest and a plain
-                                                     // rounding flickers whenever it crosses a boundary)
 const uint32_t I2C_CLOCK_HZ = 400000;   // 100 kHz made one horizon update take 150 ms, 400 kHz takes 35 ms
 
 // encoder
@@ -194,11 +190,7 @@ void viewFromCan(View &v, uint32_t now) {
   v.hasAltitude = fresh(sigAltitude, MAX_AGE_AIR_MS, now);
   v.altitude = sigAltitude.value;
   v.hasVerticalSpeed = fresh(sigVerticalSpeed, MAX_AGE_AIR_MS, now);
-  static int shownVs = 0;
-  const int rawVs = sigVerticalSpeed.value;
-  if (abs(rawVs - shownVs) >= VS_STICK_FT_MIN)
-    shownVs = lroundf(rawVs / (float)VS_STEP_FT_MIN) * VS_STEP_FT_MIN;
-  v.verticalSpeed = shownVs;
+  v.verticalSpeed = sigVerticalSpeed.value;       // as the AIR module sends it: it holds the value steady itself
   v.hasHeading = fresh(sigHeading, MAX_AGE_ATTITUDE_MS, now);
   v.heading = ((sigHeading.value + 5) / 10) % 360;
   v.hasAttitude = fresh(sigPitch, MAX_AGE_ATTITUDE_MS, now) && fresh(sigRoll, MAX_AGE_ATTITUDE_MS, now);
