@@ -11,7 +11,7 @@
       HHH OAT 12C  G 1.0
       PG 1  IAGE QNH 29.92
   HHH is the mini horizon, 3 x 2 character cells (15 x 16 pixels) drawn with 6 of the 8 custom characters.
-  Slot 6 is the "adjusting" marker (a solid triangle filling the cell) and slot 7 is the same triangle reversed.
+  Slot 6 is the "adjusting" marker (a small solid triangle) and slot 7 is the same triangle reversed.
 
   Encoder (Adafruit seesaw rotary encoder with push button, I2C 0x36), same idea as the EFIS:
       Adjusting (the start state): QNH is selected and a turn changes it, 0.01 inHg per click. The marker next to the
@@ -34,7 +34,7 @@
 #include <Adafruit_LiquidCrystal.h>
 #include <Adafruit_seesaw.h>
 
-#define VERSION "1.1.2"
+#define VERSION "1.1.3"
 
 const uint8_t LCD_COLS = 20;
 const uint8_t LCD_ROWS = 4;
@@ -139,9 +139,9 @@ void serialCommands() {
   }
 }
 
-// Solid right-pointing triangle filling the cell, and its reverse (the cell filled with the triangle cut out)
+// Small solid right-pointing triangle, and its reverse (the cell filled with the triangle cut out)
 void markerCreate() {
-  uint8_t triangle[8] = { 0b10000, 0b11000, 0b11100, 0b11110, 0b11110, 0b11100, 0b11000, 0b10000 };
+  uint8_t triangle[8] = { 0b00000, 0b01000, 0b01100, 0b01110, 0b01100, 0b01000, 0b00000, 0b00000 };
   uint8_t reversed[8];
   for (uint8_t i = 0; i < 8; i++) reversed[i] = ~triangle[i] & 0x1F;
   lcd.createChar(MARKER_ADJUSTING, triangle);
