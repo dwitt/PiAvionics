@@ -9,11 +9,11 @@
   The flight page, fed from the CAN bus (or simulated, see M below):
       IAS 105 HHH ALT 4520
       VS +500 HHH  HDG 270
-      OAT 12C[ o ]   G 1.0       (the o is the slip ball)
+      OAT 12C _o_    G 1.0       (the o is the slip ball, the _ a line under it)
       PG 1   IAGE   29.92?
   HHH is the mini horizon, 3 x 2 character cells (15 x 16 pixels, drawn as 17 x 17 with the gaps between the cells counted) drawn with 6 of the 8 custom characters.
   Slot 6 is the "adjusting" marker (a small solid triangle) and slot 7 is the slip ball: the ball cell is drawn as a custom
-  character with the ball at the right pixel offset, the other two cells of the track are blank.
+  character with the ball at the right pixel offset, the other two cells of the track show _ so the line is continuous.
 
   Encoder (Adafruit seesaw rotary encoder with push button, I2C 0x36), same idea as the EFIS:
       Adjusting (the start state): QNH is selected and a turn changes it, 0.01 inHg per click. The marker next to the
@@ -61,7 +61,7 @@
 #include <Adafruit_seesaw.h>
 #include "src/Adafruit_MCP2515/src/Adafruit_MCP2515.h"   // patched copy, see Sensors/Libraries/README.md
 
-#define VERSION "1.6.5"
+#define VERSION "1.6.6"
 
 const uint8_t LCD_COLS = 20;
 const uint8_t LCD_ROWS = 4;
@@ -342,21 +342,21 @@ void markerCreate() {
 int slipShown = -1;                                  // the position on the screen; -1 = not drawn (draw it again)
 
 void slipDraw(int position) {
-  static char cells[4] = "   ";
+  static char cells[4] = "___";
   if (position == slipShown) return;
   slipShown = position;
   const uint8_t ballRows[5] = { 0b010, 0b111, 0b111, 0b111, 0b010 };
   const uint8_t cell = position / 5;
   const int left = position % 5 - 1;                              // the ball's left pixel in the cell: -1 to 3
-  uint8_t glyph[8] = { 0, 0, 0, 0, 0, 0, 0, 0 };
-  for (uint8_t i = 0; i < 5; i++) {                               // a filled ball, 3 wide and 5 high
+  uint8_t glyph[8] = { 0, 0, 0, 0, 0, 0, 0, 0b11111 };           // blank with the line along the bottom, like the _ of the other cells
+  for (uint8_t i = 0; i < 5; i++) {                               // a filled ball, 3 wide and 5 high, above the line
     for (uint8_t j = 0; j < 3; j++) {
       const int column = left + j;
-      if ((ballRows[i] & (0b100 >> j)) && column >= 0 && column <= 4) glyph[2 + i] |= 1 << (4 - column);
+      if ((ballRows[i] & (0b100 >> j)) && column >= 0 && column <= 4) glyph[1 + i] |= 1 << (4 - column);
     }
   }
   lcd.createChar(SLIP_GLYPH, glyph);
-  for (uint8_t i = 0; i < 3; i++) cells[i] = (i == cell) ? (char)SLIP_GLYPH : ' ';
+  for (uint8_t i = 0; i < 3; i++) cells[i] = (i == cell) ? (char)SLIP_GLYPH : '_';
   printAt(SLIP_COL, SLIP_ROW, cells, 3);
 }
 
@@ -675,9 +675,9 @@ void drawFlightText(const View &v, uint32_t now) {
 
   if (v.hasOat) snprintf(a, sizeof(a), "%2d", v.oat); else snprintf(a, sizeof(a), "--");
   if (v.hasG) snprintf(b, sizeof(b), "%4.1f", v.g); else snprintf(b, sizeof(b), " ---");
-  snprintf(buf, sizeof(buf), "OAT %sC[", a);                  // [ and ] are the ends of the slip track
+  snprintf(buf, sizeof(buf), "OAT %sC", a);
   printAt(0, 2, buf, 8);
-  snprintf(buf, sizeof(buf), "]   G%s", b);
+  snprintf(buf, sizeof(buf), "    G%s", b);
   printAt(11, 2, buf, 9);
 
   // Slip ball: lateral acceleration, low passed, 0.05 g to a pixel step
