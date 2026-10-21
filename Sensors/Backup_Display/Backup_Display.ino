@@ -11,9 +11,11 @@
       VS +500 HHH  HDG 270
       OAT 12C _o_    G 1.0       (the o is the slip ball, the _ a line under it)
       PG 1   IAGE   29.92?
-  HHH is the mini horizon, 3 x 2 character cells (15 x 16 pixels, drawn as 17 x 17 with the gaps between the cells counted) drawn with 6 of the 8 custom characters.
-  Slot 6 is the "adjusting" marker (a small solid triangle) and slot 7 is the slip ball: the ball cell is drawn as a custom
-  character with the ball at the right pixel offset, the other two cells of the track show _ so the line is continuous.
+  HHH is the mini horizon, 3 x 2 character cells (15 x 16 pixels, drawn as 17 x 17 with the gaps between the cells counted).
+  Custom characters: slot 6 is the marker (a small solid triangle). The other 7 are handed out as needed (see slotAcquire): a
+  horizon cell that is all sky is the built-in blank, all ground the built-in solid block, and only a cell the line crosses
+  gets a custom character (at most about 5). The slip ball is 5 x 5 pixels and can straddle two cells, so it takes up to 2
+  slots. The cells of the slip track that have no ball show the built-in _, level with the line drawn in the ball's glyphs.
 
   Encoder (Adafruit seesaw rotary encoder with push button, I2C 0x36), same idea as the EFIS:
       Adjusting (the start state): QNH is selected and a turn changes it, 0.01 inHg per click. The marker next to the
@@ -61,7 +63,7 @@
 #include <Adafruit_seesaw.h>
 #include "src/Adafruit_MCP2515/src/Adafruit_MCP2515.h"   // patched copy, see Sensors/Libraries/README.md
 
-#define VERSION "1.6.7"
+#define VERSION "1.7.0"
 
 const uint8_t LCD_COLS = 20;
 const uint8_t LCD_ROWS = 4;
@@ -106,12 +108,12 @@ const Field FLIGHT_FIELDS[] = { FIELD_QNH, FIELD_PAGE };           // clockwise 
 const Field GPS_FIELDS[] = { FIELD_PAGE };
 const Field SYSTEM_FIELDS[] = { FIELD_PAGE, FIELD_BACKLIGHT };
 const uint8_t PAGE_FLIGHT = 1, PAGE_GPS = 2, PAGE_SYSTEM = 3;
-const uint8_t MARKER_ADJUSTING = 6;                  // custom character slots
-const uint8_t SLIP_GLYPH = 7;                        // custom character slot of the slip ball
+const uint8_t MARKER_ADJUSTING = 6;                  // custom character slot of the marker
 const uint8_t SLIP_COL = 8, SLIP_ROW = 2;            // the slip track: 3 cells under the horizon
 const int SLIP_SIGN = 1;                             // -1 if the ball moves the wrong way (depends on how the IMU is mounted)
-const float SLIP_G_PER_STEP = 0.03f;                 // lateral acceleration for one pixel step; 7 steps either side of centre
-const int SLIP_POSITIONS = 15;                       // 5 in each of the 3 cells (see slipDraw)
+const float SLIP_G_PER_STEP = 0.035f;                // lateral acceleration for one pixel step; 6 steps either side of centre
+const int SLIP_BALL_PX = 5;                          // the ball is 5 x 5 pixels
+const int SLIP_POSITIONS = 13;                       // its left pixel can be at 0 to 12 of the 17 pixels of the track (gaps included)
 const float SLIP_FILTER = 0.2f;                      // low pass at each 100 ms redraw (about 0.5 s)
 const int QNH_MIN = 2800;                            // inHg x 100
 const int QNH_MAX = 3100;
@@ -271,47 +273,92 @@ void printAt(uint8_t col, uint8_t row, const char *s, uint8_t width) {
   lcd.print(buf);
 }
 
-// Draw the horizon into the six custom characters. Ground is filled, sky is blank, with a one pixel box round the edge.
+// --- Custom character slots ---------------------------------------------------------------------------------------------
+// The display has 8 custom characters. Slot 6 is the marker. The other 7 are handed out as needed to the horizon cells (owners 0 to
+// 5) and to the cells of the slip track (owners 6 to 8). The CGRAM is written only when a glyph changes.
+const int CHAR_BLANK = 0x20, CHAR_SOLID = 0xFF;      // the built-in blank and solid block
+const int NO_OWNER = -1;
+const int OWNER_SLIP = 6;                            // the slip track cells are owners 6, 7 and 8
+int slotOwner[8] = { NO_OWNER, NO_OWNER, NO_OWNER, NO_OWNER, NO_OWNER, NO_OWNER, NO_OWNER, NO_OWNER };
+uint8_t slotData[8][8];
+
+void slotsInit() {
+  memset(slotData, 0xFF, sizeof(slotData));          // no real glyph has a row of 0xFF, so the first write always happens
+}
+
+int slotAcquire(int owner) {
+  for (int slot = 0; slot < 8; slot++) if (slotOwner[slot] == owner) return slot;
+  for (int slot = 0; slot < 8; slot++) {
+    if (slot != MARKER_ADJUSTING && slotOwner[slot] == NO_OWNER) { slotOwner[slot] = owner; return slot; }
+  }
+  return -1;                                         // none free
+}
+
+void slotRelease(int owner) {
+  for (int slot = 0; slot < 8; slot++) if (slotOwner[slot] == owner) slotOwner[slot] = NO_OWNER;
+}
+
+void slotWrite(int slot, const uint8_t *glyph) {
+  if (memcmp(slotData[slot], glyph, 8) == 0) return;
+  lcd.createChar(slot, (uint8_t *)glyph);
+  memcpy(slotData[slot], glyph, 8);
+}
+
+// Put a character in a screen position if it is not already there
+void putChar(uint8_t col, uint8_t row, int code, int *shownCode) {
+  if (*shownCode == code) return;
+  lcd.setCursor(col, row);
+  lcd.write((uint8_t)code);
+  *shownCode = code;
+}
+
+// --- The mini horizon -------------------------------------------------------------------------------------------------------
+const int HZ_CELLS = HZ_CELLS_WIDE * HZ_CELLS_HIGH;
+int hzShown[HZ_CELLS] = { -1, -1, -1, -1, -1, -1 };  // the character on the screen for each cell; -1 = unknown
+
+// Put the horizon on the screen again at the next update (after the screen was cleared)
+void horizonDraw() {
+  for (int i = 0; i < HZ_CELLS; i++) hzShown[i] = -1;
+}
+
+// Draw the horizon. Ground is filled, sky is blank. A cell that is all sky or all ground uses the built-in blank or solid
+// block; only a cell the line crosses takes a custom character.
 // pitchDeg: positive = nose up (the horizon moves down). rollDeg: positive turns the horizon clockwise (the right end drops), the same as the EFIS page does with the bus value.
 void horizonUpdate(float pitchDeg, float rollDeg) {
-  static uint8_t shown[HZ_CELLS_WIDE * HZ_CELLS_HIGH][8];
-  static bool first = true;
-
   rollDeg = constrain(rollDeg, -HZ_MAX_ROLL_DEG, HZ_MAX_ROLL_DEG);
   const float slope = -tanf(rollDeg * (float)M_PI / 180.0f);   // screen y points down: a clockwise turn lowers the right end
   const float cx = (HZ_WIDTH_PX - 1) / 2.0f;
   const float cy = (HZ_HEIGHT_PX - 1) / 2.0f + pitchDeg * HZ_PX_PER_DEG;
 
-  for (uint8_t cell = 0; cell < HZ_CELLS_WIDE * HZ_CELLS_HIGH; cell++) {
+  uint8_t glyph[HZ_CELLS][8];
+  int ground[HZ_CELLS];                              // ground pixels in the cell, of 40
+  for (int cell = 0; cell < HZ_CELLS; cell++) {
     const int cellX = (cell % HZ_CELLS_WIDE) * (5 + HZ_GAP_PX);
     const int cellY = (cell / HZ_CELLS_WIDE) * (8 + HZ_GAP_PX);
-    uint8_t glyph[8];
+    ground[cell] = 0;
     for (uint8_t row = 0; row < 8; row++) {
       uint8_t bits = 0;
       for (uint8_t col = 0; col < 5; col++) {
         const float horizonY = cy - slope * ((cellX + col) - cx);
-        if ((cellY + row) > horizonY) bits |= 1 << (4 - col);
+        if ((cellY + row) > horizonY) { bits |= 1 << (4 - col); ground[cell]++; }
       }
-      // one pixel box round the edge of the six cells
-      const uint8_t cellCol = cell % HZ_CELLS_WIDE, cellRow = cell / HZ_CELLS_WIDE;
-      if (cellCol == 0) bits |= 0b10000;
-      if (cellCol == HZ_CELLS_WIDE - 1) bits |= 0b00001;
-      if ((cellRow == 0 && row == 0) || (cellRow == HZ_CELLS_HIGH - 1 && row == 7)) bits = 0b11111;
-      glyph[row] = bits;
-    }
-    if (first || memcmp(glyph, shown[cell], 8) != 0) {
-      lcd.createChar(cell, glyph);
-      memcpy(shown[cell], glyph, 8);
+      glyph[cell][row] = bits;
     }
   }
-  first = false;
-}
 
-// Put the six horizon characters on the screen (once, after clear)
-void horizonDraw() {
-  for (uint8_t r = 0; r < HZ_CELLS_HIGH; r++) {
-    lcd.setCursor(HZ_COL, HZ_ROW + r);
-    for (uint8_t c = 0; c < HZ_CELLS_WIDE; c++) lcd.write((uint8_t)(r * HZ_CELLS_WIDE + c));
+  for (int cell = 0; cell < HZ_CELLS; cell++) if (ground[cell] == 0 || ground[cell] == 40) slotRelease(cell);   // free slots first
+  for (int cell = 0; cell < HZ_CELLS; cell++) {
+    int code;
+    if (ground[cell] == 0) {
+      code = CHAR_BLANK;
+    } else if (ground[cell] == 40) {
+      code = CHAR_SOLID;
+    } else {
+      const int slot = slotAcquire(cell);
+      if (slot >= 0) { slotWrite(slot, glyph[cell]); code = slot; }
+      else code = ground[cell] > 20 ? CHAR_SOLID : CHAR_BLANK;     // no slot free: the nearer of the two
+    }
+    putChar(HZ_COL + cell % HZ_CELLS_WIDE, HZ_ROW + cell / HZ_CELLS_WIDE, code, &hzShown[cell]);
   }
 }
 
@@ -329,35 +376,43 @@ void serialCommands() {
   }
 }
 
+// --- The slip ball ---------------------------------------------------------------------------------------------------------
+// The track is the 3 cells under the horizon, 17 pixels wide with the gaps between the cells counted (the gaps are never
+// drawn). The ball is 5 x 5 pixels with its left pixel at 'position' (0 to 12), so it can straddle two cells. A line runs under
+// it on row 6, level with the built-in _ that the cells without the ball show.
+int slipShown[3] = { -1, -1, -1 };                   // the character on the screen for each cell of the track; -1 = unknown
+
+void slipForget() { for (int i = 0; i < 3; i++) slipShown[i] = -1; }
+
+void slipDraw(int position) {
+  const uint8_t ballRows[5] = { 0b01110, 0b11111, 0b11111, 0b11111, 0b01110 };
+  uint8_t glyph[3][8] = {};
+  bool hasBall[3] = { false, false, false };
+  for (int i = 0; i < SLIP_BALL_PX; i++) {                         // each row of the ball
+    for (int j = 0; j < SLIP_BALL_PX; j++) {                       // each pixel of the row
+      const int x = position + j;
+      const int cell = x / (5 + HZ_GAP_PX), column = x % (5 + HZ_GAP_PX);
+      if (column > 4 || !(ballRows[i] & (1 << (4 - j)))) continue;   // the gap, or a pixel the ball does not have
+      glyph[cell][i] |= 1 << (4 - column);
+      hasBall[cell] = true;
+    }
+  }
+  for (int cell = 0; cell < 3; cell++) if (!hasBall[cell]) slotRelease(OWNER_SLIP + cell);
+  for (int cell = 0; cell < 3; cell++) {
+    int code = '_';
+    if (hasBall[cell]) {
+      glyph[cell][6] = 0b11111;                                    // the line
+      const int slot = slotAcquire(OWNER_SLIP + cell);
+      if (slot >= 0) { slotWrite(slot, glyph[cell]); code = slot; }
+    }
+    putChar(SLIP_COL + cell, SLIP_ROW, code, &slipShown[cell]);
+  }
+}
+
 // Small solid right-pointing triangle for the "adjusting" marker
 void markerCreate() {
   uint8_t triangle[8] = { 0b00000, 0b01000, 0b01100, 0b01110, 0b01100, 0b01000, 0b00000, 0b00000 };
   lcd.createChar(MARKER_ADJUSTING, triangle);
-}
-
-// The slip ball: position 0 to 14 across the three cells (7 is the middle). The ball is 3 pixels wide and is drawn in one
-// character cell. Next to a gap between characters it may have a third of it in the gap, where it is not drawn: in each cell
-// the ball's left pixel is at -1, 0, 1, 2 or 3 and the part outside the cell is clipped. Going on to the next cell the ball
-// comes back with a third missing on the opposite side.
-int slipShown = -1;                                  // the position on the screen; -1 = not drawn (draw it again)
-
-void slipDraw(int position) {
-  static char cells[4] = "___";
-  if (position == slipShown) return;
-  slipShown = position;
-  const uint8_t ballRows[5] = { 0b010, 0b111, 0b111, 0b111, 0b010 };
-  const uint8_t cell = position / 5;
-  const int left = position % 5 - 1;                              // the ball's left pixel in the cell: -1 to 3
-  uint8_t glyph[8] = { 0, 0, 0, 0, 0, 0, 0b11111, 0 };           // blank with a line on row 6, level with the built-in _ of the other cells
-  for (uint8_t i = 0; i < 5; i++) {                               // a filled ball, 3 wide and 5 high, above the line
-    for (uint8_t j = 0; j < 3; j++) {
-      const int column = left + j;
-      if ((ballRows[i] & (0b100 >> j)) && column >= 0 && column <= 4) glyph[i] |= 1 << (4 - column);
-    }
-  }
-  lcd.createChar(SLIP_GLYPH, glyph);
-  for (uint8_t i = 0; i < 3; i++) cells[i] = (i == cell) ? (char)SLIP_GLYPH : '_';
-  printAt(SLIP_COL, SLIP_ROW, cells, 3);
 }
 
 // Find the encoder on either I2C bus (the STEMMA QT connector is Wire1 on the Feather RP2040)
@@ -638,9 +693,8 @@ void setup1() {
   Wire.setClock(I2C_CLOCK_HZ);
   lcd.setBacklight(HIGH);
   lcd.clear();
+  slotsInit();
   markerCreate();
-  horizonUpdate(0, 0);
-  horizonDraw();
   encoderFound = encoderBegin();
 }
 
@@ -688,7 +742,7 @@ void drawFlightText(const View &v, uint32_t now) {
   } else {
     slip = 0;
     printAt(SLIP_COL, SLIP_ROW, "---", 3);
-    slipShown = -1;                            // draw the ball again when the data returns
+    slipForget();                              // draw the ball again when the data returns
   }
 
   // Row 3: PG, the module status letters and the QNH (no label). The marker column is just before each value.
@@ -786,7 +840,7 @@ void loop1() {
     lcd.clear();
     drawnPage = page;
     horizonState = HZ_UNKNOWN;
-    slipShown = -1;
+    slipForget();
   }
 
   if (page == PAGE_FLIGHT && now - lastHorizon >= horizonPeriodMs) {
