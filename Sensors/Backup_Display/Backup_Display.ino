@@ -27,7 +27,7 @@
 
   A value that is missing or stale shows as dashes. Valid ages follow Protocol/CAN_PROTOCOL.md.
   Status letters I A G E (IMU, AIR, GPS, EFIS): the letter when the module's heartbeat says OK, a lower case letter when it
-  says degraded or starting. When no heartbeat has come for 3 s, or it says failed, the letter flashes between itself and a
+  says degraded or starting. When no heartbeat has come for 3 s, or it says failed, the lower case letter flashes against a
   dash: quickly for the first 5 s as the warning, then slowly for as long as the fault lasts. The letter still says which
   module.
 
@@ -46,7 +46,7 @@
 #include <Adafruit_seesaw.h>
 #include "src/Adafruit_MCP2515/src/Adafruit_MCP2515.h"   // patched copy, see Sensors/Libraries/README.md
 
-#define VERSION "1.2.13"
+#define VERSION "1.2.14"
 
 const uint8_t LCD_COLS = 20;
 const uint8_t LCD_ROWS = 4;
@@ -394,7 +394,7 @@ void statusText(char *out, uint32_t now) {
       out[i] = STATUS_LETTERS[i];
     } else if (failed) {
       const uint32_t half = (now - failedSince[i] < STATUS_WARNING_MS) ? STATUS_WARNING_FLASH_MS : STATUS_FLASH_MS;
-      out[i] = ((now / half) % 2 == 0) ? STATUS_LETTERS[i] : '-';
+      out[i] = ((now / half) % 2 == 0) ? tolower(STATUS_LETTERS[i]) : '-';
     } else {
       out[i] = (hb.state == 1) ? STATUS_LETTERS[i] : tolower(STATUS_LETTERS[i]);
     }
