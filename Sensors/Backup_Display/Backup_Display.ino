@@ -39,6 +39,10 @@
   unless the knob is turned, to give the others time to speak. With nothing heard the QNH is 29.92 followed by ? (not set,
   and never sent). A ! after the value means the AIR module (0x2B) reports a different QNH for more than 2 s.
 
+  Watchdog: the chip restarts if either core stops for WATCHDOG_MS. Core 0 feeds the watchdog, but only while core 1 is
+  still looping, and an I2C transaction that gets no answer gives up after 25 ms instead of waiting for ever. A restart
+  takes about 2 s; the QNH is taken again from the bus.
+
   Two cores: core 0 only receives CAN (setup/loop), core 1 does everything on I2C, the LCD and the encoder
   (setup1/loop1). The LCD writes are slow (tens of ms) and would let the MCP2515's two receive buffers overflow.
 
@@ -54,6 +58,7 @@
       P <deg>  hold the pitch (positive = nose up)      R <deg>  hold the roll (positive turns the horizon clockwise, as on the EFIS)
       C <khz>  I2C clock in kHz (default 400)
       A        back to the moving simulation
+      H        hang core 1 on purpose, to test the watchdog
       U <ms>   horizon update period in ms (default 100, 0 = as fast as the display allows)
       S <hz>   sweep the roll +/-45 degrees and the pitch +/-10 degrees at this many cycles per second (0 = off)
   Once a second the serial port shows how many horizon updates were made and the mean time of one.
@@ -64,10 +69,15 @@
 #include <Adafruit_seesaw.h>
 #include "src/Adafruit_MCP2515/src/Adafruit_MCP2515.h"   // patched copy, see Sensors/Libraries/README.md
 
-#define VERSION "1.7.5"
+#define VERSION "1.7.6"
 
 const uint8_t LCD_COLS = 20;
 const uint8_t LCD_ROWS = 4;
+
+// Watchdog and I2C timeout
+const uint32_t WATCHDOG_MS = 2000;
+const uint32_t I2C_TIMEOUT_MS = 25;
+volatile uint32_t core1Beat = 0;                     // millis() at the last pass of loop1
 
 // CAN
 const uint8_t CAN_CS_PIN = 7;
@@ -369,6 +379,7 @@ void serialCommands() {
     else if (cmd == 'B') { backlightOn = Serial.parseInt() != 0; lcd.setBacklight(backlightOn ? HIGH : LOW); }
     else if (cmd == 'M') { simulate = Serial.parseInt() != 0; }
     else if (cmd == 'A') { holdPitch = holdRoll = false; sweepHz = 0; horizonPeriodMs = 100; }
+    else if (cmd == 'H') { Serial.println("Hanging core 1"); while (1) {} }
   }
 }
 
@@ -644,6 +655,7 @@ void setup() {
   while (!Serial && millis() - t0 < 3000) {}   // wait briefly for USB serial
   Serial.print("Backup_Display ");
   Serial.println(VERSION);
+  if (rp2040.getResetReason() == RP2040::WDT_RESET) Serial.println("Restarted by the watchdog");
 
   canUp = can.begin(CAN_BAUDRATE);
   Serial.println(canUp ? "CAN bus OK" : "CAN bus (MCP2515) NOT FOUND, simulating");
@@ -651,8 +663,16 @@ void setup() {
 }
 
 void loop() {
+  static bool watching = false;
+  const uint32_t now = millis();
+  if (!watching) {                             // start once both cores are running, so setup1 is not timed
+    core1Beat = now;
+    rp2040.wdt_begin(WATCHDOG_MS);
+    watching = true;
+  }
   if (canUp) canPoll();
-  qnhService(millis());
+  qnhService(now);
+  if (now - core1Beat < WATCHDOG_MS / 2) rp2040.wdt_reset();   // not fed when core 1 has stopped
 }
 
 // --- Core 1: LCD, encoder, serial commands ----------------------------------------------------------------------------
@@ -685,6 +705,7 @@ void statusText(char *out, uint32_t now) {
 
 void setup1() {
   Wire.begin();
+  Wire.setTimeout(I2C_TIMEOUT_MS, true);
   if (!lcd.begin(LCD_COLS, LCD_ROWS)) {
     Serial.println("LCD backpack not found - check wiring/address");
     while (1) delay(100);
@@ -828,6 +849,7 @@ void loop1() {
   static HorizonState horizonState = HZ_UNKNOWN;
   static int drawnPage = 0;
   const unsigned long now = millis();
+  core1Beat = now;
   serialCommands();
   encoderPoll();
 
