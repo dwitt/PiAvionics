@@ -1,6 +1,6 @@
 # Backup display: design record
 
-Updated 2026-10-22. Sketch: `Backup_Display.ino` (version 1.7.6 when this was written). The decisions below were made with David
+Updated 2026-10-22. Sketch: `Backup_Display.ino` (version 1.7.7 when this was written). The decisions below were made with David
 on the bench; the sketch is the authority on exact values.
 
 ## Hardware
@@ -97,7 +97,7 @@ the real GPS module on the bus (2026-10-22).
 System page:
 
 ```
-BL>ON         v1.7.6
+BL>ON         v1.7.7
 I:OK A:OK G:-- E:DG
 CAN 50/s UP 0:12:34
 PG>3

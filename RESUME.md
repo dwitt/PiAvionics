@@ -1,6 +1,19 @@
-# Resume here (last saved 2026-10-18, end of day)
+# Resume here (last saved 2026-10-22)
 
 Tell Claude: "Read RESUME.md and carry on."
+
+## Update 2026-10-22: the backup display is built, and every board has a watchdog
+- **Backup display:** `Sensors/Backup_Display/Backup_Display.ino` 1.7.7, built and working on the bench: Flight, GPS and System pages, QNH over the
+  bus, mini horizon and slip ball, status letters I A G E. Design record: `Sensors/Backup_Display/DESIGN.md`. Still open there: G on the Flight page
+  (David undecided), the Engine page (MGL RDAC raw values), its own heartbeat, module versions on the System page. Not yet tried in an aircraft.
+- **Firmware now:** IMU_AHRS 1.0.18, AIR_Module 1.0.39, GPS_Module 1.0.11, Backup_Display 1.7.7, all flashed. AIR 1.0.38 smooths the vertical speed over
+  about 3 s and sends a steady value (the displays do no smoothing). Protocol 0.3.1 (docs regenerated).
+- **Watchdog on all four boards:** the chip restarts if its main loop stops for 2 s, and an I2C transaction gives up after 25 ms. It starts at the end of a
+  good `setup()`, so a failed start-up still halts with its blink code and heartbeat. The GPS module feeds it from `gpsService()` so its re-probing of a silent
+  GPS is not cut off. Test commands: `!h` on the three sensors (fault injection) and `H` on the backup display hang the board on purpose; all four hang tests
+  passed (frames stop for 2.7 to 4.7 s, then the board is back and logs "Restarted by the watchdog"). Set `FAULT_INJECT 0` for a flight build.
+- The GPS module is back on the bus (the display no longer stands in for it). The first backup-display encoder was faulty and was replaced.
+- Git is clean: the NHD-0420DZ datasheet PDF now lives in `Sensors/Backup_Display/` and the old HM2004A bench sketch is in `Legacy/CAN_Display_v1/lcd_test`.
 
 ## Where things stand (end of 2026-10-18)
 - **On the Pi (all committed, git clean except David's untracked files):** server `aio_server.py` 1.6.3, `display_orientation.py` 1.0.1, `efis_heartbeat.py` 1.0.0,
@@ -12,12 +25,12 @@ Tell Claude: "Read RESUME.md and carry on."
   tweaks (wings, units, annunciator fit); Display 1 size fixes.
 - **GPS display (last thing done):** the HSI's GPS box is a touch button (contracted: `3D FIX` coloured by HDOP, a green `WAAS` when corrections are in use, and `VAR 10°W`;
   expanded adds SAT, HDOP, VDOP); the track diamond is hidden below 10 kt (`TRACK_MIN_SPEED_KT` in `efis-display.js`). Confirmed by touch on the real Pi (ISSUES #16).
-- **Open:** (1) the moving test of the track diamond and course pointer (ISSUES #15); (2) the backup display, NOT built, David's design, then plan step 7 (the full system test
+- **Open:** (1) the moving test of the track diamond and course pointer (ISSUES #15); (2) the backup display (built 2026-10-22, see above), then plan step 7 (the full system test
   table, including pulling a module's CAN cable and closing the Pi page to see the heartbeat mask bits clear); (3) ISSUES #18, `piefis.service` ordering against `can0.service`;
   (4) the AOA value is still always 0; (5) commands over CAN (ISSUES #9 steps 2 to 4: a command message, AIR zero, two-step reset; the Modules page is the natural home).
 
 ## State of the sensor modules: finished and committed
-Firmware on the boards (all flashed, healthy, committed): IMU_AHRS 1.0.16, AIR_Module 1.0.35, GPS_Module 1.0.9 (the IMU and AIR now send the invalid-data markers, 2026-10-18).
+Firmware on the boards (all flashed, healthy, committed; 2026-10-22): IMU_AHRS 1.0.18, AIR_Module 1.0.39, GPS_Module 1.0.11 (the IMU and AIR send the invalid-data markers since 2026-10-18; all three have the watchdog since 2026-10-22).
 Libraries: ModuleInfo 1.3.0, StatusLED 1.2.0, SensorHealth 1.0.0, MS4525DO 1.1.1, SSC 1.1.1, plus two locally patched
 Adafruit libraries (`Adafruit_LSM6DS`: a failed read returns false; `Adafruit_MCP2515`: bounded send, `txFault()`,
 `clearErrorFlags()`), each with `PATCH_NOTES.md`.
@@ -33,7 +46,7 @@ Plan, decisions, every test result and the filled-in test tables: `Sensors/FAILU
 - A CAN cable pull no longer freezes any module (cause was missing termination on the AIR and GPS CAN boards plus an
   unbounded wait in the stock MCP2515 library).
 - Fault injection over USB serial is compiled in and stays in the flight build (decision: no USB in the aircraft). Commands start
-  with `!`, capital = on, lower case = off: IMU `!G/!g` `!M/!m` `!z` `!x`; AIR `!P/!p` `!A/!a` `!S/!s` `!O/!o`; GPS `!N/!n`.
+  with `!`, capital = on, lower case = off: IMU `!G/!g` `!M/!m` `!z` `!x`; AIR `!P/!p` `!A/!a` `!S/!s` `!O/!o`; GPS `!N/!n`; `!h` hangs any of the three (watchdog test).
   Test scripts: `Sensors/TestTools/` (run on the Pi; see its README).
 - Not done and not needed yet: hot-plugging a sensor into a running module, stuck-I2C-bus recovery on the AIR Wire bus,
   cold tests A6/I4/I6/G2/C3 (listed NOT RUN in the plan tables). IMU and GPS still show EFLG 0x40 (their CAN buffers are never
@@ -92,7 +105,7 @@ still sends the gyro-only heading as a number). The GPS module sends none. Verif
 A bug found on the way, a thin red X drawn across the display when a marker nulled a value before the validity caught up, is fixed (ISSUES #17: server 1.6.2, page 0.6.1).
 Log rotation is done (ISSUES #14): server 1.6.3 reports a repeating send failure once a minute, and `/etc/logrotate.d/piefis` (from `EFIS/linux/piefis.logrotate`) rotates
 `/var/log/piefis.log` at 5 MB, keeping 4. The service ordering against `can0.service` is parked as ISSUES #18.
-Next: the backup display, which is NOT built yet; David will start its design (new design in Sensors/Backup_Display, design record in Sensors/Backup_Display/DESIGN.md; the old CAN_Feather/Display_Feather design is archived in Legacy/CAN_Display_v1; per-field validity from the
+The backup display is now built (see the update at the top; this paragraph was written before it was: new design in Sensors/Backup_Display, design record in Sensors/Backup_Display/DESIGN.md; the old CAN_Feather/Display_Feather design is archived in Legacy/CAN_Display_v1; per-field validity from the
 markers, listen to 0x700 to 0x703, a status row; the first heartbeat after a server restart reads state 2, so allow it a second). Only the Pi EFIS receives the markers today.
 Other open items: AOA value on 0x29 is still always 0; command messages over CAN (ISSUES #9 steps 2 to 4).
 
@@ -108,9 +121,10 @@ live risks a stuck bus (cold pulls were done instead).
 ## Handy facts
 - Boards: `/dev/serial/by-id/usb-Adafruit_*`; serials AIR 38503039350B102C, GPS 38503039350B242B,
   IMU DF625857C7793E2F. Flash: `Sensors/flash_remote.sh <Sketch> <serial>`.
+- Backup display (Feather 38503039350B9941, on the Mac as /dev/cu.usbmodem101): `stty -f <port> 1200; sleep 3; picotool load -x <uf2>`
+  (arduino-cli upload fails, no drive mounts). The Arduino IDE serial monitor holds the port and blocks flashing.
 - Reboot a running board: `stty -F <port> 1200` then `picotool reboot --ser`. Keep hupcl on the tty.
 - Regenerate protocol docs: `Protocol/.venv/bin/python Protocol/generate_can_docs.py`.
 - When scripting edits to ISSUES.md, check the slice has no other '## ' or '### ' headings first.
 - Memory notes: `project_sensor_modules_status.md` in the Claude project memory folder.
-- Unrelated untracked files left alone: CAN_Display/lcd_test, STL files, MotionCal SourceGuide.md,
-  IMU_Calibration_Design.md.
+- Git was clean on 2026-10-22 (nothing untracked).

@@ -1,5 +1,8 @@
 # Plan: show module failures on the EFIS and the backup display
 
+> Note 2026-10-22: the backup display described here (KS0108 128x64, `CAN_Display`) was replaced by a new design, `Sensors/Backup_Display` (20x4 character LCD).
+> Its design record is `Sensors/Backup_Display/DESIGN.md`; the old design is in `Legacy/CAN_Display_v1/`. The backup sections below are kept for history.
+
 Written 2026-10-17. Follows `Sensors/FAILURE_DETECTION_PLAN.md` (the modules now detect their own failures and say so in
 a CAN heartbeat and the LED). This plan makes the **EFIS** and the **backup display** act on that. **All ten decisions are
 made (see "Decisions recorded" at the end); nothing is built yet. Start at step 1 of "Order of work".**
@@ -299,6 +302,6 @@ the display, so do not connect a test client to the live server; use `tests/live
 - Found on the way and fixed (ISSUES #17): a marker nulls its value at once but `valid` was re-evaluated every 0.1 s, so a null still flagged valid reached the old built-in
   bad-data X's in `Ribbon` and `AttitudeIndicator` (a thin red X across the display). Server 1.6.2 reapplies the markers before each send; page 0.6.1 never treats a null as valid.
   David confirmed the pitot and accel/gyro faults then looked right.
-- Still to do from the plan: step 5, the backup display (not built; David will design it), and step 7, the full system test table (every fault and the expected result on the EFIS
+- Still to do from the plan: step 5, the backup display (built 2026-10-22 as Sensors/Backup_Display), and step 7, the full system test table (every fault and the expected result on the EFIS
   and the backup display, including stopping `piefis` and pulling a module's CAN cable).
 

@@ -439,3 +439,15 @@ faults are held in RAM only and clear on a power cycle; and the `?` report shows
   the sketch scan fail with "directories symlink loop detected".
 - New files: `Sensors/Libraries/README.md` (how it works), `Sensors/Libraries/LIBRARIES.md` (third-party libraries and versions).
 - David verified the layout in the Arduino IDE 2.3.5: IMU_AHRS compiled with no library setup (2026-10-17).
+
+### 2026-10-22: watchdog and I2C timeout (IMU_AHRS 1.0.18, AIR_Module 1.0.39, GPS_Module 1.0.11, Backup_Display 1.7.6)
+- Why: a module hung by a bad wire or a glitch stayed silent until it was power-cycled. The backup display froze overnight after being handled.
+- What: the RP2040 hardware watchdog (2 s) is started at the end of a successful `setup()` and fed from `loop()`; I2C transactions give up after 25 ms
+  (`Wire.setTimeout`, with `Wire1` on the AIR module). A failed start-up still halts on purpose (POST code and heartbeat), because the watchdog is not yet running.
+  The GPS module feeds it from `gpsService()`, which every wait in the baud probe calls, so re-probing a silent GPS is not cut off. The backup display feeds it
+  from core 0 only while core 1 is still looping.
+- After a restart the module logs "Restarted by the watchdog" (shown by `?`). A restart costs the IMU its attitude for a few seconds (the filter starts over)
+  and the AIR module waits again for a QNH before it sends altitude.
+- Tests (hang command `!h`, `H` on the display): IMU frames stopped 2.68 s then resumed; AIR 4.7 s, AOA sensor found again, heartbeat OK; GPS 2.92 s, fix and 14
+  satellites again; GPS silenced with `!N` for 14 s re-probed twice and did not restart; backup display restarted and re-adopted the QNH.
+- Not done: how long the IMU takes to settle after a restart in flight was not measured.

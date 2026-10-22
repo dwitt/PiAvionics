@@ -1,5 +1,5 @@
 /*
-  Backup_Display.ino - Backup display, flight page
+  Backup_Display.ino - Backup display: flight, GPS and system pages
   Hardware: Adafruit Feather RP2040 + Adafruit I2C/SPI LCD backpack (MCP23008)
             + Newhaven NHD-0420DL-FL-GBW 20x4 character LCD
             + Adafruit CAN FeatherWing (MCP2515, CS 7) and the seesaw encoder
@@ -8,10 +8,15 @@
 
   The flight page, fed from the CAN bus (or simulated, see M below):
       IAS 105|HHH|ALT 4520
-      VS +500|HHH|HDG 270
+      VS +500|HHH| HDG 270
       OAT 12C|_o_|   G 1.0       (the o is the slip ball, the _ a line under it)
-      PG 1   IAGE   29.92?
+      PG>1   IAGE   29.92?       (the > is the marker of the selected field, see the encoder)
   HHH is the mini horizon, 3 x 2 character cells (15 x 16 pixels, drawn as 17 x 17 with the gaps between the cells counted).
+  The GPS page (fed by the GPS module) has the same layout, with GPS over DATA where the horizon is:
+      GS 105  GPS ALT 4500
+      14:32Z  DATA TRK 262
+      N43.6532   W079.3832
+      PG>2  3D 9sat HD1.1
   Custom characters: slot 6 is a vertical line on the right pixel column of the cell and slot 7 one on the left pixel column.
   They go in columns 7 and 11 of rows 0 to 2, close to the horizon and the slip track on each side. The other 6 are handed out as needed (see slotAcquire): a
   horizon cell that is all sky is the built-in blank, all ground the built-in solid block, and only a cell the line crosses
@@ -69,7 +74,7 @@
 #include <Adafruit_seesaw.h>
 #include "src/Adafruit_MCP2515/src/Adafruit_MCP2515.h"   // patched copy, see Sensors/Libraries/README.md
 
-#define VERSION "1.7.6"
+#define VERSION "1.7.7"
 
 const uint8_t LCD_COLS = 20;
 const uint8_t LCD_ROWS = 4;

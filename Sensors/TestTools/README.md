@@ -15,7 +15,8 @@ Scratch scripts used on 2026-10-17 for `Sensors/FAILURE_DETECTION_PLAN.md`. They
 
 Fault commands (start with `!`, capital = on, lower case = off):
 IMU `!G/!g` accel-gyro, `!M/!m` magnetometer, `!z` reset ISM330DHCX, `!x` reset LIS3MDL;
-AIR `!P/!p` pitot, `!A/!a` AOA, `!S/!s` static, `!O/!o` OAT; GPS `!N/!n` silence the GPS.
+AIR `!P/!p` pitot, `!A/!a` AOA, `!S/!s` static, `!O/!o` OAT; GPS `!N/!n` silence the GPS;
+all three `!h` hang the main loop on purpose (the watchdog should restart the module within about 3 s).
 
 Lessons built into them: set the tty to `raw -echo hupcl` first (with echo on, the Pi feeds the module's own report back
 to it as commands), and keep the port open while sending (open, write, close can lose the byte).

@@ -11,7 +11,7 @@ on the real bus (Sensors/Backup_Display, 2026-10-21; see its DESIGN.md). Decisio
 ## Goal
 
 Today the Pi EFIS is the only device that can set the QNH, and the AIR module is the only device that uses it. The backup display
-(CAN_Display, with a rotary encoder) needs to set and show it too, and it must keep working when the Pi is dead. So:
+(Sensors/Backup_Display, with a rotary encoder) needs to set and show it too, and it must keep working when the Pi is dead. So:
 
 - Any device with a QNH control can change the QNH. Every device that shows or uses it follows the change.
 - Every device holds the value, so no single device failing loses it.
@@ -101,7 +101,7 @@ stored value from yesterday also looks plausible and could be mistaken for today
 ### Encoder behaviour (for the backup display, and the page's own encoder)
 
 A turn changes the QNH only while the encoder is in its QNH mode. Other modes (page, backlight and so on) never send a QNH frame.
-The mode falls back to the default after a period with no input. The details belong to the backup display design.
+For the backup display David chose push to enter, push to exit and no timeout, so the QNH stays live; see `Sensors/Backup_Display/DESIGN.md`. (The earlier idea of falling back to a default mode after a period with no input was not used there.)
 
 ## Changes by component
 
@@ -155,7 +155,7 @@ The mode falls back to the default after a period with no input. The details bel
 
 ### 5. Backup display
 
-Separate design (the next job). It uses this protocol: listen to the block, adopt, send on its own ID 0x2D on a change, keep-alive on silence.
+Built (Sensors/Backup_Display, 2026-10-21; design record in its DESIGN.md). It uses this protocol: listen to the block, adopt, send on its own ID 0x2D on a change, keep-alive on silence.
 
 ## Order of work (each step testable alone, and compatible with the one before it)
 
