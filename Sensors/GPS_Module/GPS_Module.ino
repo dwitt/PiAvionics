@@ -18,7 +18,7 @@
 #include "XYZgeomag.hpp"         // WMM2025 magnetic declination (nhz2/XYZgeomag)
 #include "src/ModuleInfo/ModuleInfo.h"        // USB product name, startup log and '?' report
 
-#define VERSION "1.0.10"
+#define VERSION "1.0.11"
 
 ModuleInfo moduleInfo("GPS_Module", VERSION, __DATE__, __TIME__);
 
@@ -194,6 +194,11 @@ static unsigned long lastRealNmea = 0;
 static bool realNmeaSeen = false;
 static uint32_t gpsReprobes = 0;      // times the silence watchdog started the baud probe again
 
+// Watchdog: started at the end of a successful setup() (a failed start-up stays halted on purpose, showing its POST code
+// and sending its heartbeat). gpsService() feeds it, and loop() and every wait in the GPS probe call that, so a GPS that
+// stays silent keeps being probed without a restart. The chip restarts only if nothing runs for WATCHDOG_MS.
+#define WATCHDOG_MS   2000
+
 #define FAULT_INJECT 1    // test commands on USB serial ("Fault injection" below); 0 for flight
 #if FAULT_INJECT
 static bool injectSilent = false;     // everything from the GPS is thrown away
@@ -249,6 +254,7 @@ static void sendHeartbeat() {
 // Report on USB connect or '?', and send the heartbeat. Also called while the GPS
 // is being probed (a few seconds), so the heartbeat does not stop during a retry.
 static void gpsService() {
+  rp2040.wdt_reset();
   moduleInfo.service();
   sendHeartbeat();
 }
@@ -256,6 +262,7 @@ static void gpsService() {
 //----------------------------------------------------------------------------
 // Fault injection for tests (USB serial commands, see ModuleInfo setCommandHook).
 //   !N  the GPS goes silent: everything it sends is thrown away, until !n is sent
+//   !h  hang the main loop (the watchdog should restart the module)
 // The GPS wing is hard to unplug, so this is how the "no data from the GPS" path is tested.
 //----------------------------------------------------------------------------
 #if FAULT_INJECT
@@ -267,6 +274,7 @@ static void faultCommand(char c) {
   bangSeen = false;
   if (c == 'N') injectSilent = true;
   if (c == 'n') injectSilent = false;
+  if (c == 'h') while (true) {}
 }
 #endif
 
@@ -369,6 +377,7 @@ void setup() {
   // USB serial never waits for a host. Startup results are stored with
   // moduleInfo.log() and printed from loop() when a host connects, or on '?'.
   moduleInfo.begin();
+  if (rp2040.getResetReason() == RP2040::WDT_RESET) moduleInfo.log("Restarted by the watchdog");
 
   bool gps_success, can_success;
 
@@ -416,6 +425,7 @@ void setup() {
     // The runtime heartbeat colour shows whether the GPS is talking and has a fix
     led.go();
     setupDone = true;
+    rp2040.wdt_begin(WATCHDOG_MS);
   } else {
     moduleInfo.fatal("Startup failed");
     led.postCode(POST_CAN);   // red flashes forever; the callback keeps '?' working
