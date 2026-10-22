@@ -31,7 +31,7 @@
 /*****************************************************************************
  * Firmware version - increment the patch number on every change
  *****************************************************************************/
-#define VERSION "1.0.38"
+#define VERSION "1.0.39"
 
 // Set to 0 to run without the AOA sensor (Wire1, GPIO8/9). With 0, Wire1 is not
 // touched at all and a missing AOA sensor does not stop startup.
@@ -62,6 +62,12 @@ ModuleInfo moduleInfo("AIR_Module", VERSION, __DATE__, __TIME__);
 #define PITOT_MAX_HPA         70.0f   // +-1 psi sensor: 68.9 hPa is full scale
 #define STATIC_MIN_HPA        150.0f  // about 44000 ft
 #define STATIC_MAX_HPA        1300.0f
+
+// Watchdog: started at the end of setup() (a failed start-up stays halted on purpose, showing its POST code and sending
+// its heartbeat). loop() feeds it, so the chip restarts if a pass stops for WATCHDOG_MS, for example an I2C transaction
+// stuck on a bad wire. I2C transactions give up after I2C_TIMEOUT_MS. After a restart the module waits for a QNH again.
+#define WATCHDOG_MS     2000
+#define I2C_TIMEOUT_MS  25
 
 #define FAULT_INJECT 1    // test commands on USB serial, see "Fault injection" below; 0 for flight
 #if FAULT_INJECT
@@ -695,6 +701,7 @@ static void airService() {
 // Fault injection for tests (USB serial commands, see ModuleInfo setCommandHook).
 // Each command is "!" followed by a letter. Capital = fault on, lower case = off:
 //   !P/!p pitot   !A/!a AOA   !S/!s static pressure   !O/!o OAT (RTD)
+//   !h  hang the main loop (the watchdog should restart the module)
 // While a fault is injected the sensor's samples are treated as failed reads.
 //----------------------------------------------------------------------------
 #if FAULT_INJECT
@@ -713,6 +720,7 @@ static void faultCommand(char c) {
     case 's': injectStaticFail = false; break;
     case 'O': injectOatFail = true; break;
     case 'o': injectOatFail = false; break;
+    case 'h': while (true) {}
   }
 }
 #endif
@@ -731,6 +739,7 @@ void setup() {
   // USB serial never waits for a host. Startup results are stored with
   // moduleInfo.log() and printed from loop() when a host connects, or on '?'.
   moduleInfo.begin();
+  if (rp2040.getResetReason() == RP2040::WDT_RESET) moduleInfo.log("Restarted by the watchdog");
   moduleInfo.setModuleNumber(MODULE_NUM_AIR);
   moduleInfo.setReportHook(canReport);
   #if FAULT_INJECT
@@ -883,6 +892,10 @@ void setup() {
   #if AOA_ENABLED
   Wire1.setClock(400000);
   #endif
+  Wire.setTimeout(I2C_TIMEOUT_MS, true);
+  #if AOA_ENABLED
+  Wire1.setTimeout(I2C_TIMEOUT_MS, true);
+  #endif
 
   /*************************************************************************** 
    * Configure the CAN bus filters to receive only the QNH block 0x2C to 0x2F
@@ -901,9 +914,12 @@ void setup() {
   timestamp = millis();     // initialize the timestamp
   qnhListenEnd = millis() + QNH_LISTEN_MS;   // no altitude is sent until a QNH is heard or this passes
 
+  rp2040.wdt_begin(WATCHDOG_MS);
+
 }
 
 void loop() {
+  rp2040.wdt_reset();
   moduleInfo.service();   // report on USB connect or '?'
   sendHeartbeat();        // CAN heartbeat, once a second
   updateLedHealth();
