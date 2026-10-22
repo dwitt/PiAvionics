@@ -54,7 +54,7 @@
 /*****************************************************************************
  * Firmware version - increment the patch number on every change
  *****************************************************************************/
-#define VERSION "1.0.17"
+#define VERSION "1.0.18"
 
 ModuleInfo moduleInfo("IMU_AHRS", VERSION, __DATE__, __TIME__);
 
@@ -125,6 +125,12 @@ static bool canUp = false;			// heartbeat is only sent once the CAN bus is runni
 #define SENSOR_RETRY_MS		2000
 #define SENSOR_STUCK_COUNT	100		// identical samples in a row = chip locked up
 #define LONG_OUTAGE_MS		1000	// after this long without data the AHRS starts over
+
+// Watchdog: started at the end of setup() (a failed start-up stays halted on purpose, showing its POST code and sending
+// its heartbeat). loop() feeds it, so the chip restarts if a pass stops for WATCHDOG_MS, for example an I2C transaction
+// stuck on a bad wire. I2C transactions give up after I2C_TIMEOUT_MS. A restart costs the attitude: the filter starts over.
+#define WATCHDOG_MS		2000
+#define I2C_TIMEOUT_MS	25
 
 #define FAULT_INJECT 1		// test commands on USB serial, see "Fault injection" below; 0 for flight
 #if FAULT_INJECT
@@ -399,6 +405,7 @@ static void magCheck(const float *m) {
 //   !M  magnetometer reads fail until !m is sent
 //   !z  reset the ISM330DHCX chip (like a power loss: it then returns zeros)
 //   !x  reset the LIS3MDL chip (it then stops updating its data)
+//   !h  hang the main loop (the watchdog should restart the module)
 // While a read failure is injected the sensor is not re-initialised either.
 //----------------------------------------------------------------------------
 #if FAULT_INJECT
@@ -419,6 +426,7 @@ static void faultCommand(char c) {
 		case 'm': injectMagFail = false; break;
 		case 'z': ism330dhcx.reset(); break;
 		case 'x': lis3mdl.reset(); break;
+		case 'h': while (true) {}
 	}
 }
 #endif
@@ -445,6 +453,7 @@ void setup() {
 	 *************************************************************************/
 
 	moduleInfo.begin();
+	if (rp2040.getResetReason() == RP2040::WDT_RESET) moduleInfo.log("Restarted by the watchdog");
 
 	/*************************************************************************
 	 * Step 3: CAN bus — POST code 11
@@ -598,6 +607,8 @@ void setup() {
 	 *************************************************************************/
 
 	Wire.setClock(400000);		// 400 kHz
+	Wire.setTimeout(I2C_TIMEOUT_MS, true);
+	rp2040.wdt_begin(WATCHDOG_MS);
 
 }
 
@@ -606,6 +617,8 @@ void setup() {
  *****************************************************************************/
 
 void loop() {
+
+	rp2040.wdt_reset();
 
 	// ------------------------------------------------------------------------
 	// Host report: printed when a host connects to USB serial, and whenever '?'
