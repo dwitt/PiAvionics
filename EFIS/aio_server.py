@@ -1,7 +1,7 @@
 """ Asynchronous I/O based webserver to handle page and websocket"""
 # pyright: reportMissingImports=false
 
-VERSION = "1.7.0"
+VERSION = "1.7.1"
 
 import asyncio
 import ipaddress
@@ -67,7 +67,7 @@ class CAN_MSG_ID(Enum):
     MAGX = 0x81
     MAGY = 0x82
     MAGZ = 0x83
-    TIME_SYNC = 0x19
+    TIME_SYNC = 0x66
     IMU_HEARTBEAT = 0x701
     AIR_HEARTBEAT = 0x702
     GPS_HEARTBEAT = 0x703
