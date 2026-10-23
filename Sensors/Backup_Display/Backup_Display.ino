@@ -74,7 +74,7 @@
 #include <Adafruit_seesaw.h>
 #include "src/Adafruit_MCP2515/src/Adafruit_MCP2515.h"   // patched copy, see Sensors/Libraries/README.md
 
-#define VERSION "1.7.7"
+#define VERSION "1.7.8"
 
 const uint8_t LCD_COLS = 20;
 const uint8_t LCD_ROWS = 4;
@@ -88,7 +88,7 @@ volatile uint32_t core1Beat = 0;                     // millis() at the last pas
 const uint8_t CAN_CS_PIN = 7;
 const long CAN_BAUDRATE = 250000;
 const uint16_t ID_AIR_DATA = 0x28, ID_OAT = 0x2A, ID_AHRS_ORIENT = 0x48, ID_AHRS_ACCEL = 0x49;
-const uint16_t ID_TIME_SYNC = 0x19, ID_GPS_POSITION = 0x63, ID_GPS_SPEED_TRACK = 0x64, ID_GPS_STATUS = 0x65;
+const uint16_t ID_TIME_SYNC = 0x66, ID_GPS_POSITION = 0x63, ID_GPS_SPEED_TRACK = 0x64, ID_GPS_STATUS = 0x65;
 const uint16_t ID_HEARTBEAT_FIRST = 0x700;           // 0x700 EFIS, 0x701 IMU, 0x702 AIR, 0x703 GPS
 const int16_t MARKER_INT16 = 0x7FFF;
 const int32_t MARKER_INT32 = 0x7FFFFFFF;

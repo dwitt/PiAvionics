@@ -1,6 +1,6 @@
 # Backup display: design record
 
-Updated 2026-10-22. Sketch: `Backup_Display.ino` (version 1.7.7 when this was written). The decisions below were made with David
+Updated 2026-10-22. Sketch: `Backup_Display.ino` (version 1.7.8 when this was written). The decisions below were made with David
 on the bench; the sketch is the authority on exact values.
 
 ## Hardware
@@ -97,7 +97,7 @@ the real GPS module on the bus (2026-10-22).
 System page:
 
 ```
-BL>ON         v1.7.7
+BL>ON         v1.7.8
 I:OK A:OK G:-- E:DG
 CAN 50/s UP 0:12:34
 PG>3
@@ -173,7 +173,6 @@ stops remote flashing.
   module as the single source (this needs new CAN messages).
 - **Engine page:** the MGL RDAC sends raw ADC values for MAP and the analogue channels. The backup would need the calibration
   built into the sketch. Decide which values the backup should show.
-- **CAN ID conflict:** our 0x019 TIME_SYNC collides with MGL's GENERAL_COMMAND (an RDAC would see it). Move it before an RDAC is on the bus.
 - **Not yet done:** the backup display does not send its own heartbeat, and does not show module versions on the System page.
 - **Not tested:** the slip ball, G and the horizon in an aircraft; the display and the EFIS agreeing after the display itself
   restarts mid-flight with everyone else set.
