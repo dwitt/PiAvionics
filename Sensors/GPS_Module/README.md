@@ -33,7 +33,7 @@ All data is little-endian.
 |----------|----------|----------|----------|
 | Ground Speed (int16, knots) | Altitude (int16, feet) | True Track (int16, degrees) | Magnetic Track (int16, degrees) |
 
-### 0x19 - Time Sync (1 Hz, only when valid date received)
+### 0x66 - Time Sync (was 0x19 before GPS_Module 1.0.12) (1 Hz, only when valid date received)
 
 | Byte 0 | Byte 1 | Byte 2 | Byte 3 | Byte 4 | Byte 5 | Byte 6 | Byte 7 |
 |--------|--------|--------|--------|--------|--------|--------|--------|

@@ -19,7 +19,7 @@ The Python GPS module in `Legacy/gps_module/code.py` runs on a Raspberry Pi Pico
 |----|------|--------|------|
 | `0x63` | GPS Coordinates | 1000ms | lat (int32), lon (int32) — degrees x 1,000,000 |
 | `0x64` | GPS Speed/Alt/Track | 1000ms | ground speed (int16, knots), altitude (int16, feet), true track (int16, degrees), unused (int16) |
-| `0x19` | Time Sync | 1000ms | year, month, day, hour, minute, second, 0, 0 (uint8 x 8) |
+| `0x66` | Time Sync | 1000ms | year, month, day, hour, minute, second, 0, 0 (uint8 x 8) |
 
 ## Files
 

@@ -60,7 +60,7 @@ Status: **Open**, **Monitoring** (fix applied, watching), **Fixed**.
   4. Reset command (RP2040 watchdog reboot), two-step arm/confirm so a stray frame
      cannot reboot a module in flight.
 - Open decisions: command/response CAN IDs (none reserved yet; existing IDs are
-  0x19, 0x23, 0x28-0x2E, 0x32, 0x48/49, 0x51-53, 0x63-65); whether commands are
+  0x23, 0x28-0x2E, 0x32, 0x48/49, 0x51-53, 0x63-66); whether commands are
   ground-only (suggested default, enforced in the module as well as the EFIS);
   where the EFIS triggers them (soft-button menu).
 - Out of scope for now: reading or updating the firmware image over CAN, which would

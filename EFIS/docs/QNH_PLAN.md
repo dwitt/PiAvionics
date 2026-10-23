@@ -214,6 +214,6 @@ Decided (2026-10-20, David):
 
 - AIR module hold-off: during its 2 s listen window the AIR module sends the altitude invalid marker (0x7FFFFFFF) on 0x28, not an altitude from the unset 29.92. After the window it uses the adopted value, or 29.92 flagged not set.
 - Looks: on the EFIS page a not-set QNH flashes at 1 Hz and a mismatch turns the QNH box amber. On the backup 20x4, `29.92?` is not set and `29.92!` is a mismatch (final form in the display design).
-- GPS 0x19 with +/- 20 ms is safe: the server only builds a datetime from the fields and nothing uses the arrival time.
+- GPS 0x66 (time sync, was 0x19) with +/- 20 ms is safe: the server only builds a datetime from the fields and nothing uses the arrival time.
 
 Open: none.
