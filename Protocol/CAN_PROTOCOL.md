@@ -17,7 +17,7 @@ Sensor modules broadcast their data on fixed IDs. The Pi EFIS listens, shares th
 | Termination | 120 ohm at each end of the bus |
 | Hardware | MCP2515 controller, 250 kbit/s (Pi uses can0 via SocketCAN) |
 
-- Lower IDs win bus arbitration. All PiAvionics IDs (0x19 to 0x83) are lower than every MGL device ID (0x200 and up).
+- Lower IDs win bus arbitration. All PiAvionics IDs (0x23 to 0x83) are lower than every MGL device ID (0x200 and up).
 - Modules send each message on a timer (period_ms). Each interval varies by a flat +/- 20 ms about the period, drawn once per send (SendTimer library; AIR_Module 1.0.37, IMU_AHRS 1.0.17, GPS_Module 1.0.10, measured on the bus 2026-10-20: means within 1 ms of the period, minimum period - 20 ms; about 1.5% of frames are later than period + 25 ms because the module's loop was busy). Before that the random number was drawn again on every pass of loop(), so the jitter was only 1 to 3 ms and the mean 2 to 3 ms over the period. The jitter is not needed for collision handling, because CAN arbitration never drops a frame.
 - Invalid-data markers (protocol 0.2.0). A field that cannot be trusted is sent as the largest positive value of its type: 0x7FFF for a 16-bit field, 0x7FFFFFFF for a 32-bit field. No real value can reach it (see the Invalid marker column). A receiver must show such a field as failed and never as a number. The EFIS server understands the markers (1.6.0 onward); the module firmware sends them from AIR_Module 1.0.35 and IMU_AHRS 1.0.16 (2026-10-18); the GPS module sends none (its frames stop instead). A module's heartbeat (0x701 to 0x703) also says which sensor is lost.
 - Timeouts (decided 2026-10-17, not yet implemented in the EFIS). The EFIS treats data as lost after: 0.5 s without 0x28, 0x48 or 0x49; 1.5 s without 0x2A or 0x2B; 3.5 s without 0x63, 0x64 or 0x65; 3 s without a module heartbeat (the module is shown as missing). Today the EFIS times out only 0x48 and 0x49, after 0.2 s.
@@ -34,7 +34,6 @@ Sensor modules broadcast their data on fixed IDs. The Pi EFIS listens, shares th
 
 | ID | Name | Sent by | Received by | Rate | Bytes | Status |
 |:--:|------|---------|-------------|------|:-----:|--------|
-| `0x019` | [TIME_SYNC](#0x019-time_sync) | GPS module | Pi EFIS, Backup display | 1 s | 8 | ✅ Active |
 | `0x023` | [AHRS_CONTROL](#0x023-ahrs_control) | Pi EFIS | IMU / AHRS module | — | 8 | ⚪ Planned |
 | `0x028` | [AIR_DATA](#0x028-air_data) | AIR module | Pi EFIS, Backup display | 100 ms | 8 | ✅ Active |
 | `0x029` | [AOA](#0x029-aoa) | AIR module | — | 200 ms | 8 | 🟡 Partial |
@@ -53,6 +52,7 @@ Sensor modules broadcast their data on fixed IDs. The Pi EFIS listens, shares th
 | `0x063` | [GPS_POSITION](#0x063-gps_position) | GPS module | Pi EFIS, Backup display | 1 s | 8 | ✅ Active |
 | `0x064` | [GPS_SPEED_TRACK](#0x064-gps_speed_track) | GPS module | Pi EFIS, Backup display | 1 s | 8 | ✅ Active |
 | `0x065` | [GPS_STATUS](#0x065-gps_status) | GPS module | Pi EFIS, Backup display | 1 s | 8 | ✅ Active |
+| `0x066` | [TIME_SYNC](#0x066-time_sync) | GPS module | Pi EFIS, Backup display | 1 s | 8 | ✅ Active |
 | `0x081` | [MAG_X](#0x081-mag_x) | IMU / AHRS module | Pi EFIS | — | 4 | 🔘 Reserved |
 | `0x082` | [MAG_Y](#0x082-mag_y) | IMU / AHRS module | Pi EFIS | — | 4 | 🔘 Reserved |
 | `0x083` | [MAG_Z](#0x083-mag_z) | IMU / AHRS module | Pi EFIS | — | 4 | 🔘 Reserved |
@@ -62,45 +62,6 @@ Sensor modules broadcast their data on fixed IDs. The Pi EFIS listens, shares th
 | `0x703` | [GPS_HEARTBEAT](#0x703-gps_heartbeat) | GPS module | Pi EFIS, Backup display | 1 s | 8 | 🟡 Partial |
 
 ## Messages
-
-### 0x019 TIME_SYNC
-
-**UTC date and time**
-
-| | |
-|---|---|
-| Sent by | GPS module |
-| Received by | Pi EFIS, Backup display |
-| Rate | 1 s |
-| Data length | 8 bytes |
-| Status | ✅ Active |
-
-| Bytes | Field | Type | Unit | Description |
-|:-----:|-------|------|------|-------------|
-| 0 | `year` | uint8 | years since 2000 | 26 means 2026 |
-| 1 | `month` | uint8 | month | 1 to 12 |
-| 2 | `day` | uint8 | day | 1 to 31 |
-| 3 | `hour` | uint8 | h | UTC |
-| 4 | `minute` | uint8 | min |  |
-| 5 | `second` | uint8 | s |  |
-| 6-7 | `reserved` | uint8 |  | Always 0 |
-
-**Byte layout**
-
-| Byte | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 |
-|------|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
-| Field | `year` | `month` | `day` | `hour` | `minute` | `second` | `reserved` (1/2) | `reserved` (2/2) |
-
-**Notes**
-
-- Sent only once the GPS has received a valid date.
-- The EFIS decodes the bytes as signed (fine for the values here).
-- ID 0x19 collides with MGL's "General Command" message from host 1 (see CAN_BUS_MAP.md). It works today only because byte 0 (the year) is not a valid MGL destination (0 to 3).
-
-**Code**
-
-- Sender: GPS_Module.ino (CAN_TIME_SYNC_MSG_ID)
-- Receiver: aio_server.py process_time_sync_message; Backup_Display.ino canHandleFrame
 
 ### 0x023 AHRS_CONTROL
 
@@ -690,6 +651,45 @@ Sensor modules broadcast their data on fixed IDs. The Pi EFIS listens, shares th
 
 - Sender: GPS_Module.ino (CAN_GPS3_MSG_ID)
 - Receiver: aio_server.py process_gps3_message; Backup_Display.ino canHandleFrame
+
+### 0x066 TIME_SYNC
+
+**UTC date and time**
+
+| | |
+|---|---|
+| Sent by | GPS module |
+| Received by | Pi EFIS, Backup display |
+| Rate | 1 s |
+| Data length | 8 bytes |
+| Status | ✅ Active |
+
+| Bytes | Field | Type | Unit | Description |
+|:-----:|-------|------|------|-------------|
+| 0 | `year` | uint8 | years since 2000 | 26 means 2026 |
+| 1 | `month` | uint8 | month | 1 to 12 |
+| 2 | `day` | uint8 | day | 1 to 31 |
+| 3 | `hour` | uint8 | h | UTC |
+| 4 | `minute` | uint8 | min |  |
+| 5 | `second` | uint8 | s |  |
+| 6-7 | `reserved` | uint8 |  | Always 0 |
+
+**Byte layout**
+
+| Byte | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 |
+|------|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
+| Field | `year` | `month` | `day` | `hour` | `minute` | `second` | `reserved` (1/2) | `reserved` (2/2) |
+
+**Notes**
+
+- Sent only once the GPS has received a valid date.
+- The EFIS decodes the bytes as signed (fine for the values here).
+- Moved from 0x19 on 2026-10-23, because 0x19 is MGL's "General Command" message from host 1, the only message the MGL RDAC XF acts on. Bench test with a real RDAC XF: a request-calibration command sent on 0x19 made it reply on 0x209, but the same command on 0x29, 0x49 and 0x66 got no reply.
+
+**Code**
+
+- Sender: GPS_Module.ino (CAN_TIME_SYNC_MSG_ID)
+- Receiver: aio_server.py process_time_sync_message; Backup_Display.ino canHandleFrame
 
 ### 0x081 MAG_X
 

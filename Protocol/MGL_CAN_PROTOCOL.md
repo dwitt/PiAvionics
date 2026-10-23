@@ -292,7 +292,7 @@ The device address is the upper 7 bits and the message type is the lower 4 bits,
 
 **Notes**
 
-- PiAvionics 0x19 (GPS time) uses this same ID. Byte 0 of the time message is the year, never 0 to 3 or 8 to 15, so the RDAC and ECB ignore it today.
+- PiAvionics no longer uses this ID: the GPS time moved to 0x66 on 2026-10-23. This is the only host message the RDAC XF acts on (bench test: a request-calibration command on 0x19 got a reply on 0x209; the same command on 0x29, 0x49 and 0x66 did not).
 
 ### 0x01A EXTENDER_COMMAND
 

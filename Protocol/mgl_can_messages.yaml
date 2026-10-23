@@ -133,7 +133,7 @@ messages:
        {bytes: "0", name: destination, type: uint8, desc: "0 to 3 = RDAC 1 to 4; 8 to 15 = ECB 1 to 8"},
        {bytes: "1", name: command,     type: uint8, desc: "RDAC: 0x81 request calibration, 0x82-0x86 set ambient/TC/analog/MAP/volt calibration, 0xA0 store in flash. ECB: 0 trip current, 1 trip speed, 2 WIGWAG state, 3 WIGWAG time, 4 breaker on/off, 5 request setup"},
        {bytes: "2-7", name: data, type: uint8, desc: "Depends on the command"}],
-     notes: ["PiAvionics 0x19 (GPS time) uses this same ID. Byte 0 of the time message is the year, never 0 to 3 or 8 to 15, so the RDAC and ECB ignore it today."]}
+     notes: ["PiAvionics no longer uses this ID: the GPS time moved to 0x66 on 2026-10-23. This is the only host message the RDAC XF acts on (bench test: a request-calibration command on 0x19 got a reply on 0x209; the same command on 0x29, 0x49 and 0x66 did not)."]}
 
   - {address_of: host, type: 10, name: EXTENDER_COMMAND, title: "iEFIS extender command (extender 1; types 10 to 13 address extenders 1 to 4)", to: [extender], dlc: "2-8",
      fields: [

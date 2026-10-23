@@ -424,7 +424,7 @@ def render_map(pi, mgl):
                if not device_overlap else
                "- ⛔ Some PiAvionics messages overlap MGL device blocks: " +
                ", ".join(f"`{hx(m['id'])}`" for m in device_overlap))
-    out.append("- ℹ️ Lower IDs win arbitration, so every PiAvionics ID (0x19 to 0x83) outranks all MGL device data "
+    out.append("- ℹ️ Lower IDs win arbitration, so every PiAvionics ID (0x23 to 0x83) outranks all MGL device data "
                "(0x100 and up). That is harmless at this bus load.")
     out.append("")
 

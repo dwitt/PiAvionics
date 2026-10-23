@@ -36,7 +36,7 @@ protocol:
     no addressed commands yet (see ISSUES.md issue 9).
   notes:
     - >
-      Lower IDs win bus arbitration. All PiAvionics IDs (0x19 to 0x83) are lower
+      Lower IDs win bus arbitration. All PiAvionics IDs (0x23 to 0x83) are lower
       than every MGL device ID (0x200 and up).
     - >
       Modules send each message on a timer (period_ms). Each interval varies by a flat +/- 20 ms about the period, drawn
@@ -98,34 +98,6 @@ nodes:
     code: null
 
 messages:
-
-  # ---------------------------------------------------------------------------
-  - id: 0x19
-    name: TIME_SYNC
-    title: UTC date and time
-    sender: gps
-    receivers: [efis, backup]
-    period_ms: 1000
-    dlc: 8
-    status: active
-    fields:
-      - {bytes: "0", name: year,   type: uint8, unit: years since 2000, desc: "26 means 2026"}
-      - {bytes: "1", name: month,  type: uint8, unit: month, desc: "1 to 12"}
-      - {bytes: "2", name: day,    type: uint8, unit: day, desc: "1 to 31"}
-      - {bytes: "3", name: hour,   type: uint8, unit: h, desc: UTC}
-      - {bytes: "4", name: minute, type: uint8, unit: min}
-      - {bytes: "5", name: second, type: uint8, unit: s}
-      - {bytes: "6-7", name: reserved, type: uint8, desc: "Always 0"}
-    notes:
-      - Sent only once the GPS has received a valid date.
-      - The EFIS decodes the bytes as signed (fine for the values here).
-      - >
-        ID 0x19 collides with MGL's "General Command" message from host 1
-        (see CAN_BUS_MAP.md). It works today only because byte 0 (the year)
-        is not a valid MGL destination (0 to 3).
-    code:
-      sender: "GPS_Module.ino (CAN_TIME_SYNC_MSG_ID)"
-      receiver: "aio_server.py process_time_sync_message; Backup_Display.ino canHandleFrame"
 
   # ---------------------------------------------------------------------------
   - id: 0x23
@@ -534,6 +506,33 @@ messages:
     code:
       sender: "GPS_Module.ino (CAN_GPS3_MSG_ID)"
       receiver: "aio_server.py process_gps3_message; Backup_Display.ino canHandleFrame"
+
+  - id: 0x66
+    name: TIME_SYNC
+    title: UTC date and time
+    sender: gps
+    receivers: [efis, backup]
+    period_ms: 1000
+    dlc: 8
+    status: active
+    fields:
+      - {bytes: "0", name: year,   type: uint8, unit: years since 2000, desc: "26 means 2026"}
+      - {bytes: "1", name: month,  type: uint8, unit: month, desc: "1 to 12"}
+      - {bytes: "2", name: day,    type: uint8, unit: day, desc: "1 to 31"}
+      - {bytes: "3", name: hour,   type: uint8, unit: h, desc: UTC}
+      - {bytes: "4", name: minute, type: uint8, unit: min}
+      - {bytes: "5", name: second, type: uint8, unit: s}
+      - {bytes: "6-7", name: reserved, type: uint8, desc: "Always 0"}
+    notes:
+      - Sent only once the GPS has received a valid date.
+      - The EFIS decodes the bytes as signed (fine for the values here).
+      - >
+        Moved from 0x19 on 2026-10-23, because 0x19 is MGL's "General Command" message from host 1,
+        the only message the MGL RDAC XF acts on. Bench test with a real RDAC XF: a request-calibration command
+        sent on 0x19 made it reply on 0x209, but the same command on 0x29, 0x49 and 0x66 got no reply.
+    code:
+      sender: "GPS_Module.ino (CAN_TIME_SYNC_MSG_ID)"
+      receiver: "aio_server.py process_time_sync_message; Backup_Display.ino canHandleFrame"
 
   # ---------------------------------------------------------------------------
   - id: 0x81
