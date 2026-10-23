@@ -18,7 +18,7 @@
 #include "XYZgeomag.hpp"         // WMM2025 magnetic declination (nhz2/XYZgeomag)
 #include "src/ModuleInfo/ModuleInfo.h"        // USB product name, startup log and '?' report
 
-#define VERSION "1.0.11"
+#define VERSION "1.0.12"
 
 ModuleInfo moduleInfo("GPS_Module", VERSION, __DATE__, __TIME__);
 
@@ -60,7 +60,7 @@ Adafruit_MCP2515 can(CAN_CS_PIN);
 #define CAN_GPS1_MSG_ID       0x63
 #define CAN_GPS2_MSG_ID       0x64
 #define CAN_GPS3_MSG_ID       0x65
-#define CAN_TIME_SYNC_MSG_ID  0x19
+#define CAN_TIME_SYNC_MSG_ID  0x66
 
 #define CAN_GPS1_PERIOD       1000    // milliseconds
 #define CAN_GPS2_PERIOD       1000    // milliseconds
