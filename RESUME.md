@@ -118,6 +118,39 @@ Safety: stacked wings are not hot-unplugged except where David chooses to (he pu
 re-insertion reboots the module). Cables, probes and antennas are fine. AIR pressure sensors share the Wire bus: pulling them
 live risks a stuck bus (cold pulls were done instead).
 
+## 2026-10-23: time sync moved, RDAC XF on the bench (Engine page planning)
+
+**Done and committed:** TIME_SYNC moved from 0x19 to 0x66 (GPS_Module 1.0.12, Backup_Display 1.7.8, aio_server 1.7.1; protocol docs
+regenerated; deployed to the Pi and checked on the bus, the backup and the EFIS time box both show UTC). Reason: 0x19 is MGL's
+General Command. Bench test with David's real RDAC XF: `00 81` (request calibration) on 0x19 got a reply on 0x209; the same
+frame on 0x29, 0x49 and 0x66 got none. The flash-write command (0xA0) was NOT tested.
+
+**RDAC XF is on the bench bus** (address 32, SEL A and B off, frames 0x201 to 0x209). Manual: `~/Documents/_E-Equipment_Manuals/MGL Avionics/RDAC XF MAP/RDAC XF INSTALATION.pdf`
+(text extract was in the session scratchpad, which is temporary). Baseline with nothing on the inputs: supply raw 685 (about 11.9 V),
+cold junction 16 C, RPM 0, all analogue inputs about 3908 (open, pull-ups on), thermocouples about 0 uncompensated (add the cold
+junction), MAP about 1522 raw, CURR ramps to about 1525 while open. DIP switches now: AUX1 and AUX2 PU on, OIP PU on, OIP PD off,
+fuel P, coolant, fuel level 1 and 2 PU on, rest off. There is no OIL T pull-up switch (fixed 1500 ohm). Leave the unused pull-ups on
+(steady open reading beats a floating one).
+
+**Installation: AeroVee 2.1 (air cooled, gravity fuel, no coolant, no fuel pressure or level; sight gauge)**
+- Manual: `~/Documents/Sonex/AeroVee_2point1_Manual.pdf`; CHT probe sheet in the saved site under
+  `_P-Projects/Sonex_Website/saved-site/www.aeroconversions.com/support/instruction_sheets/CHT_Install.pdf`.
+- Ignition: two Magnatrons (P-lead switched) plus electronic secondary. Tach options: alternator 6 pulses per rev (documented), or
+  David's Littelfuse 55505-00-02-A Hall geartooth sensor on the flywheel if it has a ring gear (not in the manual, tooth count unknown,
+  flywheel carries magnets so test for interference).
+- Sensors David has: VDO oil pressure (ACV-P01-76, 10 to 180 ohm, to OIL P) and VDO oil temperature (ACV-P01-77, 10 to 180 ohm, to OIL T);
+  MGL magnetic current sensor (Aircraft Spruce 11-10422; gain 140 = +/-24 A AWG14 folded, 85 = +/-12 A, 500 = +/-50 A; black wire to the
+  RDAC reference ground which goes to the engine block; zero it with the sensor off the conductor); LM335 probe (two wire, to AUX1 with
+  PU on; kelvin = volts x 100); a MAP sensor (the RDAC XF MAP internal one; probably unused). Thermocouples (type K or J and count): still
+  to be checked. AeroConversions CHT probes screw to the head near the plug (#32 hole, 9/16 deep, #6 self-tapping screw), comparable to plug probes.
+- Limits from the manual (for the Engine page): idle 800 to 900, cruise 3200 +/- 200, max 4000 rpm; oil T 160 min for take-off to 240 F max;
+  oil P 10 psi min at idle, 100 max, 40 to 50 cruise; CHT 350 to 375 cruise, 420 (5 min) climb, 450 max; EGT max 1400 F.
+
+**Next:** (1) David finds the thermocouples, tells me K or J and how many (EGT on TC1 to 4, CHT on TC5 to 8). (2) Bench-check OIL P with
+a 100 ohm resistor to ground (expect roughly 10% of 3908 if the pull-up is 1000 ohm), then the real senders. (3) Work out the
+raw-to-engineering conversions (VDO curves, LM335, current sensor scale and zero, MAP against the AIR static pressure). (4) Decide what
+the backup Engine page shows. Not decided: G on the Flight page; backup heartbeat and versions; plan step 7 system test.
+
 ## Handy facts
 - Boards: `/dev/serial/by-id/usb-Adafruit_*`; serials AIR 38503039350B102C, GPS 38503039350B242B,
   IMU DF625857C7793E2F. Flash: `Sensors/flash_remote.sh <Sketch> <serial>`.
@@ -127,4 +160,4 @@ live risks a stuck bus (cold pulls were done instead).
 - Regenerate protocol docs: `Protocol/.venv/bin/python Protocol/generate_can_docs.py`.
 - When scripting edits to ISSUES.md, check the slice has no other '## ' or '### ' headings first.
 - Memory notes: `project_sensor_modules_status.md` in the Claude project memory folder.
-- Git was clean on 2026-10-22 (nothing untracked).
+- macOS sometimes blocks the shell/Edit tool on repo files (quarantine/macl flags); `xattr -rd com.apple.quarantine Protocol` and the same for `com.apple.macl` fixed it, and `cd /` before `cd`-ing into the repo helps when git says it cannot read the working directory.
