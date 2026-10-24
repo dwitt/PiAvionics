@@ -151,6 +151,44 @@ a 100 ohm resistor to ground (expect roughly 10% of 3908 if the pull-up is 1000 
 raw-to-engineering conversions (VDO curves, LM335, current sensor scale and zero, MAP against the AIR static pressure). (4) Decide what
 the backup Engine page shows. Not decided: G on the Flight page; backup heartbeat and versions; plan step 7 system test.
 
+## 2026-10-24: thermocouple decision and RDAC wiring plan
+
+**Decided:** type K for all 8 thermocouples: 4 EGT (one per exhaust pipe, pipe about 1-1/2 in diameter) on TC1 to TC4, 4 CHT on
+TC5 to TC8. EGT probe still to choose and order: Sonex "Clamp Small, K Type" (ask Sonex for the clamp range) or Grand Rapids
+Aircraft Spruce 11-09535 (1 to 2 in). Prefer 316 stainless with glass-fibre insulated leads (RDAC manual). The Blaze manual warns
+against 310 stainless for 4-stroke EGT probes (the MGL bolt-in 11-05567 is 310). CHT probes: AeroConversions ACV-CHT-VW-K.
+The AeroVee manual says do not trim the EGT probe wires but gives no reason (CHT wires may be trimmed).
+
+**Primary engine monitor is the MGL Blaze EMS-2** (manual: `~/Documents/_E-Equipment_Manuals/MGL Avionics/Blaze EMS-2/Blaze EMS-2.pdf`);
+the backup display Engine page is the backup. The Blaze reads the RDAC over CAN (CAN Low pin 12 purple, CAN High pin 13 pink).
+With an RDAC its analogue 1 to 4 are OILT, OILP, AUX1, AUX2. Not known: what it transmits, or whether it reacts to our IDs. Plan:
+one shared CAN bus (RDAC and Blaze added to the existing bus), then bench-sniff once David has the Blaze wired.
+
+**RDAC connections (from the RDAC XF manual)**
+
+| Terminal | Connect to | DIP switch |
+|---|---|---|
+| DB9 5 (and 9) GND | engine block, bonded to battery negative (not direct to battery) | |
+| DB9 8 VIN | +12 V via switch and breaker | |
+| DB9 6 / 7 | CAN+ (CANH) / CAN- (CANL) | |
+| DB9 1 to 4 | not used | |
+| TC1 to TC4 | 4 EGT, K, yellow + red - | |
+| TC5 to TC8 | 4 CHT, K, yellow + red - | |
+| OIL P | VDO pressure sender, single wire, case grounds via engine | OIPP PU on, PD off |
+| OIL T | VDO temperature sender, single wire | none (fixed 1500 ohm) |
+| AUX1 | LM335 OAT, + to AUX1, - to GND | AUX1 PU on |
+| CURR | MGL current sensor green; red to RDAC supply, black to GND | none |
+| RPM1 / RPM2 | Magnatron P-leads, 10 kohm in line, ballast OFF for a magneto (or the Hall pickup) | to be decided |
+| FUEL P, COOL, FL1, FL2, AUX2, FF1, FF2, 5V | not used, leave open | pull-ups on |
+
+CAN rules from the manual: 120 ohm at each end only, stubs under 20 cm, twisted pair (the RDAC is on the engine side of the
+firewall, so daisy-chain the bus to it). Unchecked: which TC screw is + (check markings on the unit), and how the Littelfuse Hall
+sensor connects to RPM (check its datasheet).
+
+**Order of work:** (1) RDAC alone on the bench, LED flashing at 1 Hz, frames match baseline. (2) Resistor checks on OIL P and OIL T.
+(3) Sensors one at a time: VDO senders, LM335, current sensor (zeroed), thermocouples. (4) Blaze on the bus, check it reads the
+RDAC, sniff what it sends. (5) Engine install: EGTs, CHTs, then RPM.
+
 ## Handy facts
 - Boards: `/dev/serial/by-id/usb-Adafruit_*`; serials AIR 38503039350B102C, GPS 38503039350B242B,
   IMU DF625857C7793E2F. Flash: `Sensors/flash_remote.sh <Sketch> <serial>`.
