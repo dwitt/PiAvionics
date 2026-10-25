@@ -31,10 +31,11 @@
           between the arrow and a blank, in the column between the label and the value.
   There is no timeout.
 
-  Pages (PG, bottom left of every page; adjusting it changes the page): 1 Flight, 2 GPS, 3 System, 4 Versions. An Engine page is to come.
+  Pages (PG, bottom left of every page; adjusting it changes the page): 1 Flight, 2 GPS, 3 Engine, 4 System, 5 Versions.
   The fields on each page, in clockwise order from the lower right:
       Flight:  QNH (lower right, only on pages that show altitude), PG
       GPS:     PG
+      Engine:  PG
       System:  PG, BL (backlight on/off, upper left)
       Versions: PG (the module versions from the heartbeats: I IMU, A AIR, G GPS, E EFIS, D this display)
   Brightness and contrast cannot be set from software with this backpack: the backlight is on/off and the contrast is a pot.
@@ -76,7 +77,7 @@
 #include <Adafruit_seesaw.h>
 #include "src/Adafruit_MCP2515/src/Adafruit_MCP2515.h"   // patched copy, see Sensors/Libraries/README.md
 
-#define VERSION "1.7.11"
+#define VERSION "1.7.12"
 
 const uint8_t LCD_COLS = 20;
 const uint8_t LCD_ROWS = 4;
@@ -93,6 +94,8 @@ const long CAN_BAUDRATE = 250000;
 const uint16_t ID_AIR_DATA = 0x28, ID_OAT = 0x2A, ID_AHRS_ORIENT = 0x48, ID_AHRS_ACCEL = 0x49;
 const uint16_t ID_TIME_SYNC = 0x66, ID_GPS_POSITION = 0x63, ID_GPS_SPEED_TRACK = 0x64, ID_GPS_STATUS = 0x65;
 const uint16_t ID_HEARTBEAT_FIRST = 0x700;           // 0x700 EFIS, 0x701 IMU, 0x702 AIR, 0x703 GPS
+// MGL RDAC XF at CAN address 32: ID = 0x200 + message type (Protocol/mgl_can_messages.yaml). It has no heartbeat.
+const uint16_t ID_RDAC_TC_1_4 = 0x202, ID_RDAC_TC_5_8 = 0x203, ID_RDAC_ANALOG = 0x205, ID_RDAC_SUPPLY = 0x207, ID_RDAC_RPM_MAP = 0x208;
 const uint16_t ID_HEARTBEAT_BACKUP = 0x704;          // this display
 const uint32_t HEARTBEAT_PERIOD_MS = 1000;
 const int16_t MARKER_INT16 = 0x7FFF;
@@ -103,6 +106,8 @@ const uint32_t MAX_AGE_ACCEL_MS = 500;
 const uint32_t MAX_AGE_OAT_MS = 1500;
 const uint32_t MAX_AGE_GPS_MS = 3500;               // the GPS frames, the status and the time sync come once a second
 const uint32_t MAX_AGE_HEARTBEAT_MS = 3000;
+const uint32_t MAX_AGE_RDAC_FAST_MS = 1000;          // 0x208 (every 200 ms): older than this and the RDAC is lost, all engine values fail
+const uint32_t MAX_AGE_RDAC_MS = 1500;               // the other RDAC frames (every 500 ms); Protocol/engine_conversions.yaml timeouts
 const int GPS_TRACK_MIN_SPEED_KT = 2;                // the module holds the track at 0 below this ground speed
 const uint32_t STATUS_WARNING_MS = 5000;             // a module that has just failed flashes quickly for this long...
 const uint32_t STATUS_WARNING_FLASH_MS = 500;        // (letter, then dash, each for this long)
@@ -123,9 +128,10 @@ struct Position { uint8_t col, row; };
 const Position MARKER_POS[FIELD_COUNT] = { { 13, 3 }, { 2, 3 }, { 2, 0 } };   // the column between the label and the value
 const Field FLIGHT_FIELDS[] = { FIELD_QNH, FIELD_PAGE };           // clockwise from the lower right
 const Field GPS_FIELDS[] = { FIELD_PAGE };
+const Field ENGINE_FIELDS[] = { FIELD_PAGE };
 const Field SYSTEM_FIELDS[] = { FIELD_PAGE, FIELD_BACKLIGHT };
 const Field VERSIONS_FIELDS[] = { FIELD_PAGE };
-const uint8_t PAGE_FLIGHT = 1, PAGE_GPS = 2, PAGE_SYSTEM = 3, PAGE_VERSIONS = 4;
+const uint8_t PAGE_FLIGHT = 1, PAGE_GPS = 2, PAGE_ENGINE = 3, PAGE_SYSTEM = 4, PAGE_VERSIONS = 5;
 const char MARKER_CHAR = 0x7E;                       // the built-in right arrow
 const uint8_t BAR_LEFT_SLOT = 6, BAR_RIGHT_SLOT = 7; // custom characters: the lines on each side of the horizon (columns 7 and 11, rows 0 to 2)
 const uint8_t SLIP_COL = 8, SLIP_ROW = 2;            // the slip track: 3 cells under the horizon
@@ -136,7 +142,7 @@ const int SLIP_POSITIONS = 13;                       // its left pixel can be at
 const float SLIP_FILTER = 0.2f;                      // low pass at each 100 ms redraw (about 0.5 s)
 const int QNH_MIN = 2800;                            // inHg x 100
 const int QNH_MAX = 3100;
-const int PAGE_COUNT = 4;
+const int PAGE_COUNT = 5;
 
 // mini horizon
 const uint8_t HZ_COL = 8;            // top left cell: in the middle of the screen, rows 0 and 1
@@ -174,6 +180,10 @@ Signal sigGpsLat, sigGpsLon;                         // deg x 1e6
 Signal sigGpsSpeed, sigGpsAlt, sigGpsTrack;          // kt, ft, deg (magnetic)
 Signal sigGpsHour, sigGpsMinute;                     // UTC
 Signal sigGpsFixType, sigGpsSats, sigGpsHdop;        // fix type 1 none / 2 2D / 3 3D, satellites, HDOP x 100
+Signal sigTc[8];                                     // RDAC thermocouples 1 to 8, deg C before the cold junction is added (1 to 4 EGT, 5 to 8 CHT)
+Signal sigRdacColdJunction, sigRdacSupply;           // deg C; volts x 57.3758 (raw)
+Signal sigRdacOilT, sigRdacOilP;                     // raw ADC counts
+Signal sigRdacRpm, sigRdacCurrent;                   // 0x208: raw rpm1 (pulses), raw current ADC counts. sigRdacRpm also times the RDAC itself
 struct Heartbeat {
   volatile uint8_t state = 0;
   volatile uint8_t version[3] = { 0, 0, 0 };         // major, minor, patch
@@ -195,6 +205,11 @@ struct View {
   bool hasPosition = false, hasGpsSpeed = false, hasGpsTrack = false, hasGpsAlt = false, hasTime = false, hasFixStatus = false;
   double lat = 0, lon = 0;
   int gpsSpeed = 0, gpsTrack = 0, gpsAlt = 0, hour = 0, minute = 0, fixType = 1, sats = 0, hdop100 = 0;
+  // engine (RDAC XF), converted as in Protocol/engine_conversions.yaml
+  bool hasRpm = false, hasOilP = false, hasOilT = false, hasVolts = false, hasAmps = false;
+  bool hasEgt[4] = { false, false, false, false }, hasCht[4] = { false, false, false, false };
+  int rpm = 0, oilT = 0, egt[4] = { 0, 0, 0, 0 }, cht[4] = { 0, 0, 0, 0 };
+  float oilP = 0, volts = 0, amps = 0;
 };
 
 // Core 0 can store a time a moment later than the 'now' core 1 read, so the age can be negative: use a signed difference
@@ -204,6 +219,62 @@ bool ageWithin(uint32_t time, uint32_t maxAgeMs, uint32_t now) {
 
 bool fresh(const Signal &sig, uint32_t maxAgeMs, uint32_t now) {
   return sig.valid && ageWithin(sig.time, maxAgeMs, now);
+}
+
+// --- RDAC XF conversions: keep in step with Protocol/engine_conversions.yaml (reference: Protocol/engine_convert.py) ---------
+const float RDAC_ADC_FULL_SCALE = 3908;              // an open input reads this
+const float OILP_PULLUP_OHM = 1000, OILT_PULLUP_OHM = 1500;
+const float RDAC_SUPPLY_COUNTS_PER_VOLT = 57.3758f;
+const float RPM_PULSES_PER_REV = 0;                  // 0 = the RPM source is not chosen yet, so RPM shows as dashes
+const int AMPS_ZERO_RAW = -1;                        // -1 = the current sensor is not calibrated yet, so amps shows as dashes
+const float AMPS_PER_COUNT = 0;
+
+// Sender resistance from the raw divider reading, -1 when the input is open or shorted
+float senderOhms(int raw, float pullupOhm) {
+  if (raw <= 0 || raw >= RDAC_ADC_FULL_SCALE - 20) return -1;
+  return pullupOhm * raw / (RDAC_ADC_FULL_SCALE - raw);
+}
+
+// VDO 5 bar (80 psi) sender: R = a p^2 + b p + c. Returns NAN when open, shorted or beyond the sender's range
+float oilPressureBar(float ohms) {
+  if (ohms < 0) return NAN;
+  const float a = -0.3682f, b = 36.465f, c = 10.648f;
+  if (ohms <= c) return 0;
+  const float disc = b * b - 4 * a * (c - ohms);
+  if (disc < 0) return NAN;
+  const float p = (-b + sqrtf(disc)) / (2 * a);
+  return (p > 5.3f) ? NAN : p;
+}
+
+// VDO 150 degC (300 F) sender: Steinhart-Hart through 322.8 ohm at 50 C, 36.5 at 120 and 18.6 at 150. NAN outside 40 to 160 C
+float oilTempC(float ohms) {
+  if (ohms < 0) return NAN;
+  const double ln = log((double)ohms);
+  const double t = 1.0 / (0.0015525513345798962 + 0.00028091203795547765 * ln - 4.1934592032947954e-07 * ln * ln * ln) - 273.15;
+  return (t < 40 || t > 160) ? NAN : (float)t;
+}
+
+void engineViewFromCan(View &v, uint32_t now) {
+  if (!ageWithin(sigRdacRpm.time, MAX_AGE_RDAC_FAST_MS, now)) return;        // the RDAC is lost: everything stays missing
+  const bool tcOk = fresh(sigRdacColdJunction, MAX_AGE_RDAC_MS, now);
+  for (int i = 0; i < 4; i++) {
+    v.hasEgt[i] = tcOk && fresh(sigTc[i], MAX_AGE_RDAC_MS, now);
+    v.egt[i] = sigTc[i].value + sigRdacColdJunction.value;
+    v.hasCht[i] = tcOk && fresh(sigTc[4 + i], MAX_AGE_RDAC_MS, now);
+    v.cht[i] = sigTc[4 + i].value + sigRdacColdJunction.value;
+  }
+  const float tempC = oilTempC(senderOhms(sigRdacOilT.value, OILT_PULLUP_OHM));
+  v.hasOilT = fresh(sigRdacOilT, MAX_AGE_RDAC_MS, now) && !isnan(tempC);
+  v.oilT = lroundf(tempC);
+  const float bar = oilPressureBar(senderOhms(sigRdacOilP.value, OILP_PULLUP_OHM));
+  v.hasOilP = fresh(sigRdacOilP, MAX_AGE_RDAC_MS, now) && !isnan(bar);
+  v.oilP = bar;
+  v.hasVolts = fresh(sigRdacSupply, MAX_AGE_RDAC_MS, now);
+  v.volts = sigRdacSupply.value / RDAC_SUPPLY_COUNTS_PER_VOLT;
+  v.hasRpm = RPM_PULSES_PER_REV > 0;
+  v.rpm = lroundf(sigRdacRpm.value / (RPM_PULSES_PER_REV > 0 ? RPM_PULSES_PER_REV : 1));
+  v.hasAmps = AMPS_ZERO_RAW >= 0 && fresh(sigRdacCurrent, MAX_AGE_RDAC_FAST_MS, now);
+  v.amps = (sigRdacCurrent.value - AMPS_ZERO_RAW) * AMPS_PER_COUNT;
 }
 
 void viewFromCan(View &v, uint32_t now) {
@@ -241,6 +312,7 @@ void viewFromCan(View &v, uint32_t now) {
   v.fixType = sigGpsFixType.value;
   v.sats = sigGpsSats.value;
   v.hdop100 = sigGpsHdop.value;
+  engineViewFromCan(v, now);
 }
 
 // --- Simulation (M 1) -------------------------------------------------------------------------------------------------
@@ -269,6 +341,17 @@ void viewFromSimulation(View &v, uint32_t now) {
   v.verticalSpeed = (int)(500 * cos(t * 0.1f));
   v.heading = ((int)(t * 6) + 270) % 360;
   v.oat = 12;
+  v.hasRpm = v.hasOilP = v.hasOilT = v.hasVolts = v.hasAmps = true;
+  v.rpm = 2450 + (int)(50 * sin(t * 0.5f));
+  v.oilP = 3.4f + 0.2f * sin(t * 0.3f);
+  v.oilT = 95;
+  v.volts = 13.9f;
+  v.amps = -3.5f;
+  for (int i = 0; i < 4; i++) {
+    v.hasEgt[i] = v.hasCht[i] = true;
+    v.egt[i] = 690 + 10 * i + (int)(8 * sin(t * 0.4f + i));
+    v.cht[i] = 170 + 4 * i + (int)(3 * sin(t * 0.3f + i));
+  }
   v.g = 1.0f + 0.1f * sin(t * 0.7f);
   v.hasAccelY = true;
   v.accelYg = 0.12f * sin(t * 0.6f);
@@ -457,6 +540,7 @@ bool encoderBegin() {
 
 const Field *pageFields(int forPage, int &count) {
   if (forPage == PAGE_SYSTEM) { count = sizeof(SYSTEM_FIELDS) / sizeof(SYSTEM_FIELDS[0]); return SYSTEM_FIELDS; }
+  if (forPage == PAGE_ENGINE) { count = sizeof(ENGINE_FIELDS) / sizeof(ENGINE_FIELDS[0]); return ENGINE_FIELDS; }
   if (forPage == PAGE_VERSIONS) { count = sizeof(VERSIONS_FIELDS) / sizeof(VERSIONS_FIELDS[0]); return VERSIONS_FIELDS; }
   if (forPage == PAGE_GPS) { count = sizeof(GPS_FIELDS) / sizeof(GPS_FIELDS[0]); return GPS_FIELDS; }
   count = sizeof(FLIGHT_FIELDS) / sizeof(FLIGHT_FIELDS[0]);
@@ -605,6 +689,7 @@ void storeSignal(Signal &sig, int32_t value, bool valid, uint32_t now) {
 }
 
 int16_t int16At(const uint8_t *b, int i) { return (int16_t)(b[i] | (b[i + 1] << 8)); }
+uint16_t uint16At(const uint8_t *b, int i) { return (uint16_t)(b[i] | (b[i + 1] << 8)); }
 
 void canHandleFrame(uint16_t id, const uint8_t *b, uint32_t now) {
   if (id == ID_AIR_DATA) {
@@ -644,6 +729,18 @@ void canHandleFrame(uint16_t id, const uint8_t *b, uint32_t now) {
     qnhAirReport(b, now);
   } else if (id >= ID_QNH_FIRST && id <= ID_QNH_LAST) {
     qnhHeard(b, now);
+  } else if (id == ID_RDAC_TC_1_4 || id == ID_RDAC_TC_5_8) {
+    const int first = (id == ID_RDAC_TC_1_4) ? 0 : 4;
+    for (int i = 0; i < 4; i++) storeSignal(sigTc[first + i], int16At(b, 2 * i), true, now);
+  } else if (id == ID_RDAC_ANALOG) {
+    storeSignal(sigRdacOilT, uint16At(b, 0), true, now);
+    storeSignal(sigRdacOilP, uint16At(b, 2), true, now);
+  } else if (id == ID_RDAC_SUPPLY) {
+    storeSignal(sigRdacColdJunction, int16At(b, 0), true, now);
+    storeSignal(sigRdacSupply, uint16At(b, 2), true, now);
+  } else if (id == ID_RDAC_RPM_MAP) {
+    storeSignal(sigRdacRpm, uint16At(b, 0), true, now);
+    storeSignal(sigRdacCurrent, uint16At(b, 6), true, now);
   } else if (id >= ID_HEARTBEAT_FIRST && id < ID_HEARTBEAT_FIRST + 4) {
     Heartbeat &hb = heartbeats[id - ID_HEARTBEAT_FIRST];
     hb.state = b[4];
@@ -849,6 +946,46 @@ void drawGpsText(const View &v, uint32_t now) {
   printAt(0, 3, buf, 20);
 }
 
+// A number in a field of the given width, or dashes when it is missing
+void numberOrDashes(char *out, size_t size, bool has, const char *format, float value, uint8_t width) {
+  char num[12];
+  if (has) snprintf(num, sizeof(num), format, value);
+  else memset(num, '-', width), num[width] = 0;
+  snprintf(out, size, "%*s", width, num);
+}
+
+// Highest of the four values that are present: its cylinder number (1 to 4) or 0 when none is
+int highestOf(const bool has[4], const int value[4]) {
+  int best = 0;
+  for (int i = 0; i < 4; i++) if (has[i] && (best == 0 || value[i] > value[best - 1])) best = i + 1;
+  return best;
+}
+
+void drawEngineText(const View &v, uint32_t now) {
+  char buf[LCD_COLS + 1], rpm[8], oilP[8], oilT[8], hot[8], volts[8], amps[8];
+  numberOrDashes(rpm, sizeof(rpm), v.hasRpm, "%.0f", v.rpm, 4);
+  numberOrDashes(oilP, sizeof(oilP), v.hasOilP, "%.1f", v.oilP, 4);
+  numberOrDashes(oilT, sizeof(oilT), v.hasOilT, "%.0f", v.oilT, 4);
+  snprintf(buf, sizeof(buf), "RPM %s  OP %sbar", rpm, oilP);
+  printAt(0, 0, buf, 20);
+
+  const int e = highestOf(v.hasEgt, v.egt);
+  numberOrDashes(hot, sizeof(hot), e > 0, "%.0f", e > 0 ? v.egt[e - 1] : 0, 3);
+  snprintf(buf, sizeof(buf), "EGT%c %s  OT %sC", e > 0 ? '0' + e : '-', hot, oilT);
+  printAt(0, 1, buf, 20);
+
+  const int c = highestOf(v.hasCht, v.cht);
+  numberOrDashes(hot, sizeof(hot), c > 0, "%.0f", c > 0 ? v.cht[c - 1] : 0, 3);
+  snprintf(buf, sizeof(buf), "CHT%c %s", c > 0 ? '0' + c : '-', hot);
+  printAt(0, 2, buf, 20);
+
+  numberOrDashes(volts, sizeof(volts), v.hasVolts, "%.1f", v.volts, 4);
+  numberOrDashes(amps, sizeof(amps), v.hasAmps, "%+.1f", v.amps, 5);
+  snprintf(buf, sizeof(buf), "PG %d  %sV %sA", page, volts, amps);
+  putMarker(buf, FIELD_PAGE, now);
+  printAt(0, 3, buf, 20);
+}
+
 // "OK", "DG" degraded, "ST" starting, "FL" failed, "--" no heartbeat for 3 s
 const char *moduleStateText(uint8_t node, uint32_t now) {
   const Heartbeat &hb = heartbeats[node];
@@ -954,6 +1091,7 @@ void loop1() {
   if (now - lastText < 100) return;            // the text rows refresh at 10 Hz
   lastText = now;
   if (page == PAGE_VERSIONS) drawVersionsText(now);
+  else if (page == PAGE_ENGINE) drawEngineText(v, now);
   else if (page == PAGE_SYSTEM) drawSystemText(now);
   else if (page == PAGE_GPS) drawGpsText(v, now);
   else drawFlightText(v, now);
