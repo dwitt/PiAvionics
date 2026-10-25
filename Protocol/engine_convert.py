@@ -11,7 +11,7 @@ import struct
 
 import yaml
 
-VERSION = "1.0.0"
+VERSION = "1.0.1"
 
 RDAC_BASE = 0x200
 _TABLE = None
@@ -57,8 +57,17 @@ def temperature_c(r):
     return t if low <= t <= high else None
 
 
-def convert(frames):
-    """frames: {CAN id: 8 data bytes} for 0x202 to 0x208 (address 32)."""
+def convert(frames, ages=None):
+    """frames: {CAN id: 8 data bytes} for 0x202 to 0x208 (address 32).
+    ages: {CAN id: seconds since that frame arrived}. A frame older than its timeout, or a missing age, counts as
+    missing, and when the RDAC is lost (0x208 too old) every value is None. Without ages nothing is timed out."""
+    if ages is not None:
+        t = table()["timeouts"]
+        if ages.get(t["rdac_lost"]["frame"], 1e9) > t["rdac_lost"]["seconds"]:
+            frames = {}
+        else:
+            frames = {i: d for i, d in frames.items() if ages.get(i, 1e9) <= t["frames"].get(i, 1e9)}
+
     def u16(i, n):
         d = frames.get(RDAC_BASE + i)
         return struct.unpack_from("<H", d, n)[0] if d is not None and len(d) >= n + 2 else None
@@ -94,6 +103,14 @@ def _check():
     assert resistance(3908, "oil_temp") is None and pressure_bar(None) is None
     assert pressure_bar(10.0) == 0.0
     assert abs(pressure_bar(184) - 5.0) < 0.1
+    live = {0x202: bytes(8), 0x203: bytes(8), 0x205: bytes([0x29, 1, 0x44, 0xF, 0, 0, 0, 0]), 0x207: bytes([18, 0, 0xAF, 2]),
+            0x208: bytes(8)}
+    fresh = {i: 0.1 for i in live}
+    assert convert(live, fresh)["volts"] is not None
+    lost = convert(live, {**fresh, 0x208: 1.2})
+    assert all(v is None for k, v in lost.items() if k not in ("egt", "cht")) and lost["egt"] == [None] * 4 and lost["cht"] == [None] * 4
+    assert convert(live, {**fresh, 0x207: 2.0})["volts"] is None and convert(live, {**fresh, 0x207: 2.0})["egt"][0] is None
+    assert convert(live, {**fresh, 0x205: 2.0})["oil_temp"] is None and convert(live, fresh)["oil_temp"] is not None
     print("engine_convert", VERSION, "self-check OK")
 
 

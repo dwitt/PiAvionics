@@ -2,14 +2,27 @@
 # Engine data conversions: RDAC XF raw values to engineering units.
 #
 # One table for both displays. The EFIS (Python) and the backup display (C++) each follow it, so a
-# change is made here first. Reference implementation: Protocol/engine_convert.py (VERSION 1.0.0).
+# change is made here first. Reference implementation: Protocol/engine_convert.py (VERSION 1.0.1).
 # RDAC frames are in Protocol/mgl_can_messages.yaml (types 2 to 8; ID = 0x200 + type for address 32).
 #
 # status: checked = compared with the real sender or bench readings; fitted = built from published points,
 #         to be checked on the engine; pending = needs a decision or a calibration before it gives a number.
 # =============================================================================
 
-version: "1.0.0"
+version: "1.0.1"
+
+timeouts:
+  # The RDAC sends no heartbeat, status or version (MGL CAN protocol), so a lost RDAC shows only as frames that stop.
+  # A value is treated as lost when its frame is older than this (seconds, about three periods).
+  rdac_lost: {frame: 0x208, seconds: 1.0, note: "the fastest frame (200 ms). When it is older than this the RDAC is lost and EVERY engine value is shown as failed"}
+  frames:
+    0x208: 1.0     # rpm, current
+    0x202: 1.5     # thermocouples 1 to 4
+    0x203: 1.5     # thermocouples 5 to 8
+    0x205: 1.5     # oil temperature, oil pressure, aux
+    0x207: 1.5     # cold junction (needed by every thermocouple) and supply volts
+  also_failed: "an open input (raw at the full scale, 3908) or a shorted input (raw near 0) is a failed sender, not a reading"
+  status: fitted
 
 resistive_input:
   # The RDAC pulls the input up to its supply through a resistor and reads the divider. OILP 1000 ohm,
