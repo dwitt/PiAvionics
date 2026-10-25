@@ -66,7 +66,8 @@
       H        hang core 1 on purpose, to test the watchdog
       U <ms>   horizon update period in ms (default 100, 0 = as fast as the display allows)
       S <hz>   sweep the roll +/-45 degrees and the pitch +/-10 degrees at this many cycles per second (0 = off)
-  Once a second the serial port shows how many horizon updates were made and the mean time of one.
+  Each turn or push of the encoder prints the mode, selected field, QNH and page. Once a second the serial port shows how many
+  horizon updates were made and the mean time of one, the CAN frames per second and the QNH state.
 */
 
 #include <Wire.h>
@@ -74,7 +75,7 @@
 #include <Adafruit_seesaw.h>
 #include "src/Adafruit_MCP2515/src/Adafruit_MCP2515.h"   // patched copy, see Sensors/Libraries/README.md
 
-#define VERSION "1.7.8"
+#define VERSION "1.7.9"
 
 const uint8_t LCD_COLS = 20;
 const uint8_t LCD_ROWS = 4;
