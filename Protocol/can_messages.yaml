@@ -579,7 +579,7 @@ messages:
   # ---------------------------------------------------------------------------
   # HEARTBEATS (ISSUES.md issues 9 and 13). One ID per node, 0x700 + module number,
   # all with the same layout. Module numbers: 0 EFIS (0x700, planned), 1 IMU, 2 AIR,
-  # 3 GPS, 4 EMS (reserved). 0x700 to 0x7FF is free in the MGL map, and
+  # 3 GPS, 4 backup display (an EMS, if added, takes 5; ModuleInfo.h still reserves 4 for it). 0x700 to 0x7FF is free in the MGL map, and
   # being the highest IDs the heartbeats lose arbitration to all flight data.
   - id: 0x701
     name: IMU_HEARTBEAT
@@ -706,6 +706,29 @@ messages:
     code:
       sender: "aio_server.py send_efis_heartbeat (efis_heartbeat.py), EFIS server 1.6.1 onward"
       receiver: "Backup_Display.ino"
+
+  # ---------------------------------------------------------------------------
+  - id: 0x704
+    name: BACKUP_HEARTBEAT
+    title: Backup display heartbeat, version and health
+    sender: backup
+    receivers: [efis]
+    period_ms: 1000
+    dlc: 8
+    status: active
+    timeout_ms: 3000
+    fields: *heartbeat_fields
+    notes:
+      - >
+        Same layout as the module heartbeats (0x701 and the rules there), module number 4.
+        Sent from Backup_Display 1.7.10 (2026-10-25), checked on the bus. The EFIS does not read it yet.
+      - >
+        State: 0 until the second core has started, then 1, or 2 if the rotary encoder was not found. The display halts
+        and restarts through the watchdog if the LCD is missing, so it never sends 3.
+        Sensors mask: bit 0 LCD, bit 1 encoder.
+    code:
+      sender: "Backup_Display.ino heartbeatService"
+      receiver: "not written yet (aio_server.py)"
 
 # IDs that code refers to but which carry no CAN traffic
 reserved_ids:

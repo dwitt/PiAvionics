@@ -36,6 +36,7 @@ MGL splits an ID into a device address (upper 7 bits) and a message type (lower 
 | `0x701` | IMU_HEARTBEAT | 112 | 1 | ✅ Not used by MGL |
 | `0x702` | AIR_HEARTBEAT | 112 | 2 | ✅ Not used by MGL |
 | `0x703` | GPS_HEARTBEAT | 112 | 3 | ✅ Not used by MGL |
+| `0x704` | BACKUP_HEARTBEAT | 112 | 4 | ✅ Not used by MGL |
 
 ## Findings
 
@@ -62,7 +63,7 @@ MGL splits an ID into a device address (upper 7 bits) and a message type (lower 
 | `0x440`–`0x45F` | 68–69 | External MGL autopilot |
 | `0x460`–`0x7FF` | 70–127 | **Free.** Not used by MGL |
 
-PiAvionics IDs currently in use: `0x023`, `0x028`, `0x029`, `0x02A`, `0x02B`, `0x02C`, `0x02D`, `0x02E`, `0x02F`, `0x032`, `0x048`, `0x049`, `0x051`, `0x052`, `0x053`, `0x063`, `0x064`, `0x065`, `0x066`, `0x081`, `0x082`, `0x083`, `0x700`, `0x701`, `0x702`, `0x703`.
+PiAvionics IDs currently in use: `0x023`, `0x028`, `0x029`, `0x02A`, `0x02B`, `0x02C`, `0x02D`, `0x02E`, `0x02F`, `0x032`, `0x048`, `0x049`, `0x051`, `0x052`, `0x053`, `0x063`, `0x064`, `0x065`, `0x066`, `0x081`, `0x082`, `0x083`, `0x700`, `0x701`, `0x702`, `0x703`, `0x704`.
 
 ## Estimated bus load
 
@@ -74,8 +75,8 @@ Worst case (every frame at maximum bit stuffing) at 250 kbit/s. Only messages th
 | PiAvionics: IMU / AHRS module | 21.0 | 1.1 % |
 | PiAvionics: GPS module | 5.0 | 0.3 % |
 | PiAvionics: Pi EFIS | 2.0 | 0.1 % |
-| PiAvionics: Backup display | 1.0 | 0.1 % |
-| **PiAvionics total** | **55.0** | **3.0 %** |
+| PiAvionics: Backup display | 2.0 | 0.1 % |
+| **PiAvionics total** | **56.0** | **3.0 %** |
 | MGL: RDAC XF engine unit | 17.2 | 0.9 % |
 | MGL: SP-6 compass | 20.0 | 1.1 % |
 | MGL: SP-7 / SP-9 AHRS | 60.0 | 3.2 % |
@@ -83,6 +84,6 @@ Worst case (every frame at maximum bit stuffing) at 250 kbit/s. Only messages th
 | MGL: SP-10 flap/trim/motor controller | 3.0 | 0.1 % |
 | MGL: ECB electronic breakers | 0.5 | 0.0 % |
 | MGL: iEFIS extender | 24.0 | 1.2 % |
-| **All of the above on one bus** | **180.2** | **9.6 %** |
+| **All of the above on one bus** | **181.2** | **9.6 %** |
 
 A healthy CAN bus stays below about 30 to 40 % load.

@@ -60,6 +60,7 @@ Sensor modules broadcast their data on fixed IDs. The Pi EFIS listens, shares th
 | `0x701` | [IMU_HEARTBEAT](#0x701-imu_heartbeat) | IMU / AHRS module | Pi EFIS, Backup display | 1 s | 8 | 🟡 Partial |
 | `0x702` | [AIR_HEARTBEAT](#0x702-air_heartbeat) | AIR module | Pi EFIS, Backup display | 1 s | 8 | 🟡 Partial |
 | `0x703` | [GPS_HEARTBEAT](#0x703-gps_heartbeat) | GPS module | Pi EFIS, Backup display | 1 s | 8 | 🟡 Partial |
+| `0x704` | [BACKUP_HEARTBEAT](#0x704-backup_heartbeat) | Backup display | Pi EFIS | 1 s | 8 | ✅ Active |
 
 ## Messages
 
@@ -928,6 +929,45 @@ Sensor modules broadcast their data on fixed IDs. The Pi EFIS listens, shares th
 
 - Sender: GPS_Module.ino (sendHeartbeat), ModuleInfo library
 - Receiver: not written yet (aio_server.py); Backup_Display.ino canHandleFrame
+
+### 0x704 BACKUP_HEARTBEAT
+
+**Backup display heartbeat, version and health**
+
+| | |
+|---|---|
+| Sent by | Backup display |
+| Received by | Pi EFIS |
+| Rate | 1 s |
+| Data length | 8 bytes |
+| Status | ✅ Active |
+| Treated as lost after | 3 s without a message |
+
+| Bytes | Field | Type | Unit | Description |
+|:-----:|-------|------|------|-------------|
+| 0 | `module` | uint8 |  | Node number (0 EFIS, 1 IMU, 2 AIR, 3 GPS). Always equals the ID minus 0x700 |
+| 1 | `version_major` | uint8 |  | Firmware version |
+| 2 | `version_minor` | uint8 |  | Firmware version |
+| 3 | `version_patch` | uint8 |  | Firmware version |
+| 4 | `state` | uint8 |  | 0 = starting, 1 = OK, 2 = degraded (a sensor is missing or invalid), 3 = failed (halted, not producing data) |
+| 5 | `sensors` | uint8 |  | Bit mask of sensors that are present and giving valid data (1 = good). Bit meanings are per module, see the notes |
+| 6-7 | `uptime` | uint16 | s | Seconds since the module started; stops at 65535 (18 h). A drop means the module restarted |
+
+**Byte layout**
+
+| Byte | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 |
+|------|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
+| Field | `module` | `version_major` | `version_minor` | `version_patch` | `state` | `sensors` | `uptime` (1/2) | `uptime` (2/2) |
+
+**Notes**
+
+- Same layout as the module heartbeats (0x701 and the rules there), module number 4. Sent from Backup_Display 1.7.10 (2026-10-25), checked on the bus. The EFIS does not read it yet.
+- State: 0 until the second core has started, then 1, or 2 if the rotary encoder was not found. The display halts and restarts through the watchdog if the LCD is missing, so it never sends 3. Sensors mask: bit 0 LCD, bit 1 encoder.
+
+**Code**
+
+- Sender: Backup_Display.ino heartbeatService
+- Receiver: not written yet (aio_server.py)
 
 ## Nodes
 

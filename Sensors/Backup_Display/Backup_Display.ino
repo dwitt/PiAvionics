@@ -75,7 +75,7 @@
 #include <Adafruit_seesaw.h>
 #include "src/Adafruit_MCP2515/src/Adafruit_MCP2515.h"   // patched copy, see Sensors/Libraries/README.md
 
-#define VERSION "1.7.9"
+#define VERSION "1.7.10"
 
 const uint8_t LCD_COLS = 20;
 const uint8_t LCD_ROWS = 4;
@@ -83,6 +83,7 @@ const uint8_t LCD_ROWS = 4;
 // Watchdog and I2C timeout
 const uint32_t WATCHDOG_MS = 2000;
 const uint32_t I2C_TIMEOUT_MS = 25;
+volatile bool core1Ready = false;                    // set at the end of setup1, for the heartbeat
 volatile uint32_t core1Beat = 0;                     // millis() at the last pass of loop1
 
 // CAN
@@ -91,6 +92,8 @@ const long CAN_BAUDRATE = 250000;
 const uint16_t ID_AIR_DATA = 0x28, ID_OAT = 0x2A, ID_AHRS_ORIENT = 0x48, ID_AHRS_ACCEL = 0x49;
 const uint16_t ID_TIME_SYNC = 0x66, ID_GPS_POSITION = 0x63, ID_GPS_SPEED_TRACK = 0x64, ID_GPS_STATUS = 0x65;
 const uint16_t ID_HEARTBEAT_FIRST = 0x700;           // 0x700 EFIS, 0x701 IMU, 0x702 AIR, 0x703 GPS
+const uint16_t ID_HEARTBEAT_BACKUP = 0x704;          // this display
+const uint32_t HEARTBEAT_PERIOD_MS = 1000;
 const int16_t MARKER_INT16 = 0x7FFF;
 const int32_t MARKER_INT32 = 0x7FFFFFFF;
 const uint32_t MAX_AGE_AIR_MS = 500;                 // "treated as lost after", Protocol/CAN_PROTOCOL.md
@@ -655,6 +658,26 @@ void canPoll() {
   }
 }
 
+// The heartbeat (0x704, layout of Protocol/can_messages.yaml 0x701): module 4, version, state, sensors, uptime.
+// State 0 until core 1 is up, then 1, or 2 if the encoder was not found. Sensors: bit 0 LCD, bit 1 encoder.
+void heartbeatService(uint32_t now) {
+  static uint32_t lastSend = 0;
+  static bool sent = false;
+  if (!canUp || (sent && now - lastSend < HEARTBEAT_PERIOD_MS)) return;
+  unsigned major = 0, minor = 0, patch = 0;
+  sscanf(VERSION, "%u.%u.%u", &major, &minor, &patch);
+  const uint32_t uptime = min(now / 1000, (uint32_t)65535);
+  const uint8_t state = !core1Ready ? 0 : (encoderFound ? 1 : 2);
+  const uint8_t sensors = core1Ready ? (1 | (encoderFound ? 2 : 0)) : 0;
+  const uint8_t frame[8] = { 4, (uint8_t)major, (uint8_t)minor, (uint8_t)patch, state, sensors,
+                             (uint8_t)(uptime & 0xFF), (uint8_t)(uptime >> 8) };
+  can.beginPacket(ID_HEARTBEAT_BACKUP);
+  can.write(frame, 8);
+  can.endPacket();
+  lastSend = now;
+  sent = true;
+}
+
 void setup() {
   Serial.begin(115200);
   unsigned long t0 = millis();
@@ -678,6 +701,7 @@ void loop() {
   }
   if (canUp) canPoll();
   qnhService(now);
+  heartbeatService(now);
   if (now - core1Beat < WATCHDOG_MS / 2) rp2040.wdt_reset();   // not fed when core 1 has stopped
 }
 
@@ -722,6 +746,7 @@ void setup1() {
   slotsInit();
   markerCreate();
   encoderFound = encoderBegin();
+  core1Ready = true;
 }
 
 // The marker for a field: blank when it is not selected, the arrow when adjusting, flashing between the arrow and a
