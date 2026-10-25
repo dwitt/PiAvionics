@@ -1,6 +1,6 @@
 # Backup display: design record
 
-Updated 2026-10-22. Sketch: `Backup_Display.ino` (version 1.7.8 when this was written). The decisions below were made with David
+Updated 2026-10-22. Sketch: `Backup_Display.ino` (version 1.7.11). The decisions below were made with David
 on the bench; the sketch is the authority on exact values.
 
 ## Hardware
@@ -34,7 +34,7 @@ every 2 s until it is reconnected. The same scheme is in the IMU (1.0.18), AIR (
 ## The screen
 
 20x4 characters. A value that is missing or stale (older than its "treated as lost after" time in `Protocol/CAN_PROTOCOL.md`)
-shows as dashes. There are three pages. PG is in the lower left of every page and QNH in the lower right of any page that shows
+shows as dashes. There are four pages. PG is in the lower left of every page and QNH in the lower right of any page that shows
 pressure altitude (the Flight page only).
 
 | Page | State | Contents |
@@ -42,6 +42,7 @@ pressure altitude (the Flight page only).
 | 1 Flight | built | IAS, ALT, VS, HDG, OAT, G, mini horizon and slip ball in the centre, module status letters, QNH |
 | 2 GPS | built | ground speed, GPS altitude, time, track, position, fix type, satellites, HDOP |
 | 3 System | built | backlight field, display version, module states from the heartbeats, CAN frame rate, uptime |
+| 4 Versions | built | firmware versions from the heartbeats: I IMU, A AIR, G GPS, E EFIS (`--` if silent), D this display |
 | Engine | not built | RPM, MAP, oil P and T, EGT, CHT, volts, fuel flow. Would go between GPS and System. Needs a decision on the MGL RDAC raw values (see below) |
 
 The Flight and GPS pages share one layout: values left and right, the centre block (columns 8 to 10) for the horizon on the Flight
@@ -173,6 +174,6 @@ stops remote flashing.
   module as the single source (this needs new CAN messages).
 - **Engine page:** the MGL RDAC sends raw ADC values for MAP and the analogue channels. The backup would need the calibration
   built into the sketch. Decide which values the backup should show.
-- **Not yet done:** the backup display does not send its own heartbeat, and does not show module versions on the System page.
+- **Heartbeat:** the display sends one on 0x704 (module 4, every second) from 1.7.10. State 1 OK, 2 if the encoder is missing; sensors bit 0 LCD, bit 1 encoder. The EFIS does not read it yet.
 - **Not tested:** the slip ball, G and the horizon in an aircraft; the display and the EFIS agreeing after the display itself
   restarts mid-flight with everyone else set.
