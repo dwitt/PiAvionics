@@ -1,0 +1,89 @@
+# =============================================================================
+# Engine data conversions: RDAC XF raw values to engineering units.
+#
+# One table for both displays. The EFIS (Python) and the backup display (C++) each follow it, so a
+# change is made here first. Reference implementation: Protocol/engine_convert.py (VERSION 1.0.0).
+# RDAC frames are in Protocol/mgl_can_messages.yaml (types 2 to 8; ID = 0x200 + type for address 32).
+#
+# status: checked = compared with the real sender or bench readings; fitted = built from published points,
+#         to be checked on the engine; pending = needs a decision or a calibration before it gives a number.
+# =============================================================================
+
+version: "1.0.0"
+
+resistive_input:
+  # The RDAC pulls the input up to its supply through a resistor and reads the divider. OILP 1000 ohm,
+  # OILT 1500 ohm (fixed), AUX1 and AUX2 1500 ohm (switch on). With the input open the RDAC reads 3908
+  # (the full scale of the divider), so  R = pullup * raw / (full_scale - raw).
+  full_scale: 3908
+  pullup_ohm: {oil_pressure: 1000, oil_temp: 1500, aux1: 1500, aux2: 1500}
+  status: checked
+  check: >
+    Bench 2026-10-25 with a 120 ohm resistor: OILP raw 428 (R 119.8 using the measured 973 ohm pull-up),
+    OILT raw 297 (R 120.1 using the measured 1460 ohm pull-up).
+
+oil_pressure:
+  from: oil_pressure          # RDAC_ANALOG_1 bytes 2-3
+  sender: VDO 5 bar, characteristic curve table III (vdo_pressure_sensors.pdf, TU00-0774-7104620)
+  # Resistance in ohm from pressure in bar:  R = a*p^2 + b*p + c  (nominal curve). Invert for pressure.
+  quadratic: {a: -0.3682, b: 36.465, c: 10.648}
+  range_bar: [0, 5]
+  below_range: "resistance under 10.6 ohm: show 0 bar. Above the 5 bar resistance (about 184 ohm) or an open input: sender fault"
+  unit: bar
+  status: checked
+  check: "120 ohm gives 3.1 bar, the same as the Blaze (45 psi) on 2026-10-25"
+
+oil_temp:
+  from: oil_temp              # RDAC_ANALOG_1 bytes 0-1
+  sender: VDO 150 degC NTC thermistor (David's sender; VDO curve type 2, 36.5 ohm at 120 degC)
+  # Steinhart-Hart through (322.8 ohm, 50 degC), (36.5, 120) and (18.6, 150):
+  #   1/T = A + B*ln(R) + C*ln(R)^3   (T in kelvin)
+  steinhart_hart: {A: 0.0015525513345798962, B: 0.00028091203795547765, C: -4.1934592032947954e-07}
+  points: [[322.8, 50], [36.5, 120], [18.6, 150]]
+  range_degC: [40, 160]
+  unit: degC
+  status: fitted
+  note: >
+    The 120 degC point is from the VDO datasheet (TU00-0770-5104620). The 50 and 150 degC points are from a
+    seller listing (322.8 to 18.6 ohm) and agree with Auber's guide; VDO's own curve table file was not available.
+    Check in hot water with a thermometer. 120 ohm reads 77.6 degC.
+
+thermocouples:
+  from: [tc1, tc2, tc3, tc4, tc5, tc6, tc7, tc8]   # RDAC_TC_1_4 and RDAC_TC_5_8, int16 degC
+  formula: "degC = tc + cold_junction_temp (RDAC_SUPPLY bytes 0-1, int16 degC)"
+  egt: [tc1, tc2, tc3, tc4]
+  cht: [tc5, tc6, tc7, tc8]
+  type: K
+  unit: degC
+  status: checked
+  check: "Probes on TC1 and TC5 warmed by hand on 2026-10-25; the Blaze agrees with the mapping"
+
+supply_voltage:
+  from: supply_voltage        # RDAC_SUPPLY bytes 2-3
+  formula: "volts = raw / 57.3758"
+  unit: V
+  status: fitted
+  note: >
+    MGL's table says raw / 5.73758 in 0.1 V steps, which is raw / 57.3758 volts. The baseline raw 685 gives
+    11.94 V. Compare with a meter on the supply.
+
+current:
+  from: current               # RDAC_RPM_MAP bytes 6-7
+  sender: MGL magnetic (closed loop) current sensor, output about 2.5 V at zero current
+  formula: "amps = (raw - zero_raw) * amps_per_count"
+  zero_raw: null
+  amps_per_count: null
+  unit: A
+  status: pending
+  note: >
+    Not in the manuals as a number. The Blaze procedure is: zero with no current through the sensor, then adjust the gain
+    against a meter in series. Both constants are measured once the sensor is fitted. The input reads 3908 when nothing
+    is connected, which is not a current.
+
+rpm:
+  from: [rpm1, rpm2]          # RDAC_RPM_MAP bytes 0-1 and 2-3
+  formula: "rpm = rpm1 * (1 pulse per revolution / pulses_per_rev); 50000 or more means RPM x 10"
+  pulses_per_rev: null
+  unit: rpm
+  status: pending
+  note: "The sender is not chosen (Magnatron P-lead or the Littelfuse Hall geartooth sensor), so the pulses per revolution is unknown."
