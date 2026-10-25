@@ -1,7 +1,7 @@
 """ Asynchronous I/O based webserver to handle page and websocket"""
 # pyright: reportMissingImports=false
 
-VERSION = "1.7.1"
+VERSION = "1.7.2"
 
 import asyncio
 import ipaddress
@@ -71,6 +71,7 @@ class CAN_MSG_ID(Enum):
     IMU_HEARTBEAT = 0x701
     AIR_HEARTBEAT = 0x702
     GPS_HEARTBEAT = 0x703
+    BACKUP_HEARTBEAT = 0x704
 
 # =============================================================================
 # HARDWARE CONFIGURATION
@@ -1097,7 +1098,7 @@ async def process_time_sync_message(msg, data, last_received_times):
         return False
 
 async def process_heartbeat_message(msg, data, last_received_times):
-    """Process a module heartbeat (0x701 IMU, 0x702 AIR, 0x703 GPS).
+    """Process a module heartbeat (0x701 IMU, 0x702 AIR, 0x703 GPS, 0x704 backup display).
 
     The tracker keeps the state, sensors mask, version and uptime of each module.
     Returns True if it was a valid heartbeat."""
@@ -1126,6 +1127,7 @@ CAN_MESSAGE_HANDLERS = {
     CAN_MSG_ID.IMU_HEARTBEAT.value: process_heartbeat_message,
     CAN_MSG_ID.AIR_HEARTBEAT.value: process_heartbeat_message,
     CAN_MSG_ID.GPS_HEARTBEAT.value: process_heartbeat_message,
+    CAN_MSG_ID.BACKUP_HEARTBEAT.value: process_heartbeat_message,
 }
 
 # -----------------------------------------------------------------------------

@@ -9,21 +9,22 @@ See EFIS/docs/MODULE_STATUS_PLAN.md and Protocol/can_messages.yaml (protocol 0.2
 
 How it is used (aio_server.py):
     tracker = StatusTracker(time.monotonic())
-    tracker.on_heartbeat(can_id, data_bytes, now)          # for CAN IDs 0x701 to 0x703
+    tracker.on_heartbeat(can_id, data_bytes, now)          # for CAN IDs 0x701 to 0x704
     facts = tracker.evaluate(now, last_received_times)     # about every 0.1 s
 
 `last_received_times` maps a CAN ID to the time (time.monotonic()) its last message arrived.
 Everything takes `now` as a parameter so the tests can drive time.
 """
 
-VERSION = "2.0.0"
+VERSION = "2.0.1"
 
 # -----------------------------------------------------------------------------
 # CAN IDs and the module numbers used by the heartbeats (0x700 + module number)
 # -----------------------------------------------------------------------------
 HEARTBEAT_ID_BASE = 0x700
-MODULE_IMU, MODULE_AIR, MODULE_GPS = 1, 2, 3
-MODULE_NAMES = {MODULE_IMU: "imu", MODULE_AIR: "air", MODULE_GPS: "gps"}
+MODULE_IMU, MODULE_AIR, MODULE_GPS, MODULE_BACKUP = 1, 2, 3, 4
+MODULE_NAMES = {MODULE_IMU: "imu", MODULE_AIR: "air", MODULE_GPS: "gps", MODULE_BACKUP: "backup"}
+FLIGHT_MODULES = ("imu", "air", "gps")     # the modules whose health decides the EFIS system state; the backup display does not
 
 ID_AIR_DATA = 0x28      # airspeed, altitude, vertical speed
 ID_OAT = 0x2A
@@ -47,11 +48,14 @@ AIR_STATIC = 0x04
 AIR_OAT = 0x08
 GPS_NMEA = 0x01
 GPS_FIX = 0x02
+BACKUP_LCD = 0x01
+BACKUP_ENCODER = 0x02
 
 SENSOR_BITS = {
     MODULE_IMU: (("gyro_accel", IMU_ISM330), ("magnetometer", IMU_MAG), ("calibration", IMU_CAL)),
     MODULE_AIR: (("pitot", AIR_PITOT), ("aoa", AIR_AOA), ("static", AIR_STATIC), ("oat", AIR_OAT)),
     MODULE_GPS: (("nmea", GPS_NMEA), ("fix", GPS_FIX)),
+    MODULE_BACKUP: (("lcd", BACKUP_LCD), ("encoder", BACKUP_ENCODER)),
 }
 
 # -----------------------------------------------------------------------------
@@ -164,7 +168,7 @@ class StatusTracker:
     def evaluate(self, now, last_seen):
         """Return the facts as a dict of plain Python types, ready for json:
 
-        modules        per module (imu, air, gps): present, missing, state, version, uptime, age (s since
+        modules        per module (imu, air, gps, backup): present, missing, state, version, uptime, age (s since
                        the last heartbeat), restarted_age (s since an uptime drop, or None), and
                        sensors (named booleans from the mask, or None when the mask is unknown)
         valid          per instrument: True if the value can be trusted
@@ -231,7 +235,7 @@ class StatusTracker:
 
         # For the EFIS heartbeat (0x700)
         ok = {name: modules[name]["present"] and modules[name]["state"] == STATE_OK
-              for name in MODULE_NAMES.values()}
+              for name in FLIGHT_MODULES}
         return {
             "modules": modules,
             "valid": valid,

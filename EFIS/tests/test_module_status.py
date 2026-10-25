@@ -298,6 +298,28 @@ class RestartTests(unittest.TestCase):
         self.assertIsNone(b.result()["modules"]["imu"]["restarted_age"])
 
 
+class BackupTests(unittest.TestCase):
+    def test_backup_heartbeat_is_reported(self):
+        b = Bench()
+        b.tracker.on_heartbeat(0x704, hb(4, 1, 0x03, 50, (1, 7, 11)), b.t)
+        m = b.result()["modules"]["backup"]
+        self.assertTrue(m["present"])
+        self.assertEqual(m["version"], "1.7.11")
+        self.assertEqual(m["sensors"], {"lcd": True, "encoder": True})
+
+    def test_backup_never_changes_the_system_state(self):
+        b = Bench()
+        b.t += 60.0
+        b.data(ALL_DATA)
+        b.heartbeats(imu=(1, 0x07), air=(1, 0x0F), gps=(1, 0x03))
+        r = b.result()
+        self.assertTrue(r["modules"]["backup"]["missing"])
+        self.assertEqual(r["system_state"], ms.STATE_OK)
+        self.assertEqual(r["modules_ok_mask"], 0x07)
+        b.tracker.on_heartbeat(0x704, hb(4, 2, 0x01), b.t)     # degraded: no encoder
+        self.assertEqual(b.result()["system_state"], ms.STATE_OK)
+
+
 class HeartbeatParsingTests(unittest.TestCase):
     def test_wrong_module_number_is_ignored(self):
         tr = ms.StatusTracker(0.0)
@@ -310,7 +332,7 @@ class HeartbeatParsingTests(unittest.TestCase):
 
     def test_unknown_module_is_ignored(self):
         tr = ms.StatusTracker(0.0)
-        self.assertFalse(tr.on_heartbeat(0x704, hb(4), 1.0))
+        self.assertFalse(tr.on_heartbeat(0x705, hb(5), 1.0))
         self.assertFalse(tr.on_heartbeat(0x700, hb(0), 1.0))
 
     def test_uptime_is_16_bit(self):
