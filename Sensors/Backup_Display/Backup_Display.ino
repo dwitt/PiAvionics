@@ -31,11 +31,12 @@
           between the arrow and a blank, in the column between the label and the value.
   There is no timeout.
 
-  Pages (PG, bottom left of every page; adjusting it changes the page): 1 Flight, 2 GPS, 3 System. An Engine page is to come.
+  Pages (PG, bottom left of every page; adjusting it changes the page): 1 Flight, 2 GPS, 3 System, 4 Versions. An Engine page is to come.
   The fields on each page, in clockwise order from the lower right:
       Flight:  QNH (lower right, only on pages that show altitude), PG
       GPS:     PG
       System:  PG, BL (backlight on/off, upper left)
+      Versions: PG (the module versions from the heartbeats: I IMU, A AIR, G GPS, E EFIS, D this display)
   Brightness and contrast cannot be set from software with this backpack: the backlight is on/off and the contrast is a pot.
 
   QNH (EFIS/docs/QNH_PLAN.md): the value is shared with the other devices over CAN. This display sends on 0x2D, and adopts a
@@ -75,7 +76,7 @@
 #include <Adafruit_seesaw.h>
 #include "src/Adafruit_MCP2515/src/Adafruit_MCP2515.h"   // patched copy, see Sensors/Libraries/README.md
 
-#define VERSION "1.7.10"
+#define VERSION "1.7.11"
 
 const uint8_t LCD_COLS = 20;
 const uint8_t LCD_ROWS = 4;
@@ -123,7 +124,8 @@ const Position MARKER_POS[FIELD_COUNT] = { { 13, 3 }, { 2, 3 }, { 2, 0 } };   //
 const Field FLIGHT_FIELDS[] = { FIELD_QNH, FIELD_PAGE };           // clockwise from the lower right
 const Field GPS_FIELDS[] = { FIELD_PAGE };
 const Field SYSTEM_FIELDS[] = { FIELD_PAGE, FIELD_BACKLIGHT };
-const uint8_t PAGE_FLIGHT = 1, PAGE_GPS = 2, PAGE_SYSTEM = 3;
+const Field VERSIONS_FIELDS[] = { FIELD_PAGE };
+const uint8_t PAGE_FLIGHT = 1, PAGE_GPS = 2, PAGE_SYSTEM = 3, PAGE_VERSIONS = 4;
 const char MARKER_CHAR = 0x7E;                       // the built-in right arrow
 const uint8_t BAR_LEFT_SLOT = 6, BAR_RIGHT_SLOT = 7; // custom characters: the lines on each side of the horizon (columns 7 and 11, rows 0 to 2)
 const uint8_t SLIP_COL = 8, SLIP_ROW = 2;            // the slip track: 3 cells under the horizon
@@ -134,7 +136,7 @@ const int SLIP_POSITIONS = 13;                       // its left pixel can be at
 const float SLIP_FILTER = 0.2f;                      // low pass at each 100 ms redraw (about 0.5 s)
 const int QNH_MIN = 2800;                            // inHg x 100
 const int QNH_MAX = 3100;
-const int PAGE_COUNT = 3;
+const int PAGE_COUNT = 4;
 
 // mini horizon
 const uint8_t HZ_COL = 8;            // top left cell: in the middle of the screen, rows 0 and 1
@@ -174,6 +176,7 @@ Signal sigGpsHour, sigGpsMinute;                     // UTC
 Signal sigGpsFixType, sigGpsSats, sigGpsHdop;        // fix type 1 none / 2 2D / 3 3D, satellites, HDOP x 100
 struct Heartbeat {
   volatile uint8_t state = 0;
+  volatile uint8_t version[3] = { 0, 0, 0 };         // major, minor, patch
   volatile uint32_t time = 0;
 };
 Heartbeat heartbeats[4];                             // indexed by the node number: 0 EFIS, 1 IMU, 2 AIR, 3 GPS
@@ -454,6 +457,7 @@ bool encoderBegin() {
 
 const Field *pageFields(int forPage, int &count) {
   if (forPage == PAGE_SYSTEM) { count = sizeof(SYSTEM_FIELDS) / sizeof(SYSTEM_FIELDS[0]); return SYSTEM_FIELDS; }
+  if (forPage == PAGE_VERSIONS) { count = sizeof(VERSIONS_FIELDS) / sizeof(VERSIONS_FIELDS[0]); return VERSIONS_FIELDS; }
   if (forPage == PAGE_GPS) { count = sizeof(GPS_FIELDS) / sizeof(GPS_FIELDS[0]); return GPS_FIELDS; }
   count = sizeof(FLIGHT_FIELDS) / sizeof(FLIGHT_FIELDS[0]);
   return FLIGHT_FIELDS;
@@ -643,6 +647,9 @@ void canHandleFrame(uint16_t id, const uint8_t *b, uint32_t now) {
   } else if (id >= ID_HEARTBEAT_FIRST && id < ID_HEARTBEAT_FIRST + 4) {
     Heartbeat &hb = heartbeats[id - ID_HEARTBEAT_FIRST];
     hb.state = b[4];
+    hb.version[0] = b[1];
+    hb.version[1] = b[2];
+    hb.version[2] = b[3];
     hb.time = now;
   }
 }
@@ -873,6 +880,30 @@ void drawSystemText(uint32_t now) {
   printAt(0, 3, buf, 20);
 }
 
+// "1.0.18", or "--" when the module has sent no heartbeat for 3 s
+void moduleVersionText(char *out, size_t size, uint8_t node, uint32_t now) {
+  const Heartbeat &hb = heartbeats[node];
+  if (!ageWithin(hb.time, MAX_AGE_HEARTBEAT_MS, now)) snprintf(out, size, "--");
+  else snprintf(out, size, "%u.%u.%u", hb.version[0], hb.version[1], hb.version[2]);
+}
+
+void drawVersionsText(uint32_t now) {
+  char buf[LCD_COLS + 1];
+  char imu[12], air[12], gps[12], efis[12];
+  moduleVersionText(imu, sizeof(imu), 1, now);
+  moduleVersionText(air, sizeof(air), 2, now);
+  moduleVersionText(gps, sizeof(gps), 3, now);
+  moduleVersionText(efis, sizeof(efis), 0, now);
+  snprintf(buf, sizeof(buf), "I %-8sA %s", imu, air);
+  printAt(0, 0, buf, 20);
+  snprintf(buf, sizeof(buf), "G %-8sE %s", gps, efis);
+  printAt(0, 1, buf, 20);
+  printAt(0, 2, "D " VERSION, 20);
+  snprintf(buf, sizeof(buf), "PG %d", page);
+  putMarker(buf, FIELD_PAGE, now);
+  printAt(0, 3, buf, 20);
+}
+
 void loop1() {
   enum HorizonState : uint8_t { HZ_UNKNOWN, HZ_SHOWN, HZ_NO_DATA };
   static unsigned long lastText = 0, lastHorizon = 0, lastReport = 0;
@@ -922,7 +953,8 @@ void loop1() {
 
   if (now - lastText < 100) return;            // the text rows refresh at 10 Hz
   lastText = now;
-  if (page == PAGE_SYSTEM) drawSystemText(now);
+  if (page == PAGE_VERSIONS) drawVersionsText(now);
+  else if (page == PAGE_SYSTEM) drawSystemText(now);
   else if (page == PAGE_GPS) drawGpsText(v, now);
   else drawFlightText(v, now);
 }
