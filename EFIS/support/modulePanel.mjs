@@ -3,10 +3,10 @@
 import { Container, Graphics, TextStyle, Text } from './pixi.mjs';
 import { describeModule, describeEfis, WARNING, CAUTION } from './instrumentStatus.mjs';
 
-export const VERSION = '1.1.0';
+export const VERSION = '1.1.1';
 
 /*****************************************************************************
- * Module status page: one block per sensor module (IMU, AIR, GPS) showing its
+ * Module status page: one block per sensor module (IMU, AIR, GPS) and one for the backup display, showing its
  * state, version, uptime, how long since it was last heard and which sensors
  * it reports as working, and a last block for the EFIS itself (the server's own
  * heartbeat: its state, version, uptime and which modules and display it sees).
@@ -14,7 +14,7 @@ export const VERSION = '1.1.0';
  * short canvas.
  ****************************************************************************/
 
-const MODULES = [['imu', 'IMU'], ['air', 'AIR'], ['gps', 'GPS'], ['efis', 'EFIS']];
+const MODULES = [['imu', 'IMU'], ['air', 'AIR'], ['gps', 'GPS'], ['efis', 'EFIS'], ['backup', 'BACKUP']];
 
 const COLOURS = {
     ok: 0x7FFF00,                   // chartreuse, as the values on the display

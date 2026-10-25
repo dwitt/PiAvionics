@@ -1,6 +1,6 @@
 'use strict';
 
-export const VERSION = '1.4.0';
+export const VERSION = '1.4.1';
 
 /*****************************************************************************
  * The server tracks the facts (module heartbeats, which values can be trusted,
@@ -178,6 +178,7 @@ const MODULE_SENSORS = {
     imu: [['gyro_accel', 'GYRO/ACCEL'], ['magnetometer', 'MAG'], ['calibration', 'CAL']],
     air: [['pitot', 'PITOT'], ['aoa', 'AOA'], ['static', 'STATIC'], ['oat', 'OAT']],
     gps: [['nmea', 'NMEA'], ['fix', 'FIX']],
+    backup: [['lcd', 'LCD'], ['encoder', 'ENCODER']],
 };
 
 /**
