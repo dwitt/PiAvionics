@@ -189,6 +189,22 @@ sensor connects to RPM (check its datasheet).
 (3) Sensors one at a time: VDO senders, LM335, current sensor (zeroed), thermocouples. (4) Blaze on the bus, check it reads the
 RDAC, sniff what it sends. (5) Engine install: EGTs, CHTs, then RPM.
 
+## 2026-10-25: RDAC and Blaze bench tests (Blaze reads the RDAC)
+
+**Blaze EMS-2 is on the shared bus with the RDAC and our modules.** It sent nothing in a 60 s capture including a power cycle (4269 frames, all known IDs, no 0x019), so it is receive-only as far as we can see. It does not disturb our IDs.
+
+**The Blaze only reads the RDAC after Data is set to RDAC in each setup menu** (manual 11.14: there is no global enable). Before that its oil/volts/RPM readings were its own open inputs (an early claim that it was reading the RDAC was wrong). Set Data = RDAC plus the RDAC address in: analog channels (CH1 = RDAC OILT, CH2 = OILP, CH3 = AUX1, CH4 = AUX2), EGT/CHT, volts, RPM, MAP, current.
+
+**Resistor and thermocouple checks (RDAC raw, 0x205 unless noted):**
+- OIL P (1000 ohm pull-up): 120 ohm to GND reads 428 to 429 (expected 419), so pull-up about 973 ohm. Blaze with Sender VDO / 5 Bar shows 45 psi (about 3.1 bar, as expected). Open input: Blaze shows 558 psi (out of range, harmless).
+- OIL T (fixed 1500 ohm pull-up): 120 ohm reads 297 (expected 290), pull-up about 1460 ohm. Blaze shows 65 C. Not checked against the VDO table.
+- CURR with nothing connected floats (3908 steady now; ramped to about 1525 in the first baseline). Meaningless until the sensor is attached.
+- K thermocouples (yellow +, red -) on TC1 and TC5 both read correctly (room temp = cold junction, warm fingertip rises about 10 C). Blaze mapping confirmed: TC1 to TC4 = EGT1 to 4, TC5 to TC8 = CHT1 to 4.
+
+**GTR 205x COM radio, tailBeaconX TSO (research, not built):** the GTR 205x installation manual (on the Mac under Sonex/Manuals) documents RS-232 NMEA-style `$PGRMC` messages (9600 8N1, pins 5 out, 46 in, 26 gnd): C00 active freq, C01 standby, C02 volume, C06 request, status at 1 Hz. CAN pins are Garmin G3X only, do not wire to our bus. Plan idea: a Feather COM module (CAN + MAX3232) so both displays can tune it. The tailBeaconX TSO takes RS-232 2400 8N1, UCP-HD/Apollo, with the AV-20-E as control head (squawk is set there). Apollo `#AL` altitude format is public (Apollo SL70 manual, Appendix E); `#MD` and the UCP ICD (UAV-1002375-001, from uAvionix) were not found. The Blaze also has an RS-232 serial output (manual 4.12), unread.
+
+**Next:** connect the real VDO senders (body to GND), then LM335 and the current sensor; Blaze oil T sender type (VDO 120 or 150); conversions for the backup Engine page; RPM source.
+
 ## Handy facts
 - Boards: `/dev/serial/by-id/usb-Adafruit_*`; serials AIR 38503039350B102C, GPS 38503039350B242B,
   IMU DF625857C7793E2F. Flash: `Sensors/flash_remote.sh <Sketch> <serial>`.
