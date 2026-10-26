@@ -12,9 +12,9 @@
       OAT 12C|_o_|   G 1.0       (the o is the slip ball, the _ a line under it)
       PG>1   IAGE   29.92?       (the > is the marker of the selected field, see the encoder)
   HHH is the mini horizon, 3 x 2 character cells (15 x 16 pixels, drawn as 17 x 17 with the gaps between the cells counted).
-  The GPS page (fed by the GPS module) has the same layout, with the label GPS over a satellite (two custom characters) where the horizon is:
-      GS 105  GPS ALT 4500
-      14:32Z       TRK 262
+  The GPS page (fed by the GPS module) has the same layout, with a GPS satellite icon (five custom characters, 3 x 2 cells) where the horizon is:
+      GS 105  [icon] ALT 4500
+      14:32Z  [icon]  TRK 262
       N43.6532   W079.3832
       PG>2  3D 9sat HD1.1
   Custom characters: slot 6 is a vertical line on the right pixel column of the cell and slot 7 one on the left pixel column.
@@ -78,7 +78,7 @@
 #include <Adafruit_seesaw.h>
 #include "src/Adafruit_MCP2515/src/Adafruit_MCP2515.h"   // patched copy, see Sensors/Libraries/README.md
 
-#define VERSION "1.7.29"
+#define VERSION "1.7.30"
 
 const uint8_t LCD_COLS = 20;
 const uint8_t LCD_ROWS = 4;
@@ -380,7 +380,7 @@ void printAt(uint8_t col, uint8_t row, const char *s, uint8_t width) {
 const int CHAR_BLANK = 0x20, CHAR_SOLID = 0xFF;      // the built-in blank and solid block
 const int NO_OWNER = -1, RESERVED = -2;
 const int OWNER_SLIP = 6;                            // the slip track cells are owners 6, 7 and 8
-const int OWNER_GPS_SAT = 9;                       // the satellite on the GPS page is owners 9 and 10
+const int OWNER_GPS_ICON = 9;                       // the GPS icon on the GPS page is owners 9 to 13
 int slotOwner[8] = { NO_OWNER, NO_OWNER, NO_OWNER, NO_OWNER, NO_OWNER, NO_OWNER, NO_OWNER, NO_OWNER };
 uint8_t slotData[8][8];
 
@@ -916,22 +916,30 @@ void drawFlightText(const View &v, uint32_t now) {
   printAt(0, 3, buf, 20);
 }
 
-// A satellite in columns 8 to 10 of row 1: a solar panel, the body with its two arms, and the same panel again (two custom characters)
-void drawGpsSatellite() {
-  static const uint8_t glyph[2][8] = {
-    { 0x1F, 0x15, 0x15, 0x1F, 0x15, 0x15, 0x1F, 0x00 },   // solar panel
-    { 0x00, 0x0E, 0x0E, 0x1F, 0x0E, 0x0E, 0x00, 0x00 },   // body and the arms
+// A GPS satellite icon in columns 8 to 10 of rows 0 and 1, five custom characters:
+//   row 0: TL TM blank     row 1: BL BM BR
+void drawGpsIcon() {
+  static const uint8_t glyph[5][8] = {
+    { 0x18, 0x1C, 0x0E, 0x07, 0x03, 0x00, 0x00, 0x00 },   // TL
+    { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x14, 0x0E },   // TM
+    { 0x00, 0x0A, 0x0A, 0x09, 0x04, 0x02, 0x01, 0x00 },   // BL
+    { 0x0E, 0x15, 0x10, 0x00, 0x10, 0x00, 0x10, 0x00 },   // BM
+    { 0x00, 0x00, 0x00, 0x18, 0x1C, 0x0E, 0x07, 0x03 },   // BR
   };
-  int slot[2];
-  for (int i = 0; i < 2; i++) {
-    slot[i] = slotAcquire(OWNER_GPS_SAT + i);
-    if (slot[i] >= 0) slotWrite(slot[i], glyph[i]);
+  int code[5];
+  for (int i = 0; i < 5; i++) {
+    const int slot = slotAcquire(OWNER_GPS_ICON + i);
+    if (slot >= 0) slotWrite(slot, glyph[i]);
+    code[i] = slot >= 0 ? slot : ' ';                     // blank if no slot is free
   }
-  static const uint8_t part[3] = { 0, 1, 0 };             // panel, body, panel
-  for (int i = 0; i < 3; i++) {
-    lcd.setCursor(8 + i, 1);
-    lcd.write((uint8_t)(slot[part[i]] >= 0 ? slot[part[i]] : ' '));   // blank if no slot is free
-  }
+  lcd.setCursor(8, 0);
+  lcd.write((uint8_t)code[0]);
+  lcd.write((uint8_t)code[1]);
+  lcd.write((uint8_t)' ');
+  lcd.setCursor(8, 1);
+  lcd.write((uint8_t)code[2]);
+  lcd.write((uint8_t)code[3]);
+  lcd.write((uint8_t)code[4]);
 }
 
 void drawGpsText(const View &v, uint32_t now) {
@@ -939,14 +947,16 @@ void drawGpsText(const View &v, uint32_t now) {
   // Same grid as the Flight page: GPS takes the place of the horizon in columns 8 to 11
   if (v.hasGpsSpeed) snprintf(a, sizeof(a), "%3d", v.gpsSpeed); else snprintf(a, sizeof(a), "---");
   if (v.hasGpsAlt) snprintf(b, sizeof(b), "%5d", v.gpsAlt); else snprintf(b, sizeof(b), "-----");
-  snprintf(buf, sizeof(buf), "GS %3s  GPS ALT%s", a, b);
-  printAt(0, 0, buf, 20);
+  snprintf(buf, sizeof(buf), "GS %3s", a);
+  printAt(0, 0, buf, 8);
+  snprintf(buf, sizeof(buf), " ALT%s", b);
+  printAt(11, 0, buf, 9);
 
   if (v.hasTime) snprintf(a, sizeof(a), "%02d:%02dZ", v.hour, v.minute); else snprintf(a, sizeof(a), "--:--Z");
   if (v.hasGpsTrack) snprintf(b, sizeof(b), "%03d", v.gpsTrack); else snprintf(b, sizeof(b), "---");
   snprintf(buf, sizeof(buf), "%-6s", a);
   printAt(0, 1, buf, 8);
-  drawGpsSatellite();
+  drawGpsIcon();
   snprintf(buf, sizeof(buf), "  TRK %s", b);
   printAt(11, 1, buf, 9);
 
@@ -1109,7 +1119,7 @@ void loop1() {
     drawnPage = page;
     horizonState = HZ_UNKNOWN;
     slipForget();
-    for (int i = 0; i < 2; i++) slotRelease(OWNER_GPS_SAT + i);
+    for (int i = 0; i < 5; i++) slotRelease(OWNER_GPS_ICON + i);
   }
 
   if (page == PAGE_FLIGHT && now - lastHorizon >= horizonPeriodMs) {
