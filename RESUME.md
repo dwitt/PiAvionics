@@ -215,3 +215,13 @@ RDAC, sniff what it sends. (5) Engine install: EGTs, CHTs, then RPM.
 - When scripting edits to ISSUES.md, check the slice has no other '## ' or '### ' headings first.
 - Memory notes: `project_sensor_modules_status.md` in the Claude project memory folder.
 - macOS sometimes blocks the shell/Edit tool on repo files (quarantine/macl flags); `xattr -rd com.apple.quarantine Protocol` and the same for `com.apple.macl` fixed it, and `cd /` before `cd`-ing into the repo helps when git says it cannot read the working directory.
+
+## 2026-10-26: backup display Engine page built (1.7.14), heartbeat and versions, EFIS BACKUP block
+
+- Backup display 1.7.14 (commit ce97aed): heartbeat 0x704 (module 4), Versions page, RDAC XF receive and conversions, Engine page (page 3; System 4, Versions 5). Engine page layout: row 1 `OP 45psi   RPM 2450`, row 2 `OT 171F`, row 3 highest EGT and CHT with cylinder numbers, row 4 page, volts, amps. Shown in psi and degrees F (David's choice; CAN data, yaml and thresholds stay bar and C; a units setting is wanted later). Not yet looked at on the display.
+- EFIS tracks 0x704 and shows a BACKUP block on the Modules page (checked). Restarting piefis does not reload the kiosk page; send F5 with `ssh david@pi-efis.local 'XDG_RUNTIME_DIR=/run/piefis WAYLAND_DISPLAY=wayland-0 wtype -k F5'`.
+- Conversions and thresholds: `Protocol/engine_conversions.yaml` 1.1.0 and `Protocol/engine_convert.py` 1.0.1 (volts = raw / 57.3758; VDO 360-001 5 bar pressure curve; VDO 323-055 150 C temp, Steinhart-Hart; RDAC timeouts). Blaze oil T sender should be set to VDO 150, not 120.
+- RPM and amps show dashes: `RPM_PULSES_PER_REV = 0` and `AMPS_ZERO_RAW = -1` in the sketch until the RPM source and current sensor calibration are chosen.
+- **Next, one at a time:** (1) David checks page 3. (2) Cylinders page (page 4; EGT and CHT per cylinder, highest flashing; System 5, Versions 6). (3) LCD alarms (caution mark, alarm flashing, knob push acknowledges, 10 s power-up inhibit). (4) Engine page on the main EFIS second screen, selectable with the HSI (server needs the engine data). (5) Units setting. (6) DESIGN.md update for the Engine page.
+- Bench: real VDO senders on OIL P and OIL T (hot-water check of the oil T curve, pressure check against a known pressure), LM335, current sensor zero and gain, thermocouples and cylinder wiring, RPM source and pulses per rev, volts limits, EGT probes.
+- Parked: aircraft testing of slip ball, horizon and G on both displays; COM radio Feather; airport data (OurAirports vs NASR; waiting to hear which airport David flies from); in-aircraft network for ForeFlight transfer.
