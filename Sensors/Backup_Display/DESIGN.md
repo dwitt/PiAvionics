@@ -1,6 +1,6 @@
 # Backup display: design record
 
-Updated 2026-10-26. Sketch: `Backup_Display.ino` (version 1.7.40). The decisions below were made with David
+Updated 2026-10-26. Sketch: `Backup_Display.ino` (version 1.7.41). The decisions below were made with David
 on the bench; the sketch is the authority on exact values.
 
 ## Hardware
@@ -144,7 +144,7 @@ The letter always says which module. The lower case `e` for the EFIS means it is
 
 It works like the EFIS knob. Push toggles between two modes and there is no timeout. QNH is live at power-up.
 
-- **Adjusting** (the start state, with QNH selected): a turn changes the selected field.
+- **Adjusting** (the start state, with PG selected so a turn changes the page; QNH is reached with a push, a turn and a push): a turn changes the selected field.
 - **Selecting:** a turn moves the marker to the next field.
 
 The marker sits in the column between a field's label and its value. The right arrow (0x7E) steady means adjusting. The arrow

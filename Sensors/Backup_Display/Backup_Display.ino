@@ -24,8 +24,8 @@
   slots. The cells of the slip track that have no ball show the built-in _, level with the line drawn in the ball's glyphs.
 
   Encoder (Adafruit seesaw rotary encoder with push button, I2C 0x36), same idea as the EFIS:
-      Adjusting (the start state): QNH is selected and a turn changes it, 0.01 inHg per click. The marker next to the
-          label is the built-in right arrow.
+      Adjusting (the start state): PG is selected and a turn changes the page. The marker next to the label is the built-in
+          right arrow. (On the Flight page, push to select, turn to QNH, push to adjust it, 0.01 inHg per click.)
       Push: toggles between adjusting and selecting; on the Engine and Cylinders pages, while an engine alarm is flashing, it acknowledges the alarm instead.
       Selecting: a turn moves the marker to the next field (clockwise: QNH, then PG, then back to QNH). The marker flashes
           between the arrow and a blank, in the column between the label and the value.
@@ -78,7 +78,7 @@
 #include <Adafruit_seesaw.h>
 #include "src/Adafruit_MCP2515/src/Adafruit_MCP2515.h"   // patched copy, see Sensors/Libraries/README.md
 
-#define VERSION "1.7.40"
+#define VERSION "1.7.41"
 
 const uint8_t LCD_COLS = 20;
 const uint8_t LCD_ROWS = 4;
@@ -171,7 +171,7 @@ Adafruit_MCP2515 can(CAN_CS_PIN);
 Adafruit_seesaw encoder;
 bool encoderFound = false;
 
-Field selectedField = FIELD_QNH;
+Field selectedField = FIELD_PAGE;           // a turn at power-up changes the page; push, then turn, to reach the QNH
 bool adjusting = true;
 int page = PAGE_FLIGHT;
 bool backlightOn = true;
