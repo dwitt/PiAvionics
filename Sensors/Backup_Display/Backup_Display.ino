@@ -78,7 +78,7 @@
 #include <Adafruit_seesaw.h>
 #include "src/Adafruit_MCP2515/src/Adafruit_MCP2515.h"   // patched copy, see Sensors/Libraries/README.md
 
-#define VERSION "1.7.28"
+#define VERSION "1.7.29"
 
 const uint8_t LCD_COLS = 20;
 const uint8_t LCD_ROWS = 4;
@@ -1000,12 +1000,12 @@ void drawEngineText(const View &v, uint32_t now) {
 
   const int e = highestOf(v.hasEgt, v.egt);
   numberOrDashes(hot, sizeof(hot), e > 0, "%.0f", e > 0 ? celsiusToFahrenheit(v.egt[e - 1]) : 0, 4);
-  snprintf(buf, sizeof(buf), "OilT %s F EG%c %sF", oilT, e > 0 ? '0' + e : '-', hot);
+  snprintf(buf, sizeof(buf), "OilT %s F EGT%c %s", oilT, e > 0 ? '0' + e : '-', hot);
   printAt(0, 1, buf, 20);
 
   const int c = highestOf(v.hasCht, v.cht);
   numberOrDashes(hot, sizeof(hot), c > 0, "%.0f", c > 0 ? celsiusToFahrenheit(v.cht[c - 1]) : 0, 4);
-  snprintf(buf, sizeof(buf), "RPM %s   CH%c %sF", rpm, c > 0 ? '0' + c : '-', hot);
+  snprintf(buf, sizeof(buf), "RPM %s   CHT%c %s", rpm, c > 0 ? '0' + c : '-', hot);
   printAt(0, 2, buf, 20);
 
   numberOrDashes(volts, sizeof(volts), v.hasVolts, "%.1f", v.volts, 4);

@@ -1,6 +1,6 @@
 # Backup display: design record
 
-Updated 2026-10-26. Sketch: `Backup_Display.ino` (version 1.7.28). The decisions below were made with David
+Updated 2026-10-26. Sketch: `Backup_Display.ino` (version 1.7.29). The decisions below were made with David
 on the bench; the sketch is the authority on exact values.
 
 ## Hardware
@@ -51,8 +51,8 @@ The Engine and Cylinders pages read the MGL RDAC XF frames 0x202, 0x203, 0x205, 
 
 ```
 OilP --- psi   Engine
-OilT 171 F EG3   63F
-RPM ----   CH2   63F
+OilT 171 F EGT3   63
+RPM ----   CHT2   63
 PG>3     12.0V  ---A
 ```
 
