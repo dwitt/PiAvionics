@@ -77,7 +77,7 @@
 #include <Adafruit_seesaw.h>
 #include "src/Adafruit_MCP2515/src/Adafruit_MCP2515.h"   // patched copy, see Sensors/Libraries/README.md
 
-#define VERSION "1.7.19"
+#define VERSION "1.7.20"
 
 const uint8_t LCD_COLS = 20;
 const uint8_t LCD_ROWS = 4;
@@ -970,7 +970,7 @@ void drawEngineText(const View &v, uint32_t now) {
   numberOrDashes(rpm, sizeof(rpm), v.hasRpm, "%.0f", v.rpm, 4);
   numberOrDashes(oilP, sizeof(oilP), v.hasOilP, "%.0f", barToPsi(v.oilP), 3);
   numberOrDashes(oilT, sizeof(oilT), v.hasOilT, "%.0f", celsiusToFahrenheit(v.oilT), 3);
-  snprintf(buf, sizeof(buf), "EMS  OilP %spsi", oilP);
+  snprintf(buf, sizeof(buf), "OilP %spsi%9s", oilP, "EMS");
   printAt(0, 0, buf, 20);
 
   const int e = highestOf(v.hasEgt, v.egt);
