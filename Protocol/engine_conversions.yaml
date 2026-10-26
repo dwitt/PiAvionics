@@ -9,7 +9,7 @@
 #         to be checked on the engine; pending = needs a decision or a calibration before it gives a number.
 # =============================================================================
 
-version: "1.1.0"
+version: "1.1.1"
 
 timeouts:
   # The RDAC sends no heartbeat, status or version (MGL CAN protocol), so a lost RDAC shows only as frames that stop.
@@ -77,7 +77,7 @@ thresholds:
   oil_pressure: {unit: bar, low_alarm: 0.7, low_caution: 1.4, high_caution: null, high_alarm: null, note: "manual: min 10 psi hot at idle, cruise 40 to 50 psi (2.8 to 3.4 bar), max 100 psi which the 5 bar sender cannot show"}
   oil_temp:     {unit: degC, low_alarm: null, low_caution: null, high_caution: 110, high_alarm: 116, note: "manual: max 240 F; min 160 F (80 F for take-off), which is left off"}
   cht:          {unit: degC, low_alarm: null, low_caution: null, high_caution: 216, high_alarm: 232, note: "manual: cruise 350 to 375 F, climb 420 F for 5 min, max 450 F"}
-  egt:          {unit: degC, low_alarm: null, low_caution: null, high_caution: null, high_alarm: 760, note: "manual: max 1400 F"}
+  egt:          {unit: degC, low_alarm: null, low_caution: null, high_caution: null, high_alarm: 760, note: "manual: max 1400 F. No caution, by decision (2026-10-26): the manual gives none and a 4 digit EGT leaves no room for a caution mark on the Cylinders page"}
   volts:        {unit: V, low_alarm: null, low_caution: null, high_caution: null, high_alarm: null, note: "not in the manual; David to choose (GRT suggests about 14.6 high and 12.4 low with the engine running)"}
   amps:         {unit: A, low_alarm: null, low_caution: null, high_caution: null, high_alarm: null, note: "after the sensor is calibrated"}
   status: fitted
