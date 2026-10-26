@@ -14,7 +14,7 @@
   HHH is the mini horizon, 3 x 2 character cells (15 x 16 pixels, drawn as 17 x 17 with the gaps between the cells counted).
   The GPS page (fed by the GPS module) has the same layout, with a GPS satellite icon (five custom characters, 3 x 2 cells) where the horizon is:
       GS 105 [icon]PS ALT 4500
-      14:32Z [icon]   TRK 262
+      14:32Z [icon]  TRK  262
       N43.6532   W079.3832
       PG>2  3D 9sat HD1.1
   Custom characters: slot 6 is a vertical line on the right pixel column of the cell and slot 7 one on the left pixel column.
@@ -78,7 +78,7 @@
 #include <Adafruit_seesaw.h>
 #include "src/Adafruit_MCP2515/src/Adafruit_MCP2515.h"   // patched copy, see Sensors/Libraries/README.md
 
-#define VERSION "1.7.34"
+#define VERSION "1.7.35"
 
 const uint8_t LCD_COLS = 20;
 const uint8_t LCD_ROWS = 4;
@@ -963,7 +963,7 @@ void drawGpsText(const View &v, uint32_t now) {
   snprintf(buf, sizeof(buf), "%-6s", a);
   printAt(0, 1, buf, 7);
   drawGpsIcon();
-  snprintf(buf, sizeof(buf), "   TRK %s", b);
+  snprintf(buf, sizeof(buf), "  TRK  %s", b);
   printAt(10, 1, buf, 10);
 
   if (v.hasPosition) {

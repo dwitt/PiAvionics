@@ -1,6 +1,6 @@
 # Backup display: design record
 
-Updated 2026-10-26. Sketch: `Backup_Display.ino` (version 1.7.34). The decisions below were made with David
+Updated 2026-10-26. Sketch: `Backup_Display.ino` (version 1.7.35). The decisions below were made with David
 on the bench; the sketch is the authority on exact values.
 
 ## Hardware
@@ -100,7 +100,7 @@ GPS page:
 
 ```
 GS 105 [icon]PS ALT 4500
-14:32Z [icon]   TRK 262
+14:32Z [icon]  TRK  262
 N43.6532   W079.3832
 PG>2  3D 9sat HD1.1
 ```
