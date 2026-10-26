@@ -1,6 +1,6 @@
 # Backup display: design record
 
-Updated 2026-10-26. Sketch: `Backup_Display.ino` (version 1.7.38). The decisions below were made with David
+Updated 2026-10-26. Sketch: `Backup_Display.ino` (version 1.7.39). The decisions below were made with David
 on the bench; the sketch is the authority on exact values.
 
 ## Hardware
@@ -59,9 +59,11 @@ PG>3     12.0V  ---A
 RPM and amps show dashes until the RPM source and the current sensor calibration are chosen (`RPM_PULSES_PER_REV`,
 `AMPS_ZERO_RAW`). Alarms (Engine page only so far): a caution puts `!` after the label and an alarm also flashes the value (250 ms on, 250 ms off).
 The limits are in the sketch in bar and C, copied from `thresholds` in the yaml (an off limit is NAN). A missing value never alarms and
-nothing alarms in the first 10 s after power-up. A push on the Engine page, while an alarm is flashing, acknowledges it: the value stops flashing and stays on with its `!` (the push
+nothing alarms in the first 10 s after power-up. A push on the Engine or Cylinders page, while an alarm is flashing, acknowledges it: the value stops flashing and stays on with its `!` (the push
 does its usual select/adjust toggle when nothing is flashing). A value that leaves the alarm level and comes back, or another value
-that goes into alarm, flashes again. Not built yet: alarms on the Cylinders page, RPM
+that goes into alarm, flashes again. The Cylinders page shows the alarm for each cylinder: a CHT caution or alarm puts `!` in the blank in front of its 3 digits, and an
+alarm flashes the digits (an EGT is only an alarm, 4 digits when it is 1000 F or more, so it only flashes). The Engine page shows the
+worst of the four. Not built yet: RPM
 gating of the low oil pressure alarm, a units setting.
 
 The Flight and GPS pages share one layout: values left and right, the centre block (columns 8 to 10) for the horizon on the Flight

@@ -26,7 +26,7 @@
   Encoder (Adafruit seesaw rotary encoder with push button, I2C 0x36), same idea as the EFIS:
       Adjusting (the start state): QNH is selected and a turn changes it, 0.01 inHg per click. The marker next to the
           label is the built-in right arrow.
-      Push: toggles between adjusting and selecting; on the Engine page, while an engine alarm is flashing, it acknowledges the alarm instead.
+      Push: toggles between adjusting and selecting; on the Engine and Cylinders pages, while an engine alarm is flashing, it acknowledges the alarm instead.
       Selecting: a turn moves the marker to the next field (clockwise: QNH, then PG, then back to QNH). The marker flashes
           between the arrow and a blank, in the column between the label and the value.
   There is no timeout.
@@ -78,7 +78,7 @@
 #include <Adafruit_seesaw.h>
 #include "src/Adafruit_MCP2515/src/Adafruit_MCP2515.h"   // patched copy, see Sensors/Libraries/README.md
 
-#define VERSION "1.7.38"
+#define VERSION "1.7.39"
 
 const uint8_t LCD_COLS = 20;
 const uint8_t LCD_ROWS = 4;
@@ -598,7 +598,7 @@ void encoderPoll() {
 
   const bool pressed = !encoder.digitalRead(SEESAW_SWITCH_PIN);   // active low
   if (wasPressed && !pressed) {              // toggled on release, as on the EFIS
-    if (page == PAGE_ENGINE && alarmUnacknowledged()) {   // a flashing alarm: the push acknowledges it instead
+    if ((page == PAGE_ENGINE || page == PAGE_CYLINDERS) && alarmUnacknowledged()) {   // a flashing alarm: the push acknowledges it instead
       alarmAcknowledge();
       Serial.println("alarm acknowledged");
     } else {
@@ -1033,18 +1033,19 @@ int alarmLevel(bool has, float value, float lowAlarm, float lowCaution, float hi
 
 // The engine alarm levels, worked out on every pass whatever the page. A push on the Engine page acknowledges the alarms that are
 // flashing: they stay on, steady. A value that leaves the alarm level and comes back is a new alarm and flashes again.
-enum AlarmChannel : uint8_t { ALARM_RPM, ALARM_OILP, ALARM_OILT, ALARM_EGT, ALARM_CHT, ALARM_CHANNELS };
-int alarmNow[ALARM_CHANNELS] = { 0, 0, 0, 0, 0 };
-bool alarmAcked[ALARM_CHANNELS] = { false, false, false, false, false };
+// EGT and CHT have a channel for each cylinder (EGT 1 to 4, then CHT 1 to 4); the Engine page shows the worst of the four.
+enum AlarmChannel : uint8_t { ALARM_RPM, ALARM_OILP, ALARM_OILT, ALARM_EGT, ALARM_CHT = ALARM_EGT + 4, ALARM_CHANNELS = ALARM_CHT + 4 };
+int alarmNow[ALARM_CHANNELS];
+bool alarmAcked[ALARM_CHANNELS];
 
 void engineAlarmsUpdate(const View &v, uint32_t now) {
-  const int e = highestOf(v.hasEgt, v.egt);
-  const int c = highestOf(v.hasCht, v.cht);
   alarmNow[ALARM_RPM] = alarmLevel(v.hasRpm, v.rpm, NAN, NAN, RPM_HIGH_CAUTION, RPM_HIGH_ALARM, now);
   alarmNow[ALARM_OILP] = alarmLevel(v.hasOilP, v.oilP, OILP_LOW_ALARM_BAR, OILP_LOW_CAUTION_BAR, NAN, NAN, now);
   alarmNow[ALARM_OILT] = alarmLevel(v.hasOilT, v.oilT, NAN, NAN, OILT_HIGH_CAUTION_C, OILT_HIGH_ALARM_C, now);
-  alarmNow[ALARM_EGT] = alarmLevel(e > 0, e > 0 ? v.egt[e - 1] : 0, NAN, NAN, NAN, EGT_HIGH_ALARM_C, now);
-  alarmNow[ALARM_CHT] = alarmLevel(c > 0, c > 0 ? v.cht[c - 1] : 0, NAN, NAN, CHT_HIGH_CAUTION_C, CHT_HIGH_ALARM_C, now);
+  for (int i = 0; i < 4; i++) {
+    alarmNow[ALARM_EGT + i] = alarmLevel(v.hasEgt[i], v.egt[i], NAN, NAN, NAN, EGT_HIGH_ALARM_C, now);
+    alarmNow[ALARM_CHT + i] = alarmLevel(v.hasCht[i], v.cht[i], NAN, NAN, CHT_HIGH_CAUTION_C, CHT_HIGH_ALARM_C, now);
+  }
   for (int i = 0; i < ALARM_CHANNELS; i++) if (alarmNow[i] < 2) alarmAcked[i] = false;
 }
 
@@ -1057,12 +1058,23 @@ void alarmAcknowledge() {
   for (int i = 0; i < ALARM_CHANNELS; i++) if (alarmNow[i] == 2) alarmAcked[i] = true;
 }
 
+// The worst level of a group of channels (the four cylinders of EGT or of CHT), and whether one of them is flashing
+int groupLevel(int first, int count) {
+  int level = 0;
+  for (int i = first; i < first + count; i++) level = max(level, alarmNow[i]);
+  return level;
+}
+
+bool channelFlashing(int channel, uint32_t now) {
+  return alarmNow[channel] == 2 && !alarmAcked[channel] && (now / ALARM_FLASH_MS) % 2 == 1;
+}
+
 // The mark that goes after a label: ! for a caution or an alarm
 char alarmMark(int level) { return level > 0 ? '!' : ' '; }
 
-// An alarm that has not been acknowledged blanks its value half of the time
-void flashIfAlarm(char *value, int channel, uint32_t now) {
-  if (alarmNow[channel] == 2 && !alarmAcked[channel] && (now / ALARM_FLASH_MS) % 2 == 1) memset(value, ' ', strlen(value));
+// An alarm that has not been acknowledged blanks its value half of the time (a group: when any of its channels is flashing)
+void flashIfAlarm(char *value, int first, int count, uint32_t now) {
+  for (int i = first; i < first + count; i++) if (channelFlashing(i, now)) { memset(value, ' ', strlen(value)); return; }
 }
 
 void drawEngineText(const View &v, uint32_t now) {
@@ -1075,19 +1087,19 @@ void drawEngineText(const View &v, uint32_t now) {
   numberOrDashes(oilT, sizeof(oilT), v.hasOilT, "%.0f", celsiusToFahrenheit(v.oilT), 3);
   numberOrDashes(egt, sizeof(egt), e > 0, "%.0f", e > 0 ? celsiusToFahrenheit(v.egt[e - 1]) : 0, 4);
   numberOrDashes(cht, sizeof(cht), c > 0, "%.0f", c > 0 ? celsiusToFahrenheit(v.cht[c - 1]) : 0, 4);
-  flashIfAlarm(rpm, ALARM_RPM, now);
-  flashIfAlarm(oilP, ALARM_OILP, now);
-  flashIfAlarm(oilT, ALARM_OILT, now);
-  flashIfAlarm(egt, ALARM_EGT, now);
-  flashIfAlarm(cht, ALARM_CHT, now);
+  flashIfAlarm(rpm, ALARM_RPM, 1, now);
+  flashIfAlarm(oilP, ALARM_OILP, 1, now);
+  flashIfAlarm(oilT, ALARM_OILT, 1, now);
+  flashIfAlarm(egt, ALARM_EGT, 4, now);
+  flashIfAlarm(cht, ALARM_CHT, 4, now);
 
   snprintf(buf, sizeof(buf), "OilP%c%s psi%8s", alarmMark(alarmNow[ALARM_OILP]), oilP, "EMS");
   printAt(0, 0, buf, 20);
 
-  snprintf(buf, sizeof(buf), "OilT%c%s F EGT%c%c%s", alarmMark(alarmNow[ALARM_OILT]), oilT, e > 0 ? '0' + e : '-', alarmMark(alarmNow[ALARM_EGT]), egt);
+  snprintf(buf, sizeof(buf), "OilT%c%s F EGT%c%c%s", alarmMark(alarmNow[ALARM_OILT]), oilT, e > 0 ? '0' + e : '-', alarmMark(groupLevel(ALARM_EGT, 4)), egt);
   printAt(0, 1, buf, 20);
 
-  snprintf(buf, sizeof(buf), "RPM%c%s   CHT%c%c%s", alarmMark(alarmNow[ALARM_RPM]), rpm, c > 0 ? '0' + c : '-', alarmMark(alarmNow[ALARM_CHT]), cht);
+  snprintf(buf, sizeof(buf), "RPM%c%s   CHT%c%c%s", alarmMark(alarmNow[ALARM_RPM]), rpm, c > 0 ? '0' + c : '-', alarmMark(groupLevel(ALARM_CHT, 4)), cht);
   printAt(0, 2, buf, 20);
 
   numberOrDashes(volts, sizeof(volts), v.hasVolts, "%.1f", v.volts, 4);
@@ -1098,18 +1110,22 @@ void drawEngineText(const View &v, uint32_t now) {
 }
 
 // Four values in columns, right justified in 4 characters, or dashes for a missing one
-void cylinderRow(char *buf, size_t size, char label, const bool has[4], const int value[4]) {
+void cylinderRow(char *buf, size_t size, char label, const bool has[4], const int value[4], int firstChannel, uint32_t now) {
   char col[4][8];
-  for (int i = 0; i < 4; i++) numberOrDashes(col[i], sizeof(col[i]), has[i], "%.0f", celsiusToFahrenheit(value[i]), 4);
+  for (int i = 0; i < 4; i++) {
+    numberOrDashes(col[i], sizeof(col[i]), has[i], "%.0f", celsiusToFahrenheit(value[i]), 4);
+    if (alarmNow[firstChannel + i] > 0 && col[i][0] == ' ') col[i][0] = '!';        // a 3 digit value has a blank to hold the mark
+    if (channelFlashing(firstChannel + i, now)) memset(col[i] + (col[i][0] == '!' ? 1 : 0), ' ', strlen(col[i]) - (col[i][0] == '!' ? 1 : 0));
+  }
   snprintf(buf, size, "%c%s %s %s %s", label, col[0], col[1], col[2], col[3]);
 }
 
 void drawCylindersText(const View &v, uint32_t now) {
   char buf[LCD_COLS + 1];
   printAt(0, 0, "    1    2    3    4", 20);
-  cylinderRow(buf, sizeof(buf), 'E', v.hasEgt, v.egt);
+  cylinderRow(buf, sizeof(buf), 'E', v.hasEgt, v.egt, ALARM_EGT, now);
   printAt(0, 1, buf, 20);
-  cylinderRow(buf, sizeof(buf), 'C', v.hasCht, v.cht);
+  cylinderRow(buf, sizeof(buf), 'C', v.hasCht, v.cht, ALARM_CHT, now);
   printAt(0, 2, buf, 20);
   snprintf(buf, sizeof(buf), "PG %d", page);
   putMarker(buf, FIELD_PAGE, now);
