@@ -77,7 +77,7 @@
 #include <Adafruit_seesaw.h>
 #include "src/Adafruit_MCP2515/src/Adafruit_MCP2515.h"   // patched copy, see Sensors/Libraries/README.md
 
-#define VERSION "1.7.21"
+#define VERSION "1.7.22"
 
 const uint8_t LCD_COLS = 20;
 const uint8_t LCD_ROWS = 4;
@@ -985,7 +985,7 @@ void drawEngineText(const View &v, uint32_t now) {
 
   numberOrDashes(volts, sizeof(volts), v.hasVolts, "%.1f", v.volts, 4);
   numberOrDashes(amps, sizeof(amps), v.hasAmps, "%+.1f", v.amps, 5);
-  snprintf(buf, sizeof(buf), "PG %d  %sV %sA", page, volts, amps);
+  snprintf(buf, sizeof(buf), "PG %d    %sV %sA", page, volts, amps);
   putMarker(buf, FIELD_PAGE, now);
   printAt(0, 3, buf, 20);
 }
