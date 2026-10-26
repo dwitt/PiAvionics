@@ -1,6 +1,6 @@
 # Backup display: design record
 
-Updated 2026-10-26. Sketch: `Backup_Display.ino` (version 1.7.36). The decisions below were made with David
+Updated 2026-10-26. Sketch: `Backup_Display.ino` (version 1.7.37). The decisions below were made with David
 on the bench; the sketch is the authority on exact values.
 
 ## Hardware
@@ -57,7 +57,10 @@ PG>3     12.0V  ---A
 ```
 
 RPM and amps show dashes until the RPM source and the current sensor calibration are chosen (`RPM_PULSES_PER_REV`,
-`AMPS_ZERO_RAW`). Not built yet: alarms (thresholds are in the yaml), flashing of the highest value, a units setting.
+`AMPS_ZERO_RAW`). Alarms (Engine page only so far): a caution puts `!` after the label and an alarm also flashes the value (250 ms on, 250 ms off).
+The limits are in the sketch in bar and C, copied from `thresholds` in the yaml (an off limit is NAN). A missing value never alarms and
+nothing alarms in the first 10 s after power-up. Not built yet: acknowledge with the knob push, alarms on the Cylinders page, RPM
+gating of the low oil pressure alarm, a units setting.
 
 The Flight and GPS pages share one layout: values left and right, the centre block (columns 8 to 10) for the horizon on the Flight
 page and for a GPS satellite icon on the GPS page (3 x 2 cells, columns 7 to 9 of rows 0 and 1, five custom characters taken from the free slots while the GPS page is shown; the glyphs are in `drawGpsIcon`; the top middle cell also carries a small G above the satellite body, and the letters P and S follow it in columns 9 and 10 of row 0, so the row reads GPS; they are custom characters in the two edge line slots, 6 and 7, which the GPS page borrows and which are loaded again when the page changes).

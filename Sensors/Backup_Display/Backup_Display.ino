@@ -78,7 +78,7 @@
 #include <Adafruit_seesaw.h>
 #include "src/Adafruit_MCP2515/src/Adafruit_MCP2515.h"   // patched copy, see Sensors/Libraries/README.md
 
-#define VERSION "1.7.36"
+#define VERSION "1.7.37"
 
 const uint8_t LCD_COLS = 20;
 const uint8_t LCD_ROWS = 4;
@@ -109,6 +109,15 @@ const uint32_t MAX_AGE_GPS_MS = 3500;               // the GPS frames, the statu
 const uint32_t MAX_AGE_HEARTBEAT_MS = 3000;
 const uint32_t MAX_AGE_RDAC_FAST_MS = 1000;          // 0x208 (every 200 ms): older than this and the RDAC is lost, all engine values fail
 const uint32_t MAX_AGE_RDAC_MS = 1500;               // the other RDAC frames (every 500 ms); Protocol/engine_conversions.yaml timeouts
+
+// Engine limits, in bar and degrees C as in Protocol/engine_conversions.yaml (thresholds); NAN is a limit that is off
+const uint32_t ALARM_INHIBIT_MS = 10000;             // no caution or alarm for 10 s after power-up (the Blaze EMS-2 rule)
+const uint32_t ALARM_FLASH_MS = 250;                 // an alarm blanks its value for this long, then shows it for this long
+const float RPM_HIGH_CAUTION = 3800, RPM_HIGH_ALARM = 4000;
+const float OILP_LOW_ALARM_BAR = 0.7f, OILP_LOW_CAUTION_BAR = 1.4f;
+const float OILT_HIGH_CAUTION_C = 110, OILT_HIGH_ALARM_C = 116;
+const float CHT_HIGH_CAUTION_C = 216, CHT_HIGH_ALARM_C = 232;
+const float EGT_HIGH_ALARM_C = 760;
 const int GPS_TRACK_MIN_SPEED_KT = 2;                // the module holds the track at 0 below this ground speed
 const uint32_t STATUS_WARNING_MS = 5000;             // a module that has just failed flashes quickly for this long...
 const uint32_t STATUS_WARNING_FLASH_MS = 500;        // (letter, then dash, each for this long)
@@ -1006,22 +1015,50 @@ int highestOf(const bool has[4], const int value[4]) {
 float barToPsi(float bar) { return bar * 14.5038f; }
 float celsiusToFahrenheit(float c) { return c * 1.8f + 32.0f; }
 
+// 0 normal, 1 caution, 2 alarm. A missing value never alarms, and neither does anything in the first 10 s after power-up
+int alarmLevel(bool has, float value, float lowAlarm, float lowCaution, float highCaution, float highAlarm, uint32_t now) {
+  if (!has || now < ALARM_INHIBIT_MS) return 0;
+  if (value < lowAlarm || value > highAlarm) return 2;        // a comparison with NAN is false, so an off limit never trips
+  if (value < lowCaution || value > highCaution) return 1;
+  return 0;
+}
+
+// The mark that goes after a label: ! for a caution or an alarm
+char alarmMark(int level) { return level > 0 ? '!' : ' '; }
+
+// An alarm blanks its value half of the time
+void flashIfAlarm(char *value, int level, uint32_t now) {
+  if (level == 2 && (now / ALARM_FLASH_MS) % 2 == 1) memset(value, ' ', strlen(value));
+}
+
 void drawEngineText(const View &v, uint32_t now) {
-  char buf[LCD_COLS + 1], rpm[8], oilP[8], oilT[8], hot[8], volts[8], amps[8];
+  char buf[LCD_COLS + 1], rpm[8], oilP[8], oilT[8], egt[8], cht[8], volts[8], amps[8];
+  const int e = highestOf(v.hasEgt, v.egt);
+  const int c = highestOf(v.hasCht, v.cht);
+  const int rpmLevel = alarmLevel(v.hasRpm, v.rpm, NAN, NAN, RPM_HIGH_CAUTION, RPM_HIGH_ALARM, now);
+  const int oilPLevel = alarmLevel(v.hasOilP, v.oilP, OILP_LOW_ALARM_BAR, OILP_LOW_CAUTION_BAR, NAN, NAN, now);
+  const int oilTLevel = alarmLevel(v.hasOilT, v.oilT, NAN, NAN, OILT_HIGH_CAUTION_C, OILT_HIGH_ALARM_C, now);
+  const int egtLevel = alarmLevel(e > 0, e > 0 ? v.egt[e - 1] : 0, NAN, NAN, NAN, EGT_HIGH_ALARM_C, now);
+  const int chtLevel = alarmLevel(c > 0, c > 0 ? v.cht[c - 1] : 0, NAN, NAN, CHT_HIGH_CAUTION_C, CHT_HIGH_ALARM_C, now);
+
   numberOrDashes(rpm, sizeof(rpm), v.hasRpm, "%.0f", v.rpm, 4);
   numberOrDashes(oilP, sizeof(oilP), v.hasOilP, "%.0f", barToPsi(v.oilP), 3);
   numberOrDashes(oilT, sizeof(oilT), v.hasOilT, "%.0f", celsiusToFahrenheit(v.oilT), 3);
-  snprintf(buf, sizeof(buf), "OilP %s psi%8s", oilP, "EMS");
+  numberOrDashes(egt, sizeof(egt), e > 0, "%.0f", e > 0 ? celsiusToFahrenheit(v.egt[e - 1]) : 0, 4);
+  numberOrDashes(cht, sizeof(cht), c > 0, "%.0f", c > 0 ? celsiusToFahrenheit(v.cht[c - 1]) : 0, 4);
+  flashIfAlarm(rpm, rpmLevel, now);
+  flashIfAlarm(oilP, oilPLevel, now);
+  flashIfAlarm(oilT, oilTLevel, now);
+  flashIfAlarm(egt, egtLevel, now);
+  flashIfAlarm(cht, chtLevel, now);
+
+  snprintf(buf, sizeof(buf), "OilP%c%s psi%8s", alarmMark(oilPLevel), oilP, "EMS");
   printAt(0, 0, buf, 20);
 
-  const int e = highestOf(v.hasEgt, v.egt);
-  numberOrDashes(hot, sizeof(hot), e > 0, "%.0f", e > 0 ? celsiusToFahrenheit(v.egt[e - 1]) : 0, 4);
-  snprintf(buf, sizeof(buf), "OilT %s F EGT%c %s", oilT, e > 0 ? '0' + e : '-', hot);
+  snprintf(buf, sizeof(buf), "OilT%c%s F EGT%c%c%s", alarmMark(oilTLevel), oilT, e > 0 ? '0' + e : '-', alarmMark(egtLevel), egt);
   printAt(0, 1, buf, 20);
 
-  const int c = highestOf(v.hasCht, v.cht);
-  numberOrDashes(hot, sizeof(hot), c > 0, "%.0f", c > 0 ? celsiusToFahrenheit(v.cht[c - 1]) : 0, 4);
-  snprintf(buf, sizeof(buf), "RPM %s   CHT%c %s", rpm, c > 0 ? '0' + c : '-', hot);
+  snprintf(buf, sizeof(buf), "RPM%c%s   CHT%c%c%s", alarmMark(rpmLevel), rpm, c > 0 ? '0' + c : '-', alarmMark(chtLevel), cht);
   printAt(0, 2, buf, 20);
 
   numberOrDashes(volts, sizeof(volts), v.hasVolts, "%.1f", v.volts, 4);
