@@ -8,7 +8,7 @@
 
   The flight page, fed from the CAN bus (or simulated, see M below):
       IAS 105|HHH|ALT 4520
-      VS +500|HHH| HDG 270
+      VS +500|HHH|HDG  270
       OAT 12C|_o_|   G 1.0       (the o is the slip ball, the _ a line under it)
       PG>1   IAGE   29.92?       (the > is the marker of the selected field, see the encoder)
   HHH is the mini horizon, 3 x 2 character cells (15 x 16 pixels, drawn as 17 x 17 with the gaps between the cells counted).
@@ -78,7 +78,7 @@
 #include <Adafruit_seesaw.h>
 #include "src/Adafruit_MCP2515/src/Adafruit_MCP2515.h"   // patched copy, see Sensors/Libraries/README.md
 
-#define VERSION "1.7.35"
+#define VERSION "1.7.36"
 
 const uint8_t LCD_COLS = 20;
 const uint8_t LCD_ROWS = 4;
@@ -883,7 +883,7 @@ void drawFlightText(const View &v, uint32_t now) {
   if (v.hasHeading) snprintf(b, sizeof(b), "%03d", v.heading); else snprintf(b, sizeof(b), "---");
   snprintf(buf, sizeof(buf), "VS%s%c", a, (char)BAR_LEFT_SLOT);
   printAt(0, 1, buf, 8);
-  snprintf(buf, sizeof(buf), "%c HDG %s", (char)BAR_RIGHT_SLOT, b);
+  snprintf(buf, sizeof(buf), "%cHDG  %s", (char)BAR_RIGHT_SLOT, b);
   printAt(11, 1, buf, 9);
 
   if (v.hasOat) snprintf(a, sizeof(a), "%2d", v.oat); else snprintf(a, sizeof(a), "--");

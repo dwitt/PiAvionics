@@ -1,6 +1,6 @@
 # Backup display: design record
 
-Updated 2026-10-26. Sketch: `Backup_Display.ino` (version 1.7.35). The decisions below were made with David
+Updated 2026-10-26. Sketch: `Backup_Display.ino` (version 1.7.36). The decisions below were made with David
 on the bench; the sketch is the authority on exact values.
 
 ## Hardware
@@ -66,7 +66,7 @@ Flight page (`|` is the edge line drawn in a custom character, see below):
 
 ```
 IAS 105|HHH|ALT 4520
-VS +500|HHH| HDG 270
+VS +500|HHH|HDG  270
 OAT 12C|_o_|   G 1.0
 PG>1   IAGE   30.30
 ```
