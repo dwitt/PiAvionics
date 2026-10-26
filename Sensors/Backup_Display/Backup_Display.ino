@@ -78,7 +78,7 @@
 #include <Adafruit_seesaw.h>
 #include "src/Adafruit_MCP2515/src/Adafruit_MCP2515.h"   // patched copy, see Sensors/Libraries/README.md
 
-#define VERSION "1.7.33"
+#define VERSION "1.7.34"
 
 const uint8_t LCD_COLS = 20;
 const uint8_t LCD_ROWS = 4;
@@ -917,7 +917,7 @@ void drawFlightText(const View &v, uint32_t now) {
 }
 
 // A GPS satellite icon in columns 7 to 9 of rows 0 and 1, five custom characters, with the P and S after the G in TM:
-//   row 0: TL TM(G) P S     row 1: BL BM BR
+//   row 0: TL TM(G) P S     row 1: BL BM BR   (P and S are custom characters the same height as the G)
 void drawGpsIcon() {
   static const uint8_t glyph[5][8] = {
     { 0x18, 0x1C, 0x0E, 0x07, 0x03, 0x00, 0x00, 0x00 },   // TL
@@ -932,11 +932,16 @@ void drawGpsIcon() {
     if (slot >= 0) slotWrite(slot, glyph[i]);
     code[i] = slot >= 0 ? slot : ' ';                     // blank if no slot is free
   }
+  // The P and S take the two edge line slots, which the Flight page needs but this page does not (markerCreate puts the lines back)
+  static const uint8_t letterP[8] = { 0x1E, 0x11, 0x1E, 0x10, 0x10, 0x00, 0x00, 0x00 };
+  static const uint8_t letterS[8] = { 0x0F, 0x10, 0x0E, 0x01, 0x1E, 0x00, 0x00, 0x00 };
+  slotWrite(BAR_LEFT_SLOT, letterP);
+  slotWrite(BAR_RIGHT_SLOT, letterS);
   lcd.setCursor(7, 0);
   lcd.write((uint8_t)code[0]);
   lcd.write((uint8_t)code[1]);
-  lcd.write((uint8_t)'P');
-  lcd.write((uint8_t)'S');
+  lcd.write((uint8_t)BAR_LEFT_SLOT);
+  lcd.write((uint8_t)BAR_RIGHT_SLOT);
   lcd.setCursor(7, 1);
   lcd.write((uint8_t)code[2]);
   lcd.write((uint8_t)code[3]);
@@ -1121,6 +1126,9 @@ void loop1() {
     horizonState = HZ_UNKNOWN;
     slipForget();
     for (int i = 0; i < 5; i++) slotRelease(OWNER_GPS_ICON + i);
+    markerCreate();                            // the GPS page borrows the two edge line slots; put the lines back and forget what was there
+    memset(slotData[BAR_LEFT_SLOT], 0xFF, 8);
+    memset(slotData[BAR_RIGHT_SLOT], 0xFF, 8);
   }
 
   if (page == PAGE_FLIGHT && now - lastHorizon >= horizonPeriodMs) {
