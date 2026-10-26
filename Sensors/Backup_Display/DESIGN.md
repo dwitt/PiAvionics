@@ -60,7 +60,7 @@ RPM and amps show dashes until the RPM source and the current sensor calibration
 `AMPS_ZERO_RAW`). Not built yet: alarms (thresholds are in the yaml), flashing of the highest value, a units setting.
 
 The Flight and GPS pages share one layout: values left and right, the centre block (columns 8 to 10) for the horizon on the Flight
-page and for the label `GPS` over `DATA` on the GPS page.
+page and for the label `GPS` on the GPS page.
 
 Flight page (`|` is the edge line drawn in a custom character, see below):
 
@@ -100,7 +100,7 @@ GPS page:
 
 ```
 GS 105  GPS ALT 4500
-14:32Z  DATA TRK 262
+14:32Z       TRK 262
 N43.6532   W079.3832
 PG>2  3D 9sat HD1.1
 ```

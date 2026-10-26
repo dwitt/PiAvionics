@@ -12,9 +12,9 @@
       OAT 12C|_o_|   G 1.0       (the o is the slip ball, the _ a line under it)
       PG>1   IAGE   29.92?       (the > is the marker of the selected field, see the encoder)
   HHH is the mini horizon, 3 x 2 character cells (15 x 16 pixels, drawn as 17 x 17 with the gaps between the cells counted).
-  The GPS page (fed by the GPS module) has the same layout, with GPS over DATA where the horizon is:
+  The GPS page (fed by the GPS module) has the same layout, with the label GPS where the horizon is:
       GS 105  GPS ALT 4500
-      14:32Z  DATA TRK 262
+      14:32Z       TRK 262
       N43.6532   W079.3832
       PG>2  3D 9sat HD1.1
   Custom characters: slot 6 is a vertical line on the right pixel column of the cell and slot 7 one on the left pixel column.
@@ -78,7 +78,7 @@
 #include <Adafruit_seesaw.h>
 #include "src/Adafruit_MCP2515/src/Adafruit_MCP2515.h"   // patched copy, see Sensors/Libraries/README.md
 
-#define VERSION "1.7.23"
+#define VERSION "1.7.24"
 
 const uint8_t LCD_COLS = 20;
 const uint8_t LCD_ROWS = 4;
@@ -917,7 +917,7 @@ void drawFlightText(const View &v, uint32_t now) {
 
 void drawGpsText(const View &v, uint32_t now) {
   char buf[LCD_COLS + 1], a[12], b[12], c[12];
-  // Same grid as the Flight page: GPS and DATA take the place of the horizon in columns 8 to 11
+  // Same grid as the Flight page: GPS takes the place of the horizon in columns 8 to 11
   if (v.hasGpsSpeed) snprintf(a, sizeof(a), "%3d", v.gpsSpeed); else snprintf(a, sizeof(a), "---");
   if (v.hasGpsAlt) snprintf(b, sizeof(b), "%5d", v.gpsAlt); else snprintf(b, sizeof(b), "-----");
   snprintf(buf, sizeof(buf), "GS %3s  GPS ALT%s", a, b);
@@ -925,7 +925,7 @@ void drawGpsText(const View &v, uint32_t now) {
 
   if (v.hasTime) snprintf(a, sizeof(a), "%02d:%02dZ", v.hour, v.minute); else snprintf(a, sizeof(a), "--:--Z");
   if (v.hasGpsTrack) snprintf(b, sizeof(b), "%03d", v.gpsTrack); else snprintf(b, sizeof(b), "---");
-  snprintf(buf, sizeof(buf), "%-6s  DATA TRK %s", a, b);
+  snprintf(buf, sizeof(buf), "%-6s       TRK %s", a, b);
   printAt(0, 1, buf, 20);
 
   if (v.hasPosition) {
