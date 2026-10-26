@@ -77,7 +77,7 @@
 #include <Adafruit_seesaw.h>
 #include "src/Adafruit_MCP2515/src/Adafruit_MCP2515.h"   // patched copy, see Sensors/Libraries/README.md
 
-#define VERSION "1.7.12"
+#define VERSION "1.7.13"
 
 const uint8_t LCD_COLS = 20;
 const uint8_t LCD_ROWS = 4;
@@ -966,17 +966,18 @@ void drawEngineText(const View &v, uint32_t now) {
   numberOrDashes(rpm, sizeof(rpm), v.hasRpm, "%.0f", v.rpm, 4);
   numberOrDashes(oilP, sizeof(oilP), v.hasOilP, "%.1f", v.oilP, 4);
   numberOrDashes(oilT, sizeof(oilT), v.hasOilT, "%.0f", v.oilT, 4);
-  snprintf(buf, sizeof(buf), "RPM %s  OP %sbar", rpm, oilP);
+  snprintf(buf, sizeof(buf), "OP %sbar  RPM %s", oilP, rpm);
   printAt(0, 0, buf, 20);
+
+  snprintf(buf, sizeof(buf), "OT %sC", oilT);
+  printAt(0, 1, buf, 20);
 
   const int e = highestOf(v.hasEgt, v.egt);
   numberOrDashes(hot, sizeof(hot), e > 0, "%.0f", e > 0 ? v.egt[e - 1] : 0, 3);
-  snprintf(buf, sizeof(buf), "EGT%c %s  OT %sC", e > 0 ? '0' + e : '-', hot, oilT);
-  printAt(0, 1, buf, 20);
-
+  snprintf(buf, sizeof(buf), "EGT%c %s ", e > 0 ? '0' + e : '-', hot);
   const int c = highestOf(v.hasCht, v.cht);
   numberOrDashes(hot, sizeof(hot), c > 0, "%.0f", c > 0 ? v.cht[c - 1] : 0, 3);
-  snprintf(buf, sizeof(buf), "CHT%c %s", c > 0 ? '0' + c : '-', hot);
+  snprintf(buf + strlen(buf), sizeof(buf) - strlen(buf), "CHT%c %s", c > 0 ? '0' + c : '-', hot);
   printAt(0, 2, buf, 20);
 
   numberOrDashes(volts, sizeof(volts), v.hasVolts, "%.1f", v.volts, 4);
