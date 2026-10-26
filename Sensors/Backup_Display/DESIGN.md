@@ -1,6 +1,6 @@
 # Backup display: design record
 
-Updated 2026-10-26. Sketch: `Backup_Display.ino` (version 1.7.25). The decisions below were made with David
+Updated 2026-10-26. Sketch: `Backup_Display.ino` (version 1.7.26). The decisions below were made with David
 on the bench; the sketch is the authority on exact values.
 
 ## Hardware
@@ -60,7 +60,7 @@ RPM and amps show dashes until the RPM source and the current sensor calibration
 `AMPS_ZERO_RAW`). Not built yet: alarms (thresholds are in the yaml), flashing of the highest value, a units setting.
 
 The Flight and GPS pages share one layout: values left and right, the centre block (columns 8 to 10) for the horizon on the Flight
-page and for the label `GPS` on the GPS page. The label is underlined: its three letters are custom characters (the bottom pixel row filled), taken from the free slots while the GPS page is shown.
+page and for the label `GPS` on the GPS page. Under the label (columns 8 to 10, row 1) is a small satellite drawn with three custom characters (a solar panel, the body with an antenna, the other panel), taken from the free slots while the GPS page is shown.
 
 Flight page (`|` is the edge line drawn in a custom character, see below):
 
