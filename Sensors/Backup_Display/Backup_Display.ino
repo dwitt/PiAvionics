@@ -12,7 +12,7 @@
       OAT 12C|_o_|   G 1.0       (the o is the slip ball, the _ a line under it)
       PG>1   IAGE   29.92?       (the > is the marker of the selected field, see the encoder)
   HHH is the mini horizon, 3 x 2 character cells (15 x 16 pixels, drawn as 17 x 17 with the gaps between the cells counted).
-  The GPS page (fed by the GPS module) has the same layout, with the label GPS over a satellite (three custom characters) where the horizon is:
+  The GPS page (fed by the GPS module) has the same layout, with the label GPS over a satellite (two custom characters) where the horizon is:
       GS 105  GPS ALT 4500
       14:32Z       TRK 262
       N43.6532   W079.3832
@@ -78,7 +78,7 @@
 #include <Adafruit_seesaw.h>
 #include "src/Adafruit_MCP2515/src/Adafruit_MCP2515.h"   // patched copy, see Sensors/Libraries/README.md
 
-#define VERSION "1.7.26"
+#define VERSION "1.7.27"
 
 const uint8_t LCD_COLS = 20;
 const uint8_t LCD_ROWS = 4;
@@ -380,7 +380,7 @@ void printAt(uint8_t col, uint8_t row, const char *s, uint8_t width) {
 const int CHAR_BLANK = 0x20, CHAR_SOLID = 0xFF;      // the built-in blank and solid block
 const int NO_OWNER = -1, RESERVED = -2;
 const int OWNER_SLIP = 6;                            // the slip track cells are owners 6, 7 and 8
-const int OWNER_GPS_SAT = 9;                       // the satellite on the GPS page is owners 9, 10 and 11
+const int OWNER_GPS_SAT = 9;                       // the satellite on the GPS page is owners 9 and 10
 int slotOwner[8] = { NO_OWNER, NO_OWNER, NO_OWNER, NO_OWNER, NO_OWNER, NO_OWNER, NO_OWNER, NO_OWNER };
 uint8_t slotData[8][8];
 
@@ -916,18 +916,21 @@ void drawFlightText(const View &v, uint32_t now) {
   printAt(0, 3, buf, 20);
 }
 
-// A satellite in columns 8 to 10 of row 1: a solar panel, the body with its antenna, and the other panel, as custom characters
+// A satellite in columns 8 to 10 of row 1: a solar panel, the body with its two arms, and the same panel again (two custom characters)
 void drawGpsSatellite() {
-  static const uint8_t glyph[3][8] = {
-    { 0x00, 0x1E, 0x16, 0x1F, 0x1F, 0x16, 0x1E, 0x00 },   // left panel and its arm
-    { 0x04, 0x04, 0x0E, 0x1F, 0x1F, 0x0E, 0x00, 0x00 },   // body, antenna and the two arms
-    { 0x00, 0x0F, 0x0D, 0x1F, 0x1F, 0x0D, 0x0F, 0x00 },   // right panel and its arm
+  static const uint8_t glyph[2][8] = {
+    { 0x1F, 0x15, 0x15, 0x1F, 0x15, 0x15, 0x1F, 0x00 },   // solar panel
+    { 0x00, 0x0E, 0x0E, 0x1F, 0x0E, 0x0E, 0x00, 0x00 },   // body and the arms
   };
+  int slot[2];
+  for (int i = 0; i < 2; i++) {
+    slot[i] = slotAcquire(OWNER_GPS_SAT + i);
+    if (slot[i] >= 0) slotWrite(slot[i], glyph[i]);
+  }
+  static const uint8_t part[3] = { 0, 1, 0 };             // panel, body, panel
   for (int i = 0; i < 3; i++) {
-    const int slot = slotAcquire(OWNER_GPS_SAT + i);
-    if (slot >= 0) slotWrite(slot, glyph[i]);
     lcd.setCursor(8 + i, 1);
-    lcd.write((uint8_t)(slot >= 0 ? slot : ' '));         // blank if no slot is free
+    lcd.write((uint8_t)(slot[part[i]] >= 0 ? slot[part[i]] : ' '));   // blank if no slot is free
   }
 }
 
@@ -1106,7 +1109,7 @@ void loop1() {
     drawnPage = page;
     horizonState = HZ_UNKNOWN;
     slipForget();
-    for (int i = 0; i < 3; i++) slotRelease(OWNER_GPS_SAT + i);
+    for (int i = 0; i < 2; i++) slotRelease(OWNER_GPS_SAT + i);
   }
 
   if (page == PAGE_FLIGHT && now - lastHorizon >= horizonPeriodMs) {
