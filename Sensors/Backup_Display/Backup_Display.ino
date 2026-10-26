@@ -13,8 +13,8 @@
       PG>1   IAGE   29.92?       (the > is the marker of the selected field, see the encoder)
   HHH is the mini horizon, 3 x 2 character cells (15 x 16 pixels, drawn as 17 x 17 with the gaps between the cells counted).
   The GPS page (fed by the GPS module) has the same layout, with a GPS satellite icon (five custom characters, 3 x 2 cells) where the horizon is:
-      GS 105  [icon] ALT 4500
-      14:32Z  [icon]  TRK 262
+      GS 105 [icon]PS ALT 4500
+      14:32Z [icon]   TRK 262
       N43.6532   W079.3832
       PG>2  3D 9sat HD1.1
   Custom characters: slot 6 is a vertical line on the right pixel column of the cell and slot 7 one on the left pixel column.
@@ -78,7 +78,7 @@
 #include <Adafruit_seesaw.h>
 #include "src/Adafruit_MCP2515/src/Adafruit_MCP2515.h"   // patched copy, see Sensors/Libraries/README.md
 
-#define VERSION "1.7.32"
+#define VERSION "1.7.33"
 
 const uint8_t LCD_COLS = 20;
 const uint8_t LCD_ROWS = 4;
@@ -916,8 +916,8 @@ void drawFlightText(const View &v, uint32_t now) {
   printAt(0, 3, buf, 20);
 }
 
-// A GPS satellite icon in columns 8 to 10 of rows 0 and 1, five custom characters:
-//   row 0: TL TM blank     row 1: BL BM BR
+// A GPS satellite icon in columns 7 to 9 of rows 0 and 1, five custom characters, with the P and S after the G in TM:
+//   row 0: TL TM(G) P S     row 1: BL BM BR
 void drawGpsIcon() {
   static const uint8_t glyph[5][8] = {
     { 0x18, 0x1C, 0x0E, 0x07, 0x03, 0x00, 0x00, 0x00 },   // TL
@@ -932,11 +932,12 @@ void drawGpsIcon() {
     if (slot >= 0) slotWrite(slot, glyph[i]);
     code[i] = slot >= 0 ? slot : ' ';                     // blank if no slot is free
   }
-  lcd.setCursor(8, 0);
+  lcd.setCursor(7, 0);
   lcd.write((uint8_t)code[0]);
   lcd.write((uint8_t)code[1]);
-  lcd.write((uint8_t)' ');
-  lcd.setCursor(8, 1);
+  lcd.write((uint8_t)'P');
+  lcd.write((uint8_t)'S');
+  lcd.setCursor(7, 1);
   lcd.write((uint8_t)code[2]);
   lcd.write((uint8_t)code[3]);
   lcd.write((uint8_t)code[4]);
@@ -948,17 +949,17 @@ void drawGpsText(const View &v, uint32_t now) {
   if (v.hasGpsSpeed) snprintf(a, sizeof(a), "%3d", v.gpsSpeed); else snprintf(a, sizeof(a), "---");
   if (v.hasGpsAlt) snprintf(b, sizeof(b), "%5d", v.gpsAlt); else snprintf(b, sizeof(b), "-----");
   snprintf(buf, sizeof(buf), "GS %3s", a);
-  printAt(0, 0, buf, 8);
+  printAt(0, 0, buf, 7);
   snprintf(buf, sizeof(buf), " ALT%s", b);
   printAt(11, 0, buf, 9);
 
   if (v.hasTime) snprintf(a, sizeof(a), "%02d:%02dZ", v.hour, v.minute); else snprintf(a, sizeof(a), "--:--Z");
   if (v.hasGpsTrack) snprintf(b, sizeof(b), "%03d", v.gpsTrack); else snprintf(b, sizeof(b), "---");
   snprintf(buf, sizeof(buf), "%-6s", a);
-  printAt(0, 1, buf, 8);
+  printAt(0, 1, buf, 7);
   drawGpsIcon();
-  snprintf(buf, sizeof(buf), "  TRK %s", b);
-  printAt(11, 1, buf, 9);
+  snprintf(buf, sizeof(buf), "   TRK %s", b);
+  printAt(10, 1, buf, 10);
 
   if (v.hasPosition) {
     snprintf(a, sizeof(a), "%c%07.4f", v.lat >= 0 ? 'N' : 'S', fabs(v.lat));
