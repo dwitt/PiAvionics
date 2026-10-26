@@ -1,6 +1,6 @@
 # Backup display: design record
 
-Updated 2026-10-26. Sketch: `Backup_Display.ino` (version 1.7.39). The decisions below were made with David
+Updated 2026-10-26. Sketch: `Backup_Display.ino` (version 1.7.40). The decisions below were made with David
 on the bench; the sketch is the authority on exact values.
 
 ## Hardware
@@ -42,7 +42,7 @@ pressure altitude (the Flight page only).
 | 1 Flight | built | IAS, ALT, VS, HDG, OAT, G, mini horizon and slip ball in the centre, module status letters, QNH |
 | 2 GPS | built | ground speed, GPS altitude, time, track, position, fix type, satellites, HDOP |
 | 3 Engine | built | oil P (psi), oil T (F), RPM, highest EGT and CHT with their cylinder numbers (F), volts, amps; "EMS" upper right |
-| 4 Cylinders | built | EGT and CHT of each cylinder in F, cylinder numbers over the columns |
+| 4 Cylinders | built | EGT and CHT of each cylinder in F, cylinder numbers over the columns, `CYL` in the upper left |
 | 5 System | built | backlight field, display version, module states from the heartbeats, CAN frame rate, uptime |
 | 6 Versions | built | firmware versions from the heartbeats: I IMU, A AIR, G GPS, E EFIS (`--` if silent), D this display |
 

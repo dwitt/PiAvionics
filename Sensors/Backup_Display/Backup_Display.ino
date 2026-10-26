@@ -78,7 +78,7 @@
 #include <Adafruit_seesaw.h>
 #include "src/Adafruit_MCP2515/src/Adafruit_MCP2515.h"   // patched copy, see Sensors/Libraries/README.md
 
-#define VERSION "1.7.39"
+#define VERSION "1.7.40"
 
 const uint8_t LCD_COLS = 20;
 const uint8_t LCD_ROWS = 4;
@@ -1122,7 +1122,7 @@ void cylinderRow(char *buf, size_t size, char label, const bool has[4], const in
 
 void drawCylindersText(const View &v, uint32_t now) {
   char buf[LCD_COLS + 1];
-  printAt(0, 0, "    1    2    3    4", 20);
+  printAt(0, 0, "CYL 1    2    3    4", 20);
   cylinderRow(buf, sizeof(buf), 'E', v.hasEgt, v.egt, ALARM_EGT, now);
   printAt(0, 1, buf, 20);
   cylinderRow(buf, sizeof(buf), 'C', v.hasCht, v.cht, ALARM_CHT, now);
