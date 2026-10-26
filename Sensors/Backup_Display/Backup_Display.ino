@@ -31,11 +31,12 @@
           between the arrow and a blank, in the column between the label and the value.
   There is no timeout.
 
-  Pages (PG, bottom left of every page; adjusting it changes the page): 1 Flight, 2 GPS, 3 Engine, 4 System, 5 Versions.
+  Pages (PG, bottom left of every page; adjusting it changes the page): 1 Flight, 2 GPS, 3 Engine, 4 Cylinders, 5 System, 6 Versions.
   The fields on each page, in clockwise order from the lower right:
       Flight:  QNH (lower right, only on pages that show altitude), PG
       GPS:     PG
       Engine:  PG
+      Cylinders: PG
       System:  PG, BL (backlight on/off, upper left)
       Versions: PG (the module versions from the heartbeats: I IMU, A AIR, G GPS, E EFIS, D this display)
   Brightness and contrast cannot be set from software with this backpack: the backlight is on/off and the contrast is a pot.
@@ -77,7 +78,7 @@
 #include <Adafruit_seesaw.h>
 #include "src/Adafruit_MCP2515/src/Adafruit_MCP2515.h"   // patched copy, see Sensors/Libraries/README.md
 
-#define VERSION "1.7.22"
+#define VERSION "1.7.23"
 
 const uint8_t LCD_COLS = 20;
 const uint8_t LCD_ROWS = 4;
@@ -129,9 +130,10 @@ const Position MARKER_POS[FIELD_COUNT] = { { 13, 3 }, { 2, 3 }, { 2, 0 } };   //
 const Field FLIGHT_FIELDS[] = { FIELD_QNH, FIELD_PAGE };           // clockwise from the lower right
 const Field GPS_FIELDS[] = { FIELD_PAGE };
 const Field ENGINE_FIELDS[] = { FIELD_PAGE };
+const Field CYLINDERS_FIELDS[] = { FIELD_PAGE };
 const Field SYSTEM_FIELDS[] = { FIELD_PAGE, FIELD_BACKLIGHT };
 const Field VERSIONS_FIELDS[] = { FIELD_PAGE };
-const uint8_t PAGE_FLIGHT = 1, PAGE_GPS = 2, PAGE_ENGINE = 3, PAGE_SYSTEM = 4, PAGE_VERSIONS = 5;
+const uint8_t PAGE_FLIGHT = 1, PAGE_GPS = 2, PAGE_ENGINE = 3, PAGE_CYLINDERS = 4, PAGE_SYSTEM = 5, PAGE_VERSIONS = 6;
 const char MARKER_CHAR = 0x7E;                       // the built-in right arrow
 const uint8_t BAR_LEFT_SLOT = 6, BAR_RIGHT_SLOT = 7; // custom characters: the lines on each side of the horizon (columns 7 and 11, rows 0 to 2)
 const uint8_t SLIP_COL = 8, SLIP_ROW = 2;            // the slip track: 3 cells under the horizon
@@ -142,7 +144,7 @@ const int SLIP_POSITIONS = 13;                       // its left pixel can be at
 const float SLIP_FILTER = 0.2f;                      // low pass at each 100 ms redraw (about 0.5 s)
 const int QNH_MIN = 2800;                            // inHg x 100
 const int QNH_MAX = 3100;
-const int PAGE_COUNT = 5;
+const int PAGE_COUNT = 6;
 
 // mini horizon
 const uint8_t HZ_COL = 8;            // top left cell: in the middle of the screen, rows 0 and 1
@@ -540,6 +542,7 @@ bool encoderBegin() {
 
 const Field *pageFields(int forPage, int &count) {
   if (forPage == PAGE_SYSTEM) { count = sizeof(SYSTEM_FIELDS) / sizeof(SYSTEM_FIELDS[0]); return SYSTEM_FIELDS; }
+  if (forPage == PAGE_CYLINDERS) { count = sizeof(CYLINDERS_FIELDS) / sizeof(CYLINDERS_FIELDS[0]); return CYLINDERS_FIELDS; }
   if (forPage == PAGE_ENGINE) { count = sizeof(ENGINE_FIELDS) / sizeof(ENGINE_FIELDS[0]); return ENGINE_FIELDS; }
   if (forPage == PAGE_VERSIONS) { count = sizeof(VERSIONS_FIELDS) / sizeof(VERSIONS_FIELDS[0]); return VERSIONS_FIELDS; }
   if (forPage == PAGE_GPS) { count = sizeof(GPS_FIELDS) / sizeof(GPS_FIELDS[0]); return GPS_FIELDS; }
@@ -990,6 +993,25 @@ void drawEngineText(const View &v, uint32_t now) {
   printAt(0, 3, buf, 20);
 }
 
+// Four values in columns, right justified in 4 characters, or dashes for a missing one
+void cylinderRow(char *buf, size_t size, char label, const bool has[4], const int value[4]) {
+  char col[4][8];
+  for (int i = 0; i < 4; i++) numberOrDashes(col[i], sizeof(col[i]), has[i], "%.0f", celsiusToFahrenheit(value[i]), 4);
+  snprintf(buf, size, "%c%s %s %s %s", label, col[0], col[1], col[2], col[3]);
+}
+
+void drawCylindersText(const View &v, uint32_t now) {
+  char buf[LCD_COLS + 1];
+  printAt(0, 0, "    1    2    3    4", 20);
+  cylinderRow(buf, sizeof(buf), 'E', v.hasEgt, v.egt);
+  printAt(0, 1, buf, 20);
+  cylinderRow(buf, sizeof(buf), 'C', v.hasCht, v.cht);
+  printAt(0, 2, buf, 20);
+  snprintf(buf, sizeof(buf), "PG %d", page);
+  putMarker(buf, FIELD_PAGE, now);
+  printAt(0, 3, buf, 20);
+}
+
 // "OK", "DG" degraded, "ST" starting, "FL" failed, "--" no heartbeat for 3 s
 const char *moduleStateText(uint8_t node, uint32_t now) {
   const Heartbeat &hb = heartbeats[node];
@@ -1095,6 +1117,7 @@ void loop1() {
   if (now - lastText < 100) return;            // the text rows refresh at 10 Hz
   lastText = now;
   if (page == PAGE_VERSIONS) drawVersionsText(now);
+  else if (page == PAGE_CYLINDERS) drawCylindersText(v, now);
   else if (page == PAGE_ENGINE) drawEngineText(v, now);
   else if (page == PAGE_SYSTEM) drawSystemText(now);
   else if (page == PAGE_GPS) drawGpsText(v, now);
