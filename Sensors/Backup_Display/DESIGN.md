@@ -1,6 +1,6 @@
 # Backup display: design record
 
-Updated 2026-10-22. Sketch: `Backup_Display.ino` (version 1.7.11). The decisions below were made with David
+Updated 2026-10-26. Sketch: `Backup_Display.ino` (version 1.7.23). The decisions below were made with David
 on the bench; the sketch is the authority on exact values.
 
 ## Hardware
@@ -34,16 +34,30 @@ every 2 s until it is reconnected. The same scheme is in the IMU (1.0.18), AIR (
 ## The screen
 
 20x4 characters. A value that is missing or stale (older than its "treated as lost after" time in `Protocol/CAN_PROTOCOL.md`)
-shows as dashes. There are four pages. PG is in the lower left of every page and QNH in the lower right of any page that shows
+shows as dashes. There are six pages. PG is in the lower left of every page and QNH in the lower right of any page that shows
 pressure altitude (the Flight page only).
 
 | Page | State | Contents |
 |---|---|---|
 | 1 Flight | built | IAS, ALT, VS, HDG, OAT, G, mini horizon and slip ball in the centre, module status letters, QNH |
 | 2 GPS | built | ground speed, GPS altitude, time, track, position, fix type, satellites, HDOP |
-| 3 System | built | backlight field, display version, module states from the heartbeats, CAN frame rate, uptime |
-| 4 Versions | built | firmware versions from the heartbeats: I IMU, A AIR, G GPS, E EFIS (`--` if silent), D this display |
-| Engine | not built | RPM, MAP, oil P and T, EGT, CHT, volts, fuel flow. Would go between GPS and System. Needs a decision on the MGL RDAC raw values (see below) |
+| 3 Engine | built | oil P (psi), oil T (F), RPM, highest EGT and CHT with their cylinder numbers (F), volts, amps; "Engine" upper right |
+| 4 Cylinders | built | EGT and CHT of each cylinder in F, cylinder numbers over the columns |
+| 5 System | built | backlight field, display version, module states from the heartbeats, CAN frame rate, uptime |
+| 6 Versions | built | firmware versions from the heartbeats: I IMU, A AIR, G GPS, E EFIS (`--` if silent), D this display |
+
+The Engine and Cylinders pages read the MGL RDAC XF frames 0x202, 0x203, 0x205, 0x207 and 0x208 and convert them as in
+`Protocol/engine_conversions.yaml` (values stay in bar and C; only the drawing converts to psi and F). The Engine page layout:
+
+```
+OilP --- psi   Engine
+OilT 171F EGT3   63F
+RPM ----  CHT2   63F
+PG>3     12.0V  ---A
+```
+
+RPM and amps show dashes until the RPM source and the current sensor calibration are chosen (`RPM_PULSES_PER_REV`,
+`AMPS_ZERO_RAW`). Not built yet: alarms (thresholds are in the yaml), flashing of the highest value, a units setting.
 
 The Flight and GPS pages share one layout: values left and right, the centre block (columns 8 to 10) for the horizon on the Flight
 page and for the label `GPS` over `DATA` on the GPS page.
@@ -172,8 +186,7 @@ stops remote flashing.
 
 - **G on the Flight page:** keep it or not, and whether to smooth it. A later option is to move G and the slip filter into the IMU
   module as the single source (this needs new CAN messages).
-- **Engine page:** the MGL RDAC sends raw ADC values for MAP and the analogue channels. The backup would need the calibration
-  built into the sketch. Decide which values the backup should show.
-- **Heartbeat:** the display sends one on 0x704 (module 4, every second) from 1.7.10. State 1 OK, 2 if the encoder is missing; sensors bit 0 LCD, bit 1 encoder. The EFIS does not read it yet.
+- **Engine alarms:** LCD caution mark, flashing alarm, knob push to acknowledge, 10 s power-up inhibit; thresholds from `Protocol/engine_conversions.yaml`.
+- **Heartbeat:** the display sends one on 0x704 (module 4, every second) from 1.7.10. State 1 OK, 2 if the encoder is missing; sensors bit 0 LCD, bit 1 encoder. The EFIS reads it (BACKUP block on the Modules page).
 - **Not tested:** the slip ball, G and the horizon in an aircraft; the display and the EFIS agreeing after the display itself
   restarts mid-flight with everyone else set.
