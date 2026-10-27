@@ -78,7 +78,7 @@
 #include <Adafruit_seesaw.h>
 #include "src/Adafruit_MCP2515/src/Adafruit_MCP2515.h"   // patched copy, see Sensors/Libraries/README.md
 
-#define VERSION "1.7.41"
+#define VERSION "1.7.42"
 
 const uint8_t LCD_COLS = 20;
 const uint8_t LCD_ROWS = 4;
@@ -118,6 +118,7 @@ const float OILP_LOW_ALARM_BAR = 0.7f, OILP_LOW_CAUTION_BAR = 1.4f;
 const float OILT_HIGH_CAUTION_C = 110, OILT_HIGH_ALARM_C = 116;
 const float CHT_HIGH_CAUTION_C = 216, CHT_HIGH_ALARM_C = 232;
 const float EGT_HIGH_ALARM_C = 760;
+const float VOLTS_LOW_ALARM = 11.0f, VOLTS_LOW_CAUTION = 12.0f, VOLTS_HIGH_CAUTION = 14.8f, VOLTS_HIGH_ALARM = 15.5f;   // 12 V system; keep the high alarm below the crowbar trip
 const int GPS_TRACK_MIN_SPEED_KT = 2;                // the module holds the track at 0 below this ground speed
 const uint32_t STATUS_WARNING_MS = 5000;             // a module that has just failed flashes quickly for this long...
 const uint32_t STATUS_WARNING_FLASH_MS = 500;        // (letter, then dash, each for this long)
@@ -1034,7 +1035,7 @@ int alarmLevel(bool has, float value, float lowAlarm, float lowCaution, float hi
 // The engine alarm levels, worked out on every pass whatever the page. A push on the Engine page acknowledges the alarms that are
 // flashing: they stay on, steady. A value that leaves the alarm level and comes back is a new alarm and flashes again.
 // EGT and CHT have a channel for each cylinder (EGT 1 to 4, then CHT 1 to 4); the Engine page shows the worst of the four.
-enum AlarmChannel : uint8_t { ALARM_RPM, ALARM_OILP, ALARM_OILT, ALARM_EGT, ALARM_CHT = ALARM_EGT + 4, ALARM_CHANNELS = ALARM_CHT + 4 };
+enum AlarmChannel : uint8_t { ALARM_RPM, ALARM_OILP, ALARM_OILT, ALARM_VOLTS, ALARM_EGT, ALARM_CHT = ALARM_EGT + 4, ALARM_CHANNELS = ALARM_CHT + 4 };
 int alarmNow[ALARM_CHANNELS];
 bool alarmAcked[ALARM_CHANNELS];
 
@@ -1042,6 +1043,7 @@ void engineAlarmsUpdate(const View &v, uint32_t now) {
   alarmNow[ALARM_RPM] = alarmLevel(v.hasRpm, v.rpm, NAN, NAN, RPM_HIGH_CAUTION, RPM_HIGH_ALARM, now);
   alarmNow[ALARM_OILP] = alarmLevel(v.hasOilP, v.oilP, OILP_LOW_ALARM_BAR, OILP_LOW_CAUTION_BAR, NAN, NAN, now);
   alarmNow[ALARM_OILT] = alarmLevel(v.hasOilT, v.oilT, NAN, NAN, OILT_HIGH_CAUTION_C, OILT_HIGH_ALARM_C, now);
+  alarmNow[ALARM_VOLTS] = alarmLevel(v.hasVolts, v.volts, VOLTS_LOW_ALARM, VOLTS_LOW_CAUTION, VOLTS_HIGH_CAUTION, VOLTS_HIGH_ALARM, now);
   for (int i = 0; i < 4; i++) {
     alarmNow[ALARM_EGT + i] = alarmLevel(v.hasEgt[i], v.egt[i], NAN, NAN, NAN, EGT_HIGH_ALARM_C, now);
     alarmNow[ALARM_CHT + i] = alarmLevel(v.hasCht[i], v.cht[i], NAN, NAN, CHT_HIGH_CAUTION_C, CHT_HIGH_ALARM_C, now);
@@ -1103,8 +1105,9 @@ void drawEngineText(const View &v, uint32_t now) {
   printAt(0, 2, buf, 20);
 
   numberOrDashes(volts, sizeof(volts), v.hasVolts, "%.1f", v.volts, 4);
+  flashIfAlarm(volts, ALARM_VOLTS, 1, now);
   numberOrDashes(amps, sizeof(amps), v.hasAmps, "%+.1f", v.amps, 5);
-  snprintf(buf, sizeof(buf), "PG %d    %sV %sA", page, volts, amps);
+  snprintf(buf, sizeof(buf), "PG %d   %c%sV %sA", page, alarmMark(alarmNow[ALARM_VOLTS]), volts, amps);
   putMarker(buf, FIELD_PAGE, now);
   printAt(0, 3, buf, 20);
 }

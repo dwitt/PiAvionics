@@ -1,6 +1,6 @@
 # Backup display: design record
 
-Updated 2026-10-26. Sketch: `Backup_Display.ino` (version 1.7.41). The decisions below were made with David
+Updated 2026-10-27. Sketch: `Backup_Display.ino` (version 1.7.42). The decisions below were made with David
 on the bench; the sketch is the authority on exact values.
 
 ## Hardware
@@ -63,7 +63,8 @@ nothing alarms in the first 10 s after power-up. A push on the Engine or Cylinde
 does its usual select/adjust toggle when nothing is flashing). A value that leaves the alarm level and comes back, or another value
 that goes into alarm, flashes again. The Cylinders page shows the alarm for each cylinder: a CHT caution or alarm puts `!` in the blank in front of its 3 digits, and an
 alarm flashes the digits (an EGT is only an alarm, 4 digits when it is 1000 F or more, so it only flashes). The Engine page shows the
-worst of the four. Not built yet: RPM
+worst of the four. Volts alarm (1.7.42): low alarm 11.0, low caution 12.0, high caution 14.8, high alarm 15.5 V; the mark sits in the
+blank in front of the volts value on the last row. Not built yet: RPM
 gating of the low oil pressure alarm, a units setting.
 
 The Flight and GPS pages share one layout: values left and right, the centre block (columns 8 to 10) for the horizon on the Flight

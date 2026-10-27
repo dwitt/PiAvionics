@@ -12,7 +12,7 @@ Agreed 2026-10-27. Item numbers are kept from the review so earlier references s
 ## A. Engine alarms
 
 1. Gate the low oil pressure alarm on RPM, so it stays quiet on a stopped engine. Needs an RPM source (item 10).
-2. Add volts and amps limits and alarms. The limits are not chosen yet.
+2. Volts limits and alarms: done in firmware 1.7.42 (low 11.0 alarm and 12.0 caution, high 14.8 caution and 15.5 alarm). Amps limits wait for the current sensor calibration (item 11) and the RPM gate (items 1 and 10): a discharge caution that applies only with the engine running.
 3. Add a simulated high CHT/EGT mode, to test those alarms without probes.
 
 ## B. Backup display
@@ -27,6 +27,7 @@ Agreed 2026-10-27. Item numbers are kept from the review so earlier references s
 11. Calibrate the LM335 and the current sensor (zero and gain).
 12. Confirm the thermocouple-to-cylinder wiring.
 13. Buy the EGT probes.
+13a. Test and set the crowbar OVP module (`Crowbar_OVP/`, trimmer RV1). It must trip clearly above the 15.5 V high alarm, about 16 V, so the display warns before the bus is shorted. Not yet tested or set.
 14. Set up the EMS-2 (including the oil T sender type VDO 150, so it agrees with the backup display). The checklist is `EMS2_SETUP.md`; do it when the EMS-2 is online.
 
 ## E. Docs
