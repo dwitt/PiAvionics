@@ -1,6 +1,24 @@
-# Resume here (last saved 2026-10-22)
+# Resume here (last saved 2026-10-27)
 
 Tell Claude: "Read RESUME.md and carry on."
+
+## Update 2026-10-27: alarms done, scope decided, open items are in PLAN.md
+- **Read `PLAN.md` first.** It is the agreed list of open items (numbered, with the dropped ones) and the scope decisions. This file is the history.
+- **Scope:** the backup display is only a backup, for both the Pi EFIS and the MGL EMS-2 (the primary engine monitor). The Pi EFIS gets no Engine page.
+  `Protocol/engine_conversions.yaml` (1.1.1) and `engine_convert.py` are the reference for the backup display only. No request for the uAvionix UCP ICD
+  (the serial research above stays as a note). The AV-20-E manual documents no usable serial output (pins 3 and 4, AV-XPORT, are "Reserved").
+- **Backup display firmware 1.7.41** (flashed, git clean). Pages: Flight, GPS, Engine, Cylinders, System, Versions. The display starts with the PG field
+  selected, so a turn changes the page. Engine page (psi, F): `OilP`, `OilT`, `RPM` in the first column, highest `EGT` and `CHT` (with the cylinder
+  number) on rows 1 and 2, volts and amps right justified, `EMS` upper right. Cylinders page: `CYL` upper left, E and C rows for the four cylinders.
+  GPS page: small satellite icon (five custom characters) with a small G, custom P and S borrowing slots 6 and 7, `TRK` under `ALT`. Flight page: `HDG`
+  one character left.
+- **Engine alarms (modelled on the EMS-2):** a caution shows `!` after the label, an alarm also flashes the value, alarms are inhibited for 10 s after
+  power-up, and a knob push acknowledges a flashing alarm on the Engine or Cylinders page (a repeat alarm is new). Limits are in the sketch (bar and C):
+  RPM caution 3800 and alarm 4000; oil P low alarm 0.7 bar and low caution 1.4; oil T caution 110 and alarm 116; CHT caution 216 and alarm 232; EGT alarm
+  760 only (no caution, by decision, 2026-10-26). Volts and amps have no limits yet. Bench tested by David on OIL P with 3 and 4 parallel 120 ohm
+  (caution and alarm and acknowledge all work). Not bench testable: the CHT and EGT alarms (no probes).
+- **Known:** the low oil pressure alarm is not gated on RPM, so with the real sender on a stopped engine it flashes 10 s after power-up (PLAN item 1).
+- Floating thermocouple inputs read about room temperature (0 C plus the cold junction); David chose not to add open-probe detection.
 
 ## Update 2026-10-22: the backup display is built, and every board has a watchdog
 - **Backup display:** `Sensors/Backup_Display/Backup_Display.ino` 1.7.7, built and working on the bench: Flight, GPS and System pages, QNH over the
