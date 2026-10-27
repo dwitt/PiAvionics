@@ -27,7 +27,7 @@ Agreed 2026-10-27. Item numbers are kept from the review so earlier references s
 11. Calibrate the LM335 and the current sensor (zero and gain).
 12. Confirm the thermocouple-to-cylinder wiring.
 13. Buy the EGT probes.
-14. Set the Blaze oil T sender type to VDO 150, so the EMS-2 and the backup display agree.
+14. Set up the EMS-2 (including the oil T sender type VDO 150, so it agrees with the backup display). The checklist is `EMS2_SETUP.md`; do it when the EMS-2 is online.
 
 ## E. Docs
 
