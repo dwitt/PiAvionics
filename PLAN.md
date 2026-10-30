@@ -23,7 +23,13 @@ Agreed 2026-10-27. Item numbers are kept from the review so earlier references s
 ## D. Bench and hardware
 
 9. Check the real VDO senders: oil T in hot water, oil pressure against a known pressure.
-10. Choose the RPM source (Magnatron P-lead or Littelfuse Hall geartooth) and set pulses per revolution.
+10. RPM source decided 2026-10-30: the alternator stator is the primary and the Littelfuse 55505 Hall geartooth sensor on the flywheel ring gear is the backup, one on each RDAC RPM input. Still to do:
+    - Count the ring gear teeth (the toothed part is magnetic, so the sensor will see it). **Tooth count: not known yet.**
+    - Measure the stator output on the bench before connecting it. The RDAC manual gives no maximum input voltage; add a series resistor if it is well above 35 V peak to peak.
+    - Settings for both inputs: low gain, ballast off, filter off, sensitivity trimmer set well below the signal.
+    - Hall wiring: black GND to the RDAC ground (engine block), white/black OUT to the RPM input (internal pull-up, no external one), red VDD to the 12 V supply (not `5VOU`: VDD minus 2 V is below the 4 V peak to peak low-gain minimum). Rated to 15 kHz and 2 mm air gap.
+    - Bench-test that the RDAC counts the Hall pulse rate (teeth x rpm / 60) and that the flywheel magnets do not disturb the sensor.
+    - Firmware: one pulses-per-rev value per input (the stator is 6) and a rule for choosing between the two, then the oil pressure gate (item 1). Enter both values in the EMS-2 setup (item 14).
 11. Calibrate the LM335 and the current sensor (zero and gain).
 12. Confirm the thermocouple-to-cylinder wiring.
 13. Buy the EGT probes.
