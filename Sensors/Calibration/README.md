@@ -64,6 +64,20 @@ A copy of IMU_Calibration with the `loop()` entirely commented out. On startup i
 - Gyro zero-rate offsets (x, y, z)
 - Accel zero-g offsets (x, y, z)
 
+### Python magnetometer calibration scripts (not tested here)
+
+Pure Python alternatives to MotionCal, files dated April 2025. Origin not recorded, and none of them has been run against the IMU module. They are for reference.
+
+| File | What it is |
+|------|------------|
+| `MotionCal.py` | Tkinter app (class `MagnetometerCalibrator`) that reads magnetometer data from a serial port, plots it live and fits a calibration. Needs numpy, matplotlib, scipy and pyserial. |
+| `magnetometer-calibration.py` | Class `MagnetometerCalibration` for fitting hard-iron and soft-iron correction, with an interactive ipywidgets mode (for a Jupyter notebook). |
+| `live-visualization.py` | Real-time visualizer built on `MagnetometerCalibration` (imports it as `magnetometer_calibration`). |
+| `Python-MotionCal.ipynb` | Notebook with a serial port reader that plots the data with pandas and matplotlib. |
+| `Magnetometer Calibration Tool - Usage Guide.pdf` | Usage guide for the scripts above (pip install list, expected serial data format, examples). |
+
+The usage guide uses underscore file names (`magnetometer_calibration.py`, `live_visualization.py`), but the files here have hyphens. Rename them before importing one from another.
+
 ## Sensor Configuration
 
 | Parameter | Value |
