@@ -1,15 +1,43 @@
 """ Asynchronous I/O based webserver to handle page and websocket"""
 # pyright: reportMissingImports=false
 
-VERSION = "1.7.2"
+VERSION = "1.7.3"
 
 import asyncio
 import ipaddress
 import json
 import struct
+import sys
 import time
 import datetime
 import signal
+
+
+class _StampedStream:
+    """Prefix every line written to stdout/stderr with a local timestamp (service log has none)."""
+    def __init__(self, stream):
+        self._stream = stream
+        self._pending = ""
+
+    def write(self, text):
+        self._pending += text
+        *lines, self._pending = self._pending.split("\n")
+        for line in lines:
+            stamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            self._stream.write(f"{stamp} {line}\n")
+        self._stream.flush()
+        return len(text)
+
+    def flush(self):
+        self._stream.flush()
+
+    def __getattr__(self, name):
+        return getattr(self._stream, name)
+
+
+sys.stdout = _StampedStream(sys.stdout)
+sys.stderr = _StampedStream(sys.stderr)
+
 from pathlib import Path
 from aiohttp import web #pylint: disable=import-error
 import aiohttp #pylint: disable=import-error
