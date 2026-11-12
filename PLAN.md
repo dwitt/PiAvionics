@@ -51,14 +51,23 @@ Agreed 2026-10-27. Item numbers are kept from the review so earlier references s
 
 22. Write and run the full system test table (this was "plan step 7"). It covers pulling each module's CAN cable and closing the Pi page, and checking that the failure detection and heartbeat bits respond correctly. Do it last, once the module set is final.
 
-## H. Data logger
+## H. Data logging
 
-23. Engine and flight data logger: a separate board on the CAN bus that only listens (not the backup display: a shared SPI bus with the CAN chip and an SD card that can stall or fail would put the backup at risk).
+Two independent loggers, so one failure mode does not lose everything. The tail module is the one more likely to survive a crash; the Pi log is the convenient one.
+
+23. Tail logger: a separate board on the CAN bus that only listens (not the backup display: a shared SPI bus with the CAN chip and an SD card that can stall or fail would put the backup at risk).
     - Hardware: Feather RP2040, CAN FeatherWing, SD card (an Adalogger FeatherWing has the slot and an RTC; check its SD chip select against CAN CS 7). MCP2515 in listen-only mode (check the patched library supports it).
     - Location: in the tail rather than the panel, so it has a better chance of surviving a crash. Needs only power and the CAN bus.
     - Log raw CAN frames (timestamp, ID, 8 bytes, about 16 bytes a frame, a few MB an hour) and decode later with the `Protocol/` yaml files. UTC from the GPS time on the bus; no RTC needed.
     - Write from a RAM buffer, flush about once a second (power can go with no warning); a new file at each power-up. The sketch must run with no card or a bad one.
-    - Open decisions: log from power-up or only with the engine running; whether it sends a heartbeat so the displays show it as a module (a new heartbeat ID in the protocol); how to get the data off (pull the card, or send the file over the CAN bus to the Pi on the ground).
+    - Not the internal flash for logging while receiving: a flash erase stops both cores for tens of ms and CAN frames would be lost. Later option: a small SPI FRAM chip (no erase, fast, unlimited endurance) as a ring buffer of the last few minutes; check the sizes available.
+    - Later: offload over the CAN bus after landing. A request and response protocol on low-priority IDs (file list, then numbered chunks with a CRC and retry), only when the engine is stopped. About 15 KB/s at best on a 250 kbit/s bus, so minutes per flight hour. It reads from the SD or the FRAM, so it also recovers the data if the card goes bad.
+    - Open decisions: log from power-up or only with the engine running; whether it sends a heartbeat so the displays show it as a module (a new heartbeat ID in the protocol); whether to just pull the card first and add the CAN offload later.
+24. Pi EFIS logger: the server already has every value at 20 Hz, so it writes decoded CSV or JSON lines, no new hardware.
+    - Not on the boot SD card (corruption on power loss): a USB stick, or at least a separate partition with regular flushes.
+    - Getting the data off: pull the USB stick, or serve it on the Samba share from item 20 when the network is on.
+    - Later: after landing, the Pi pulls the tail log over the CAN bus (item 23) and stores it beside its own.
+    - Suggested order: this first (no hardware, shows what is worth logging), then item 23 with the SD card only.
 
 ## Dropped
 
