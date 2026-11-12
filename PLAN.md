@@ -51,6 +51,15 @@ Agreed 2026-10-27. Item numbers are kept from the review so earlier references s
 
 22. Write and run the full system test table (this was "plan step 7"). It covers pulling each module's CAN cable and closing the Pi page, and checking that the failure detection and heartbeat bits respond correctly. Do it last, once the module set is final.
 
+## H. Data logger
+
+23. Engine and flight data logger: a separate board on the CAN bus that only listens (not the backup display: a shared SPI bus with the CAN chip and an SD card that can stall or fail would put the backup at risk).
+    - Hardware: Feather RP2040, CAN FeatherWing, SD card (an Adalogger FeatherWing has the slot and an RTC; check its SD chip select against CAN CS 7). MCP2515 in listen-only mode (check the patched library supports it).
+    - Location: in the tail rather than the panel, so it has a better chance of surviving a crash. Needs only power and the CAN bus.
+    - Log raw CAN frames (timestamp, ID, 8 bytes, about 16 bytes a frame, a few MB an hour) and decode later with the `Protocol/` yaml files. UTC from the GPS time on the bus; no RTC needed.
+    - Write from a RAM buffer, flush about once a second (power can go with no warning); a new file at each power-up. The sketch must run with no card or a bad one.
+    - Open decisions: log from power-up or only with the engine running; whether it sends a heartbeat so the displays show it as a module (a new heartbeat ID in the protocol); how to get the data off (pull the card, or send the file over the CAN bus to the Pi on the ground).
+
 ## Dropped
 
 - 6 to 8: Main EFIS engine page.
