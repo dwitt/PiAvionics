@@ -50,7 +50,7 @@ import { FAILURE_LOOK } from './failureLook.mjs';
 
 // ----------------------------------------------------------------------------
 
-const VERSION = "0.8.6";
+const VERSION = "0.8.7";
 
 // Viewer mode: a page that is not the Pi's own display only watches. It sends
 // nothing to the server, ignores the encoder, and shows the QNH and brightness
@@ -166,10 +166,11 @@ if (screenH > screenW) {
 // (autoDensity); only the pixels drawn inside it are finer. ?sharp=0 goes back to drawing at 1x.
 const SHARP_DRAWING = pageParams.get('sharp') !== '0';
 const drawingOptions = SHARP_DRAWING ? { resolution: window.devicePixelRatio, autoDensity: true } : {};
-// Antialiasing smooths the edges of angled lines; Pixi's default is off. On the Pi (2026-11-13) both canvases ran at
-// 60 fps without it; with it on both, frames dropped to 30 and 20 fps; on the primary canvas only, the odd drop to 30.
-// The HSI stays off. The primary canvas follows the Menu's "PFD Antialias" row, which is kept in this browser's
-// storage and reloads the page (antialiasing can only be chosen when a canvas is made). On by default.
+// Antialiasing smooths the edges of angled lines; Pixi's default is off. Measured on the Pi 2026-11-13 with the
+// Menu's Frame Rate readout: off, 60 fps and no slow frames; on for the primary canvas only, about 48 fps; on for
+// both canvases, worse. So it is off by default and the HSI never has it. The primary canvas follows the Menu's
+// "PFD Antialias" row (kept in this browser's storage; reloads the page, since antialiasing can only be chosen
+// when a canvas is made), so it can be tried again on other hardware.
 const ANTIALIAS_KEY = 'efis.pfdAntialias';
 const FRAME_RATE_KEY = 'efis.frameRateShown';
 function storedFlag(key, fallback) {
@@ -183,7 +184,7 @@ function storedFlag(key, fallback) {
 function storeFlag(key, on) {
     try { localStorage.setItem(key, on ? 'on' : 'off'); } catch (error) { /* storage blocked: not kept */ }
 }
-const PFD_ANTIALIAS = storedFlag(ANTIALIAS_KEY, true);
+const PFD_ANTIALIAS = storedFlag(ANTIALIAS_KEY, false);
 const HSI_ANTIALIAS = false;
 
 const app = new Application();  // the applicaiton object available globally
