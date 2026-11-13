@@ -1,6 +1,6 @@
 'use strict';
 
-export const VERSION = '1.0.3';
+export const VERSION = '1.0.4';
 
 import { Container, Graphics, TextStyle, Text } from './pixi.mjs';
 
@@ -488,12 +488,12 @@ export class HSI {
     }
 
     _drawBugBox(color, editing = false) {
-        // Editing: thick outline and a dark teal fill, as the PFD boxes (displayRectangle.mjs)
+        // Editing: 3 px outline instead of 2, black fill, as the PFD boxes (displayRectangle.mjs)
         const w = this.bugBoxWidth;
         const h = this.bugBoxHeight;
         this.bugBoxBg.clear();
-        this.bugBoxBg.fillStyle = { color: editing ? 0x003c3c : 0x000000 };
-        this.bugBoxBg.strokeStyle = { color: color, width: editing ? 4 : 2 };
+        this.bugBoxBg.fillStyle = { color: 0x000000 };
+        this.bugBoxBg.strokeStyle = { color: color, width: editing ? 3 : 2 };
         this.bugBoxBg.roundRect(-w / 2, -h / 2, w, h, 4);
         this.bugBoxBg.fill();
         this.bugBoxBg.stroke();

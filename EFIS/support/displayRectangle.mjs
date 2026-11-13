@@ -1,7 +1,7 @@
 // 1-June-2025 Update for PixiJS v8
 'use strict';
 
-export const VERSION = '1.0.4';
+export const VERSION = '1.0.5';
 
 import { drawSpecialRectangle } from './specialRectangle.mjs';
 import { calculateCharacterVerticalCentre } from './utilityFunctions.mjs';
@@ -253,15 +253,14 @@ export class DisplayRectangle {
         // changing rectangle
 
         // Update the strokeStyle and fillStyle for the changing rectangle
-        // Same cyan as selected, but a thick outline and a dark teal fill, so editing can be told from
-        // selected at a glance whatever colour the text is (the QNH value is already cyan)
+        // Same cyan as selected, but a thicker outline, so editing can be told from selected whatever
+        // colour the text is (the QNH value is already cyan). The fill stays black.
         strokeStyle.color = 0x00FFFF;   // cyan
-        strokeStyle.width = 4;          // 4 px, thick ...
-        strokeStyle.alignment = 0.5;    // ... centred on the edge: the inside 2 px match the selected outline
-                                        // and the extra 2 px go outward, so the text is not crowded
+        strokeStyle.width = 3;          // 3 px, thicker ...
+        strokeStyle.alignment = 2/3;    // ... 2 px inside, matching the selected outline, and 1 px outside,
+                                        // so the text is not crowded
 
         fillStyle.alpha = 1.0;          // 100%
-        fillStyle.color = 0x003C3C;     // dark teal
 
         this.changingRectangle = this.rectangle(
             x, y, 
