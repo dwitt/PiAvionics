@@ -1,6 +1,6 @@
 'use strict';
 
-export const VERSION = '1.0.0';
+export const VERSION = '1.0.1';
 
 import { Container, Graphics, TextStyle, Text } from './pixi.mjs';
 
@@ -15,8 +15,9 @@ export class MenuOverlay {
      * @param {Array} toggleDefs - Array of {label, getState(), setState(val)}
      * @param {Array} actionDefs - Optional array of {label, getValue(), action()}: rows that show
      *     a value and run an action when pressed (the menu is closed first)
+     * @param {string} title - Title shown at the top of the box
      *************************************************************************/
-    constructor(app, toggleDefs, actionDefs = []) {
+    constructor(app, toggleDefs, actionDefs = [], title = 'Menu') {
         this.app = app;
         this.toggleDefs = toggleDefs;
         this.actionDefs = actionDefs;
@@ -75,7 +76,7 @@ export class MenuOverlay {
             fill: 0xffffff,
             fontWeight: 'bold',
         });
-        const titleText = new Text({ text: 'Menu', style: titleStyle });
+        const titleText = new Text({ text: title, style: titleStyle });
         titleText.anchor.set(0.5, 0.5);
         titleText.position.set(boxWidth / 2, padding + rowHeight / 2);
         menuBox.addChild(titleText);

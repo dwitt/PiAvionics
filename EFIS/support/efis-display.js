@@ -50,7 +50,7 @@ import { FAILURE_LOOK } from './failureLook.mjs';
 
 // ----------------------------------------------------------------------------
 
-const VERSION = "0.8.10";
+const VERSION = "0.8.11";
 
 // Viewer mode: a page that is not the Pi's own display only watches. It sends
 // nothing to the server, ignores the encoder, and shows the QNH and brightness
@@ -167,13 +167,13 @@ if (screenH > screenW) {
 const SHARP_DRAWING = pageParams.get('sharp') !== '0';
 const drawingOptions = SHARP_DRAWING ? { resolution: window.devicePixelRatio, autoDensity: true } : {};
 // Antialiasing smooths the edges of angled lines; Pixi's default is off. Measured on the Pi 2026-11-13 with the
-// Menu's Frame Rate readout (slow = frames over 20 ms in 10 s): off, 60 fps, 0 slow; PFD only, about 48 fps;
+// Maintenance page Frame Rate readout (slow = frames over 20 ms in 10 s): off, 60 fps, 0 slow; PFD only, about 48 fps;
 // HSI only, 48 fps, about 118 slow; both, 34 fps, about 221 slow. With the 30 fps cap below, both antialiased held
 // 30 fps with 0 slow, except with the Route list open (28-29 fps, about 25 slow over 40 ms, so the PFD above it
 // hitched); with the HSI not antialiased it held 30 and 0. So the defaults are: cap on, PFD antialiased, HSI not.
-// Each canvas follows its Menu row, "PFD Antialias" and "HSI Antialias" (kept in this browser's storage; reloads
+// Each canvas follows its Maintenance row, "PFD Antialias" and "HSI Antialias" (kept in this browser's storage; reloads
 // the page, since antialiasing can only be chosen when a canvas is made).
-// "30 fps Cap" (Menu, on by default) draws on every other refresh of the 60 Hz screen, so every frame is on screen
+// "30 fps Cap" (Maintenance, on by default) draws on every other refresh of the 60 Hz screen, so every frame is on screen
 // for the same time (at 48 fps some frames stay up twice as long as others). Data arrives at 10 to 20 a second, so
 // 30 is still faster than the data. Pixi's own ticker.maxFPS is not used: it rounds the time between frames down
 // to whole milliseconds, so two refreshes (33.3 ms) count as 33 ms, too short, and it waits for a third (20 fps).
@@ -567,7 +567,7 @@ function setup() {
     userInput = new UserInput(app);
 
     // Frame rate readout, bottom left of the HSI canvas (above the VIEW ONLY tag on a viewer), shown by the
-    // Menu's "Frame Rate" row (kept in this browser's storage, so it survives a reload). Both canvases are drawn
+    // Maintenance page "Frame Rate" row (kept in this browser's storage, so it survives a reload). Both canvases are drawn
     // in the same browser frame, so one count covers both: frames in the last second, and frames that took
     // more than 20 ms (a missed 60 Hz refresh) in the last 10 s; with the 30 fps cap, more than 40 ms (a missed
     // refresh after the two of a normal frame). AA says which canvases are antialiased; "cap 30" shows the cap.
@@ -598,8 +598,10 @@ function setup() {
         }
     }, 500);
 
-    // --- Menu overlay with toggle items ---
-    const toggleDefs = [
+    // --- Maintenance page: test and display-tuning toggles, kept out of the pilot's Menu ---
+    // Opened from the "Maintenance" row in the Menu. The antialias and cap settings are kept in this
+    // browser's storage, so viewers get the page too.
+    const maintenanceDefs = [
         {
             label: "Airspeed Sweep",
             getState: () => TEST_AIRSPEED_SWEEP,
@@ -652,6 +654,7 @@ function setup() {
             },
         },
     ];
+    const maintenanceOverlay = new MenuOverlay(app, maintenanceDefs, [], "Maintenance");
 
     // Screen orientation (portrait / landscape): a row in the Menu opens the panels. Only the
     // controller (the Pi's own page) can change it, so viewers do not get the row.
@@ -680,8 +683,13 @@ function setup() {
             action: () => orientationPanel.show(),
         });
     }
+    actionDefs.push({
+        label: "Maintenance",
+        getValue: () => "",
+        action: () => maintenanceOverlay.show(),
+    });
 
-    menuOverlay = new MenuOverlay(app, toggleDefs, actionDefs);
+    menuOverlay = new MenuOverlay(app, [], actionDefs);
 
     const menuCallback = {
         addContainer() {
