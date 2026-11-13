@@ -1,6 +1,6 @@
 'use strict';
 
-export const VERSION = '1.0.2';
+export const VERSION = '1.0.3';
 
 import { Container, FillGradient, Graphics, TextStyle, Text } from './pixi.mjs';
 
@@ -13,6 +13,9 @@ import { Container, FillGradient, Graphics, TextStyle, Text } from './pixi.mjs';
  * 
  * 
  *****************************************************************************/
+// The pitch ladder is shown inside a circle this many pixels smaller than the bank arc
+const PITCH_MASK_INSET = 30;
+
 export class AttitudeIndicator {
     constructor(app) {
 
@@ -47,7 +50,9 @@ export class AttitudeIndicator {
 
         // The maximum number of degrees of pitch the can be seen on the
         // display. Used to calculate the pitchRatio below.
-        let pitchDegrees = 50;      // 25 degrees above and below the horizon
+        let pitchDegrees = 60;      // 30 degrees above and below the horizon (was 50); with the ladder circle
+                                    // 30 px inside the bank arc, about +/-19 degrees of ladder shows, as most
+                                    // attitude indicators (+/-20)
 
         // pitchRatio equal number of pixels per degree of pitch
         this.pitchRatio = (this.displayHeight) / pitchDegrees;
@@ -325,6 +330,7 @@ export class AttitudeIndicator {
         // and label them
         let length = this.displayWidth / 16;
         let halfLength = length / 2;
+        let quarterLength = length / 4;     // 2.5 and 7.5 degree marks
         let offset = 2; // Text offset from line in pixels
 
         let text_style = new TextStyle({
@@ -386,6 +392,13 @@ export class AttitudeIndicator {
                 degreeGraphics.lineTo(halfLength,(i - sign * 5) * this.pitchRatio);
                 degreeGraphics.stroke();
 
+                // short marks at 2.5 and 7.5 degrees, as the G5 (pitch marks every 2.5 degrees)
+                for (const step of [2.5, 7.5]) {
+                    degreeGraphics.moveTo(-quarterLength,(i - sign * step) * this.pitchRatio);
+                    degreeGraphics.lineTo(quarterLength,(i - sign * step) * this.pitchRatio);
+                    degreeGraphics.stroke();
+                }
+
                 degreeGraphics.moveTo(-length,i * this.pitchRatio);    
                 degreeGraphics.lineTo(length,i * this.pitchRatio);    
                 degreeGraphics.stroke();        
@@ -413,7 +426,8 @@ export class AttitudeIndicator {
         maskGraphics.fillStyle = {
             color: fillColour,
         }
-        maskGraphics.circle(0,0, this.radius);
+        // 30 px inside the bank arc, so the ladder labels clear the arc and the roll pointer (G5 review item 4)
+        maskGraphics.circle(0,0, this.radius - PITCH_MASK_INSET);
         maskGraphics.fill();
         return maskGraphics;
     }
