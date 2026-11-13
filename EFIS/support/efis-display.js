@@ -50,7 +50,7 @@ import { FAILURE_LOOK } from './failureLook.mjs';
 
 // ----------------------------------------------------------------------------
 
-const VERSION = "0.8.8";
+const VERSION = "0.8.9";
 
 // Viewer mode: a page that is not the Pi's own display only watches. It sends
 // nothing to the server, ignores the encoder, and shows the QNH and brightness
@@ -167,13 +167,18 @@ if (screenH > screenW) {
 const SHARP_DRAWING = pageParams.get('sharp') !== '0';
 const drawingOptions = SHARP_DRAWING ? { resolution: window.devicePixelRatio, autoDensity: true } : {};
 // Antialiasing smooths the edges of angled lines; Pixi's default is off. Measured on the Pi 2026-11-13 with the
-// Menu's Frame Rate readout: off, 60 fps and no slow frames; on for the primary canvas only, about 48 fps; on for
-// both canvases, worse (30 and 20 fps). So both are off by default. Each canvas follows its Menu row, "PFD Antialias"
-// and "HSI Antialias" (kept in this browser's storage; reloads the page, since antialiasing can only be chosen
-// when a canvas is made).
+// Menu's Frame Rate readout (slow = frames over 20 ms in 10 s): off, 60 fps, 0 slow; PFD only, about 48 fps;
+// HSI only, 48 fps, about 118 slow; both, 34 fps, about 221 slow. So both are off by default. Each canvas follows
+// its Menu row, "PFD Antialias" and "HSI Antialias" (kept in this browser's storage; reloads the page, since
+// antialiasing can only be chosen when a canvas is made).
+// "30 fps Cap" (Menu, off by default) draws on every other refresh of the 60 Hz screen, so every frame is on screen
+// for the same time (at 48 fps some frames stay up twice as long as others). Data arrives at 10 to 20 a second, so
+// 30 is still faster than the data. Pixi's own ticker.maxFPS is not used: it rounds the time between frames down
+// to whole milliseconds, so two refreshes (33.3 ms) count as 33 ms, too short, and it waits for a third (20 fps).
 const ANTIALIAS_KEY = 'efis.pfdAntialias';
 const HSI_ANTIALIAS_KEY = 'efis.hsiAntialias';
 const FRAME_RATE_KEY = 'efis.frameRateShown';
+const FPS_CAP_KEY = 'efis.fpsCap30';
 function storedFlag(key, fallback) {
     try {
         const value = localStorage.getItem(key);
@@ -187,6 +192,7 @@ function storeFlag(key, on) {
 }
 const PFD_ANTIALIAS = storedFlag(ANTIALIAS_KEY, false);
 const HSI_ANTIALIAS = storedFlag(HSI_ANTIALIAS_KEY, false);
+const FPS_CAP_30 = storedFlag(FPS_CAP_KEY, false);
 
 const app = new Application();  // the applicaiton object available globally
 await app.init({width: width,
@@ -216,6 +222,24 @@ await app2.init({width: width,
 // ----------------------------------------------------------------------------
 document.body.appendChild(app.canvas);
 document.body.appendChild(app2.canvas);
+
+// 30 fps cap: stop the two canvases' own tickers and drive both from one loop that draws on every other screen
+// refresh. A frame is drawn when at least 25 ms have passed since the last one (more than one refresh of 16.7 ms,
+// less than two of 33.3 ms), so it locks to every other refresh and does not drift.
+if (FPS_CAP_30) {
+    const CAP_MIN_GAP_MS = 25;
+    let lastDrawn = 0;
+    app.ticker.stop();
+    app2.ticker.stop();
+    const drawEveryOtherRefresh = (now) => {
+        requestAnimationFrame(drawEveryOtherRefresh);
+        if (now - lastDrawn < CAP_MIN_GAP_MS) return;
+        lastDrawn = now;
+        app.ticker.update(now);
+        app2.ticker.update(now);
+    };
+    requestAnimationFrame(drawEveryOtherRefresh);
+}
 if (USE_PI_SIZE) {
     // Keep the Pi's arrangement whatever the window size: stacked (primary above the HSI) in portrait,
     // side by side in landscape
@@ -543,8 +567,9 @@ function setup() {
     // Frame rate readout, bottom left of the HSI canvas (above the VIEW ONLY tag on a viewer), shown by the
     // Menu's "Frame Rate" row (kept in this browser's storage, so it survives a reload). Both canvases are drawn
     // in the same browser frame, so one count covers both: frames in the last second, and frames that took
-    // more than 20 ms (a missed 60 Hz refresh) in the last 10 s. AA says which canvases are antialiased.
-    const SLOW_FRAME_MS = 20;
+    // more than 20 ms (a missed 60 Hz refresh) in the last 10 s; with the 30 fps cap, more than 40 ms (a missed
+    // refresh after the two of a normal frame). AA says which canvases are antialiased; "cap 30" shows the cap.
+    const SLOW_FRAME_MS = FPS_CAP_30 ? 40 : 20;
     const fpsText = new Text({
         text: "",
         style: new TextStyle({fontFamily: 'Tahoma', fontSize: 16, fill: 0xFFFFFF})
@@ -566,7 +591,8 @@ function setup() {
     setInterval(() => {
         if (fpsText.visible) {
             fpsText.text = frameTimes.length + " fps  slow " + slowFrames.length + "/10s  AA " +
-                ([PFD_ANTIALIAS ? "PFD" : "", HSI_ANTIALIAS ? "HSI" : ""].filter(Boolean).join("+") || "off");
+                ([PFD_ANTIALIAS ? "PFD" : "", HSI_ANTIALIAS ? "HSI" : ""].filter(Boolean).join("+") || "off") +
+                (FPS_CAP_30 ? "  cap 30" : "");
         }
     }, 500);
 
@@ -610,6 +636,16 @@ function setup() {
                 if (val !== HSI_ANTIALIAS) {
                     storeFlag(HSI_ANTIALIAS_KEY, val);
                     location.reload();          // antialiasing is chosen when the canvas is made
+                }
+            },
+        },
+        {
+            label: "30 fps Cap",
+            getState: () => FPS_CAP_30,
+            setState: (val) => {
+                if (val !== FPS_CAP_30) {
+                    storeFlag(FPS_CAP_KEY, val);
+                    location.reload();          // the drawing loop is chosen when the page starts
                 }
             },
         },
