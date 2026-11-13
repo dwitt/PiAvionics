@@ -1,8 +1,8 @@
 'use strict';
 
-export const VERSION = '1.0.0';
+export const VERSION = '1.0.1';
 
-import { Container, Graphics, TextStyle, Text } from './pixi.mjs';
+import { Container, FillGradient, Graphics, TextStyle, Text } from './pixi.mjs';
 
 /*****************************************************************************
  * Class representing a Attitude indicator.
@@ -257,22 +257,34 @@ export class AttitudeIndicator {
         let attitudeBackground = new Container(); 
 
         // define the background colours
-        let skyColour = 0x0000C0;      // blue
-        let earthColour = 0x884400;    // brown
+        // Sky and earth are graded as on the G5: lighter at the horizon, darker away from it. The
+        // gradient runs over the pitch visible on the screen (half the display height, 25 degrees);
+        // beyond that the end colour carries on (the gradient texture is clamped at its ends).
+        let skyHorizonColour = 0x2A6AD8;    // lighter blue at the horizon
+        let skyFarColour = 0x0A2A9C;        // darker blue 25 degrees up and beyond
+        let earthHorizonColour = 0x9A5A20;  // lighter brown at the horizon
+        let earthFarColour = 0x5A3410;      // darker brown 25 degrees down and beyond
+        let gradientDepth = this.displayHeight / 2;
         let lineColour = 0xFFFFFF;     // white 
 
         // create the sky graphics 
+        let skyGradient = new FillGradient(0, 0, 0, -gradientDepth);
+        skyGradient.addColorStop(0, skyHorizonColour);
+        skyGradient.addColorStop(1, skyFarColour);
         let skyGraphics = new Graphics();
         skyGraphics.rect(-skyWidth/2, -skyHeight, skyWidth, skyHeight);
-        skyGraphics.fill(skyColour);
+        skyGraphics.fill(skyGradient);
 
         // create the earth graphics
+        let earthGradient = new FillGradient(0, 0, 0, gradientDepth);
+        earthGradient.addColorStop(0, earthHorizonColour);
+        earthGradient.addColorStop(1, earthFarColour);
         let earthGraphics = new Graphics();
         earthGraphics.rect(-earthWidth/2, 0, earthWidth, earthHeight);
-        earthGraphics.fill(earthColour);
+        earthGraphics.fill(earthGradient);
 
-        // Draw a horizon separator line
-        let lineWidth = 1.0;
+        // Draw a horizon separator line, 2 px as on the G5 (was 1 px)
+        let lineWidth = 2.0;
         let lineAlpha = 1;
         let lineAlignment = 0.5;
 
