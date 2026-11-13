@@ -1,6 +1,6 @@
 'use strict';
 
-export const VERSION = '1.0.3';
+export const VERSION = '1.0.4';
 
 import { Container, FillGradient, Graphics, TextStyle, Text } from './pixi.mjs';
 
@@ -50,9 +50,9 @@ export class AttitudeIndicator {
 
         // The maximum number of degrees of pitch the can be seen on the
         // display. Used to calculate the pitchRatio below.
-        let pitchDegrees = 60;      // 30 degrees above and below the horizon (was 50); with the ladder circle
-                                    // 30 px inside the bank arc, about +/-19 degrees of ladder shows, as most
-                                    // attitude indicators (+/-20)
+        let pitchDegrees = 75;      // 37.5 degrees above and below the horizon (was 50); with the ladder
+                                    // circle 30 px inside the bank arc, the +/-20 marks and labels show in
+                                    // level flight, as most attitude indicators
 
         // pitchRatio equal number of pixels per degree of pitch
         this.pitchRatio = (this.displayHeight) / pitchDegrees;
@@ -392,11 +392,14 @@ export class AttitudeIndicator {
                 degreeGraphics.lineTo(halfLength,(i - sign * 5) * this.pitchRatio);
                 degreeGraphics.stroke();
 
-                // short marks at 2.5 and 7.5 degrees, as the G5 (pitch marks every 2.5 degrees)
-                for (const step of [2.5, 7.5]) {
-                    degreeGraphics.moveTo(-quarterLength,(i - sign * step) * this.pitchRatio);
-                    degreeGraphics.lineTo(quarterLength,(i - sign * step) * this.pitchRatio);
-                    degreeGraphics.stroke();
+                // short marks at 2.5 and 7.5 degrees between -10 and +10 only (the G5 has them at all
+                // angles; further out they were clutter)
+                if (absDeg == 10) {
+                    for (const step of [2.5, 7.5]) {
+                        degreeGraphics.moveTo(-quarterLength,(i - sign * step) * this.pitchRatio);
+                        degreeGraphics.lineTo(quarterLength,(i - sign * step) * this.pitchRatio);
+                        degreeGraphics.stroke();
+                    }
                 }
 
                 degreeGraphics.moveTo(-length,i * this.pitchRatio);    
