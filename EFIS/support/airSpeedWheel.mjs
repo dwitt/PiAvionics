@@ -1,7 +1,7 @@
 // 1-June-2025 - Updated for PixiJS 8.6.6
 'use strict';
 
-export const VERSION = '1.0.0';
+export const VERSION = '1.0.1';
 
 import { NumericWheelDisplay } from "./numericWheelDisplay.mjs";
 import { Graphics, TextStyle, Text} from './pixi.mjs';
@@ -36,7 +36,7 @@ export class AirspeedWheel  {
             fontWeight: "normal",
             stroke: {
                 color: "black",
-                width: 2,
+                width: 3,       // 3 px, as the pitch labels (was 2)
                 }
             }
         );

@@ -1,7 +1,7 @@
 // 4-May-2025 - Started Update for PixiJS 8.6.6
 'use strict';
 
-export const VERSION = '1.0.0';
+export const VERSION = '1.0.1';
 
 import { NumericWheelDisplay } from "./numericWheelDisplay.mjs";
 import { Graphics, TextStyle, Text} from './pixi.mjs';
@@ -49,8 +49,10 @@ export class AltitudeWheel  {
             fontSize: '20px',  // was '18px'
             fill: "white",
             fontWeight: "normal",
-            stroke: "black"//,
-            //strokeThickness: 2  - Does not appear to be available anymore
+            stroke: {
+                color: "black",
+                width: 3,       // 3 px, as the pitch labels and "kts" (was the default, 1 px)
+                }
             }
         );
 
