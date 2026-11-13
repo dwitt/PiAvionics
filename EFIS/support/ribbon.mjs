@@ -1,6 +1,6 @@
 'use strict';
 
-export const VERSION = '1.0.2';
+export const VERSION = '1.0.3';
 
 import { Container, Graphics, Text, TextStyle, Matrix } from './pixi.mjs'
 
@@ -541,7 +541,9 @@ export class Ribbon {
         changableGraphicsContainer.addChild(leaderAndBoxGraphic);
 
         let textBottomRightX = alignment * (boxHorizontalOffset + 3);
-        let textBottomRightY = ribbonHeight/2 - (boxVerticalOffset + 2);
+        // The bottom of the text includes room for descenders, so the digits sat high (2.4 px clear above them,
+        // 7 px below). Anchoring half a pixel below the box bottom (was 2 px above) moves them down 2.5 px, centred.
+        let textBottomRightY = ribbonHeight/2 - boxVerticalOffset + 0.5;
         var bugText = new Text({
             text: "10000", 
             style: bugTextStyle,
