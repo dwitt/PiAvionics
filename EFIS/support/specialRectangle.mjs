@@ -1,5 +1,7 @@
 'use strict';
 
+export const VERSION = '1.0.0';
+
 // ----------------------------------------------------------------------------
 // Aliases - Allows for changes in PIXI.JS
 // TODO - Make sure we have all of the necessary aliases set

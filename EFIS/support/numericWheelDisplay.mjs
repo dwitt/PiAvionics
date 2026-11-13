@@ -1,6 +1,8 @@
 // 4-May-2025 - Started Update for PixiJS 8.6.6
 'use strict';
 
+export const VERSION = '1.0.0';
+
 import { calculateCharacterVerticalCentre } from "./utilityFunctions.mjs";
 import { Container, Graphics, TextStyle, Text} from './pixi.mjs';
 

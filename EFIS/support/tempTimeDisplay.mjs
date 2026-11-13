@@ -1,6 +1,8 @@
 // 1-June-2025 Update for PixiJS v8
 'use strict';
 
+export const VERSION = '1.0.0';
+
 import { DisplayRectangle } from './displayRectangle.mjs';
 
 /**     

@@ -1,4 +1,6 @@
 'use strict';
+
+export const VERSION = '1.0.0';
 import { Application, Graphics, Container, TextStyle, Text } from './pixi.mjs';
 
 /**

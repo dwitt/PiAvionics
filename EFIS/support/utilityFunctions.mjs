@@ -1,5 +1,7 @@
 // 4-May-2025 - Updated for PixiJS 8.6.6
 'use strict';
+
+export const VERSION = '1.0.0';
 import { TextStyle, CanvasTextMetrics } from './pixi.mjs';
 
 /**

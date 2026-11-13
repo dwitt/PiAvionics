@@ -1,6 +1,8 @@
 // 1-June-2025 - Updated for PixiJS 8.6.6
 'use strict';
 
+export const VERSION = '1.0.0';
+
 import { NumericWheelDisplay } from "./numericWheelDisplay.mjs";
 import { Graphics, TextStyle, Text} from './pixi.mjs';
 

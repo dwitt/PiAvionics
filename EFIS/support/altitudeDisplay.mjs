@@ -1,6 +1,8 @@
 /** Enable strict mode for enhanced error checking */
 'use strict';
 
+export const VERSION = '1.0.0';
+
 import { DisplayRectangle } from './displayRectangle.mjs';
 
 /**     

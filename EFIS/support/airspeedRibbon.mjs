@@ -1,4 +1,6 @@
 'use strict';
+
+export const VERSION = '1.0.0';
 import { Ribbon, Colour_Bar } from './ribbon.mjs';
 
 // V-Speed Configuration (will be made editable via menu system)

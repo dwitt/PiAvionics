@@ -1,6 +1,8 @@
 // 1-June-2025 Update for PixiJS v8
 'use strict';
 
+export const VERSION = '1.0.0';
+
 import { drawSpecialRectangle } from './specialRectangle.mjs';
 import { calculateCharacterVerticalCentre } from './utilityFunctions.mjs';
 import { Container, Graphics, TextStyle, Text} from './pixi.mjs';

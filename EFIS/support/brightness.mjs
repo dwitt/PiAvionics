@@ -1,5 +1,7 @@
 /*global PIXI */
 'use strict';
+
+export const VERSION = '1.0.0';
 import { Container, Graphics } from './pixi.mjs';
 // ----------------------------------------------------------------------------
 // Aliases - Allows for changes in PIXI.JS
