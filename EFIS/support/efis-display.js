@@ -50,7 +50,7 @@ import { FAILURE_LOOK } from './failureLook.mjs';
 
 // ----------------------------------------------------------------------------
 
-const VERSION = "0.8.2";
+const VERSION = "0.8.3";
 
 // Viewer mode: a page that is not the Pi's own display only watches. It sends
 // nothing to the server, ignores the encoder, and shows the QNH and brightness
@@ -517,6 +517,22 @@ function setup() {
 
     userInput = new UserInput(app);
 
+    // Frame rate readout, bottom left of the HSI canvas (above the VIEW ONLY tag on a viewer). Off at start;
+    // the Menu's "Frame Rate" row shows it. Each canvas has its own ticker, so both rates are shown.
+    const fpsText = new Text({
+        text: "",
+        style: new TextStyle({fontFamily: 'Tahoma', fontSize: 16, fill: 0xFFFFFF})
+    });
+    fpsText.anchor.set(0, 1);
+    fpsText.position.set(6, app2.screen.height - (VIEW_ONLY ? 24 : 4));
+    fpsText.visible = false;
+    app2.stage.addChild(fpsText);
+    setInterval(() => {
+        if (fpsText.visible) {
+            fpsText.text = "PFD " + Math.round(app.ticker.FPS) + "  HSI " + Math.round(app2.ticker.FPS) + " fps";
+        }
+    }, 500);
+
     // --- Menu overlay with toggle items ---
     const toggleDefs = [
         {
@@ -529,6 +545,11 @@ function setup() {
             getState: () => userInput.itemSelectorText
                 ? userInput.itemSelectorText.visible : false,
             setState: (val) => { userInput.setDebugVisible(val); },
+        },
+        {
+            label: "Frame Rate",
+            getState: () => fpsText.visible,
+            setState: (val) => { fpsText.visible = val; },
         },
     ];
 
