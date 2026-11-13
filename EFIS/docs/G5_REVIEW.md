@@ -1,0 +1,221 @@
+# PiEFIS vs Garmin G5 — feature and display review
+
+Written 2026-11-06, saved here 2026-11-13. Compared the Garmin *G5 Electronic Flight Instrument Pilot's Guide for
+Non-Certified Aircraft* (190-02072-00 Rev. K, software 6.10) against EFIS page 0.8.1 and `aio_server.py` 1.7.x.
+Shared doc version (same content): https://claude.ai/artifact/LipVXq7T5GYnHTWXiQoe9s
+
+## Notes for Claude Code
+
+- Nothing in this review has been implemented yet. All line numbers are from page 0.8.1 (no EFIS page file
+  changed between 2026-10-25 and 2026-11-13).
+- The review was checked by running the page headless on `tests/fake_feed.py` at the Pi's size
+  (`tests/page_shots.py`, `?pi=true`, device scale 1.25).
+- To step the knob in the test feed, add `position` and `pressed` to its `/control` handler (this was done in a
+  scratch copy only, not in this repo):
+  - initial state: `state = {..., "position": 0, "pressed": False}`
+  - in `message()`: `"position": state["position"], "pressed": state["pressed"],`
+  - in the `/control` handler: read `position` (int) and `pressed` (`"1"` = True) from `request.query`.
+  - Then `curl "localhost:<port>/control?pressed=1"`, `...?pressed=0`, `...?position=6` and so on between screenshots.
+- `images/g5_review_altitude_bug_states.png` shows the altitude tape selected, editing and after the edit.
+
+## Summary
+
+PiEFIS already covers the core of the G5's PFD and HSI pages, and does more than the G5 in several places: the
+shared QNH, the GPS/pressure/density altitude box, the route list with Direct-To, and the module health display.
+The biggest gaps:
+
+- **Targets disappear once set.** The altitude bug's cyan readout shows only while it is being edited. After that
+  only a small red bug remains, and it starts at 0 ft. The G5 keeps the selected altitude on screen and alerts as
+  you approach it.
+- **Two separate heading bugs.** The PFD heading tape and the HSI each keep their own bug value. The HSI's value
+  is also its OBS course ("CRS"), so moving the heading bug on the HSI also moves the course.
+- **The knob has no home position.** After any edit the knob stays in selection mode, so the next turn moves the
+  selection instead of the baro setting. On the G5, turning the knob on the PFD always sets baro.
+- **Missing trend and limit cues:** airspeed trend vector, full speed bands and V-speed tags, wind, bearing pointer.
+
+On looks, the biggest wins are one colour code (red now means "selected", "bug" and "failure"), a softer sky and
+ground, antialiasing, loading the font before the HSI is drawn, and hiding the encoder debug text.
+
+## How PiEFIS works today
+
+One push-and-turn knob drives eight items in a fixed ring. In order (`efis-display.js` `registerCallback` calls):
+QNH, OAT/time box, brightness, GS/TAS box, PFD heading bug, GPS/pressure/density altitude box, altitude bug
+(`altimeter_ribbon`), and the HSI's CRS value.
+
+1. At start-up the first item, QNH, is already in edit mode, so turning the knob sets baro.
+2. A press enters selection mode. The current item gets a red outline: a red border on a box, a red line along a
+   tape, or a red ring around the HSI.
+3. Turning moves the red outline from item to item.
+4. A press enters edit mode. The outline turns cyan, and the tapes and heading tape show a cyan readout box with the
+   value. Turning changes the value, with bigger steps on fast turns (`|delta| >= 6`): 25 or 100 ft for the altitude
+   bug, 1° or 2° for the PFD heading bug, 1° or 5° for the HSI.
+5. A press returns to selection mode. The cyan readout disappears, and the item stays outlined in red until the
+   knob moves on. Nothing times out back to QNH (`userInput.mjs` has no timer).
+
+The G5 works differently: turning the knob always sets baro on the PFD page and the heading bug on the HSI page.
+A press opens a menu of the other settings (G5 manual 1.5.2), which closes when you are done.
+
+### What PiEFIS already does that the G5 does not
+
+- **Shared QNH** on the CAN bus; flashes until set; amber if the AIR module uses a different value.
+- **Choosable readouts:** GS or TAS, GPS/pressure/density altitude, OAT or UTC time. TAS is computed from pitot,
+  static and OAT with compressibility and a probe recovery factor (`speedDisplay.mjs`).
+- **Route list** (`routeOverlay.mjs`): tap a waypoint, choose Leg or Direct-To.
+- **GPS status box:** fix type coloured by HDOP, WAAS; expands on touch for satellites, HDOP, VDOP and WMM2025
+  variation.
+- **Module health:** red X flags and blanked tapes per instrument, gyro-only heading dimmed then blanked,
+  annunciators that flash 5 s when new, the Modules page, read-only viewer pages.
+- **Two slip/skid cues:** a trapezoid under the roll pointer (G1000 style) and the ball.
+
+## Feature comparison
+
+Of 31 G5 features: PiEFIS has 10, has 10 in part, lacks 8; 3 do not apply. Section numbers are the G5 manual's.
+
+| Feature | G5 | PiEFIS today | Status |
+| --- | --- | --- | --- |
+| Knob | Turn sets baro (PFD) or heading bug (HSI); press opens a menu (1.5.2) | One ring of 8 items; stays in selection mode after an edit | Partial |
+| Airspeed tape and readout | 60 kt window, labels every 10 kt; ones digit rolls (2.1.1) | 80 kt window; every digit rolls | Have |
+| Airspeed colour bands | Red low-speed, white, green, yellow, red/white barber pole at Vne (2.1.1) | Green, yellow, white strips, red Vne tick; Vfe placeholder 99 | Partial |
+| Airspeed trend vector | Magenta line to the speed 6 s ahead (2.1.1) | None | Missing |
+| Overspeed cues | Pointer red at Vne; digits yellow when trend crosses Vne (2.1.1) | None | Missing |
+| V-speed markers | Cyan tags; listed at tape foot when airspeed fails (2.1.1.2) | None | Missing |
+| TAS, GS and OAT | All three at once (Fig. 2-1) | GS or TAS, OAT or UTC, picked with the knob | Partial |
+| Attitude | 2.5° pitch marks, roll ticks 10/20/30/45/60 (2.1.2) | 5° pitch marks, same roll ticks, slip/skid trapezoid | Have |
+| Standard-rate bank pointers | Green marks on roll scale (2.1.2.2) | None | Missing |
+| Pitch attitude offset | Aircraft symbol ±5° (2.1.7) | None | Missing |
+| ALIGNING state | While AHRS settles (1.4.2) | Red X until valid | Partial |
+| Altimeter tape and readout | 400 ft window, 20 ft ticks (2.1.3) | Same, 20 ft rolling tens drum | Have |
+| Selected altitude | Cyan box above tape, always shown; bug parks at edge (2.1.3) | Red bug, 25/100 ft steps; cyan readout at tape foot only while editing; starts at 0 ft | Partial |
+| Altitude alerting | Flash at 1,000 and 200 ft to go; yellow outside ±200 ft (2.1.3.2) | None | Missing |
+| Baro setting | inHg, hPa or mb (2.1.3.1) | inHg, shared on CAN, flashes until set, amber on mismatch | Have |
+| Vertical speed | Fixed scale, pointer (2.1.6) | Non-linear ±2,000 fpm scale, magenta bar | Have |
+| PFD heading tape | Cyan bug, magenta track triangle (2.1.5) | Red bug, cyan readout while editing; separate from HSI bug; no track marker | Partial |
+| Turn rate indicator | Magenta trend bar (2.1.4) | Same idea, spring-damped | Have |
+| Slip/skid | Ball (2.1.2) | Ball and trapezoid | Have |
+| CDI on the PFD | Dot scale under slip ball (2.3.1) | HSI only | Missing |
+| HSI rose, heading bug, track | Rotating rose, cyan bug, magenta track (2.2.1) | Same; track hidden below 10 kt | Have |
+| HSI course, CDI, DTK | Course and DTK readout; CDI scale label (2.2.1.2) | One value ("CRS") is both heading bug and OBS course; plan DTK overrides the needle but box still shows CRS; CDI fixed 2 NM | Partial |
+| Bearing pointer | Cyan pointer to waypoint (2.2.1.1) | Server sends `bearing`; not drawn | Partial |
+| Wind | Arrow + speed/direction, HSI top left (Fig. 2-17) | None | Missing |
+| Distance to waypoint | HSI top right | Waypoint ID and NM under the rose | Have |
+| Failure flags | Red X with name (1.4.1) | Red X with name, blanked tapes, dimmed gyro-only heading | Have |
+| System messages | Flashing [!] and list (1.7) | Annunciators flash 5 s when new; Modules page; no history | Partial |
+| Backlight | Auto (light sensor) or manual (1.4.4) | Manual, with the knob | Partial |
+| Battery backup | Up to 4 h (2.1.8) | None; backup display covers this | N/A |
+| Autopilot, FD, ESP | Sections 3 and 4 | No autopilot | N/A |
+| Vertical deviation | Needs external navigator (2.3.2) | No source | N/A |
+
+## Recommended features
+
+### High priority
+
+1. **Give the knob a home position.**
+   - After about 10 s with no turn or press in selection mode, return to QNH edit and clear the red outline. Same
+     after leaving an edit.
+   - Long press (about 1 s) syncs the item being edited: altitude bug to current altitude rounded to 100 ft, heading
+     bug to current heading, CRS to the bearing to the waypoint. The page already receives `pressed` in every
+     message, so it can time the press. The G5 syncs the same way (2.1.3, 2.1.5).
+   - Consider moving the rarely changed items (OAT/time, GS/TAS, altitude source boxes) into the Menu, leaving
+     QNH, heading bug, altitude bug and course on the knob.
+2. **Keep the selected altitude on screen, and add alerting.**
+   - Show the cyan readout whenever a target is set, not only while editing (above the tape as on the G5, or at
+     the tape foot but left up). Dashes until set.
+   - Bug cyan; park it at the tape edge when off-scale; start at current altitude rounded to 100 ft, not 0.
+   - Alerting per G5 2.1.3.2: flash 5 s at 1,000 ft to go and at 200 ft; after capture, yellow on black and flash
+     outside ±200 ft; reset when the target changes.
+   - Optional: put the target on the CAN bus like QNH so the backup display can show it.
+3. **One heading bug on both instruments.** `headingIndicator.mjs` and `hsi.mjs` each keep their own `_bugValue`,
+   and the HSI's is also its OBS course. Keep one heading-bug value that both draw and either can set. Give the
+   course its own value, used only when no flight plan is active. With a plan active, label the box DTK in magenta.
+4. **Airspeed trend vector.** Magenta line beside the colour strip to the speed 6 s ahead. Low-pass the rate
+   (about 1 s). Hide under about 2 kt of change and when airspeed is invalid.
+5. **Speed bands and overspeed cues.** Red low-speed band below Vs1, red/white barber pole above Vne, white flap
+   arc. Pointer red at/above Vne; digits yellow when the trend crosses Vne. Move `V_SPEEDS` out of
+   `airspeedRibbon.mjs` into the `airspeed-limits.json` planned in `MENU_SYSTEM_PLAN.md`; fix Vfe (99).
+6. **V-speed tags.** Cyan tags for Vx, Vy, Vg, Vr. When airspeed fails, list them at the foot of the blanked tape.
+7. **Wind on the HSI.** Inputs already on the page: TAS, magnetic heading, GPS GS and magnetic track. Wind = ground
+   velocity − air velocity. Arrow + speed/direction top left, plus headwind/crosswind components (G5 Fig. 1-6).
+   Average 10–30 s; hide below ~30 kt GS, while turning > ~2°/s, and when heading is gyro-only. 5° heading error
+   at 100 kt TAS gives ~9 kt false crosswind.
+
+### Medium priority
+
+8. **Bearing pointer.** Draw the server's `bearing` as a thin cyan needle with a ring (2.2.1.1).
+9. **CDI scale.** Replace fixed `_cdiFullScaleNM` (2 NM) with the G5 VFR scales 5.00 / 1.25 / 0.25 NM (Table 2-2);
+   show the scale beside the CDI.
+10. **Track marker on the PFD heading tape** (magenta triangle, 2.1.5).
+11. **ALIGNING state.** `instrumentStatus.mjs` knows module state 0 = STARTING. Show "ALIGNING" over the attitude
+    instead of a red X while the IMU starts (1.4.2).
+12. **Message history.** A Messages row in the Menu listing what happened and when, with a flashing [!] until
+    viewed (1.7). Include a warning when WMM2025 expires (end of 2029).
+
+### Low priority
+
+13. Standard-rate bank pointers: bank = atan(TAS × 0.0524 / g), TAS in m/s; ~15° at 100 kt (2.1.2.2).
+14. Pitch attitude offset ±5° from the Menu, long press to centre (2.1.7).
+15. CDI on the PFD — only useful if a full-screen PFD mode is added.
+16. Automatic backlight with an ambient light sensor (e.g. VEML7700) (1.4.4).
+17. Data logging — covered by the planned CAN black-box logger; could also keep the message history.
+
+## Making the display look professional
+
+1. **Colour code; red only for warnings.** Red now means selected (box borders, tape line, HSI ring), bugs, and
+   failures.
+
+   | Colour | Meaning | Change |
+   | --- | --- | --- |
+   | White | Measured data, scales, "selected" outline | Selected outline red → white (`displayRectangle.mjs`, `ribbon.mjs`, `headingIndicator.mjs`, `brightness.mjs`, `hsi.mjs`); OAT cyan → white; tape numbers `0xBBBBBB` → white |
+   | Cyan | Pilot-set values, editing | Heading and altitude bugs red → cyan |
+   | Magenta | GPS/nav data, trend lines | GS readout chartreuse → magenta |
+   | Green | Active/normal | Keep |
+   | Yellow/amber | Caution | Keep (annunciators, yellow arc, QNH mismatch) |
+   | Red | Warnings, limits, failures | Only red X, Vne line, warnings |
+
+2. **Softer sky and ground with a gradient.** Replace `0x0000C0` / `0x884400` in `attitude-indicator.mjs` (and the
+   `0x0000C0` behind the heading tape) with gradients lightening toward the horizon, e.g. sky `#1E4FA8` → `#5E8FDB`,
+   ground `#8A5A2B` → `#4A2E14`. Pixi v8 `FillGradient`. Horizon line 2 px (now 1 px).
+3. **Antialiasing.** `app.init` sets no `antialias` (Pixi default off). Add `antialias: true` to both canvases;
+   check Pi 4 frame rate.
+4. **Pitch ladder mask.** `createAttitudeMaskGraphics` uses the roll-arc radius, so the 20° label touches the arc
+   and roll pointer. Make it ~30 px smaller. Optional 2.5° marks.
+5. **One slip/skid cue** — trapezoid or ball, not both.
+6. **Number formats.** Headings three digits everywhere (`headingIndicator.mjs` line 103 readout and line 675 bug
+   box). "kt" not "kts"; "NM".
+7. **"kts"/"ft" beside the readouts** (placed deliberately). The G5 has no units beside its pointers, only a small
+   stacked "KT" at the foot of the speed tape. Worth trying without.
+8. **Font.** Consider B612 / B612 Mono (Airbus cockpit legibility research, SIL OFL,
+   https://github.com/polarsys/b612). Equal-width digits in the Mono variant.
+9. **Dark outline on all text over sky/ground** (pitch labels, VSI labels and heading readout already have one).
+10. **HSI corners as on the G5:** wind top left, waypoint/distance top right, DTK/CRS bottom left, selected heading
+    bottom right. GPS box could shrink to a "3D WAAS" tag that expands on touch.
+11. **Test controls out of the pilot Menu:** move "Airspeed Sweep" and "Encoder Debug" to a Maintenance sub-menu or
+    `?debug=1`.
+
+## Quick fixes found in the code
+
+| Issue | Where | Fix |
+| --- | --- | --- |
+| HSI labels drawn before the font loads (serif fallback on N/E/S/W, rose numbers, CRS, VAR, Route) | `efis-display.js`: HSI built line 212, RouteOverlay 223; fonts load from 301; `document.fonts.ready` (355) only delays `setup()` | Load both FontFaces at the top and `await Promise.all([...])` before creating any `Text`. Tested in a scratch copy: HSI then renders in Tahoma. |
+| Stray numbers bottom left of PFD; Menu shows "Encoder Debug ON" | `userInput.mjs`: `DEBUG = true`; `createTextObjectAt` passes `stile:` not `style:` | `DEBUG = false`; fix typo |
+| PFD heading "90" and bug box "25" vs HSI "090" | `headingIndicator.mjs` lines 103, 675 | Pad to three digits as `hsi.mjs` does |
+| Altitude bug starts at 0 ft | `ribbon.mjs` `_bugValue = 0` | Set to altitude rounded to 100 ft on first valid altitude |
+| PFD heading bug starts at 5° | `headingIndicator.mjs` `_bugValue = 5` | Start at current heading, or share HSI value (feature 3) |
+| HSI box reads CRS while needle follows plan DTK | `hsi.mjs`: needle `_desiredTrack` (line 435); box `_bugValue` (lines 588, 876) | Show DTK in magenta when a plan is active |
+| Vfe placeholder | `airspeedRibbon.mjs` `vfe: 99` | Real Vfe; V-speeds to config |
+| Jagged lines | `app.init` no `antialias` | `antialias: true` both canvases |
+| Out-of-date notes | `UNIMPLEMENTED_FEATURES.md`, `EFIS_WORK_PLAN.md` (slip ball "disabled", `app2` "delete"); `app2` is the HSI canvas | Update or archive; fix the `app2` comment |
+
+## Not worth copying
+
+Autopilot/FD/ESP/GPSS (no servos); battery status (backup display covers it); glideslope/glidepath (no source);
+auto-switch to PFD in unusual attitude (both pages always shown); sky-pointer option.
+
+## Suggested order
+
+1. The quick fixes, then colour code and antialiasing.
+2. Knob home position and long-press sync.
+3. One shared heading bug and a separate course.
+4. Selected altitude that stays on screen, then alerting.
+5. Speed bands, overspeed cues, V-speed tags (V-speeds to config), then the trend vector.
+6. HSI: bearing pointer, CDI scale, wind, four-corner layout.
+7. The rest as time allows.
