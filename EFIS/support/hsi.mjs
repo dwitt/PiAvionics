@@ -1,6 +1,6 @@
 'use strict';
 
-export const VERSION = '1.0.6';
+export const VERSION = '1.0.7';
 
 import { Container, Graphics, TextStyle, Text } from './pixi.mjs';
 
@@ -508,7 +508,7 @@ export class HSI {
         const gsStyle = new TextStyle({
             fontFamily: 'Tahoma',
             fontSize: 20,
-            fill: 0xbbbbbb,    // was 0xcccccc
+            fill: 0xff6aff,    // light magenta, GPS data (as the waypoint text and the PFD's GS box); was grey 0xbbbbbb
         });
         this.gsText = new Text({ text: 'GS: --- kts', style: gsStyle });
         this.gsText.anchor.set(0.5, 0);
