@@ -1,9 +1,11 @@
 'use strict';
 
-export const VERSION = '1.0.1';
+export const VERSION = '1.0.2';
 import { Container, Graphics, TextStyle, Text, CanvasTextMetrics } from './pixi.mjs';
 
-const DEBUG = true;
+// The encoder debug numbers (selected item and encoder position, bottom left of the PFD) are always
+// created; DEBUG only says whether they show at start. The Menu's "Encoder Debug" row shows and hides them.
+const DEBUG = false;
 
 export class UserInput {
 
@@ -42,22 +44,19 @@ export class UserInput {
         this.encoderAdjustment = 0;     // adjustement of encoder position
         this.virtualEncoderForSelection = 0;
         
-        // TODO: Remove this later. It is for testing 
-        if (DEBUG) {
+        // Encoder debug numbers, hidden unless DEBUG or the Menu turns them on
+        let displayHeight = app.screen.height;
 
-            let displayHeight = app.screen.height;
+        this.itemSelectorText = this.createTextObjectAt(90, displayHeight);
 
-            this.itemSelectorText = this.createTextObjectAt(90, displayHeight);
+        this.encoderText = this.createTextObjectAt(140, displayHeight);
 
-            this.encoderText = this.createTextObjectAt(140, displayHeight);
+        this.setDebugVisible(DEBUG);
 
-            app.stage.addChild(this.itemSelectorText);
-            app.stage.addChild(this.encoderText);
+        app.stage.addChild(this.itemSelectorText);
+        app.stage.addChild(this.encoderText);
 
-            this.app = app;
-        }
-
-        //TODO: ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ Remove
+        this.app = app;
     }
 
     /**
@@ -78,7 +77,7 @@ export class UserInput {
 
         let textObject = new Text({
             text: "0",
-            stile: textStyle,
+            style: textStyle,
         });
         textObject.anchor.set(0,1);
         textObject.position.set(x, y);
@@ -248,12 +247,12 @@ export class UserInput {
 
                     // TODO: debugging output
                     // Output the currently selected item
-                    if (DEBUG) {
+                    if (this.itemSelectorText.visible) {
                         this.itemSelectorText.text = this.currentSelection.toString();
                     }
                     // Calculate and display the encoder value for the item
                     let itemEncoderPosition = this.virtualEncoderValue[this.currentSelection];
-                    if (DEBUG) {
+                    if (this.itemSelectorText.visible) {
                         this.encoderText.text = itemEncoderPosition;
                     }
 
@@ -273,7 +272,7 @@ export class UserInput {
                     );
 
                     //TODO: debugging output to the screen
-                    if (DEBUG) {
+                    if (this.itemSelectorText.visible) {
                         this.encoderText.text = encoderPosition.toString();
                     }
                 }

@@ -50,7 +50,7 @@ import { FAILURE_LOOK } from './failureLook.mjs';
 
 // ----------------------------------------------------------------------------
 
-const VERSION = "0.8.1";
+const VERSION = "0.8.2";
 
 // Viewer mode: a page that is not the Pi's own display only watches. It sends
 // nothing to the server, ignores the encoder, and shows the QNH and brightness
@@ -103,6 +103,23 @@ var turnRateDamping = 4.5;      // Damping constant - slightly underdamped for r
 var TEST_AIRSPEED_SWEEP = false;
 var testAirspeed = 0;
 var testAirspeedDir = 1;
+
+// ----------------------------------------------------------------------------
+// --- Load Fonts                                                           ---
+// ----------------------------------------------------------------------------
+
+// Both Tahoma faces are loaded before any Text is made. Pixi draws a Text once and keeps the picture,
+// so text made before its font has loaded (the HSI and the route overlay below) kept the fallback font.
+// If a font fails to load, the page carries on with the fallback.
+var tahoma_normal_font = new FontFace('Tahoma', 'url(support/Tahoma.ttf)', {weight: 400});
+var tahoma_bold_font = new FontFace('Tahoma', 'url(support/Tahoma%20Bold.ttf)', {weight: 800});
+
+try {
+    const loadedFaces = await Promise.all([tahoma_normal_font.load(), tahoma_bold_font.load()]);
+    for (const face of loadedFaces) document.fonts.add(face);
+} catch (error) {
+    console.log("Font loading failed, using the fallback font:", error);
+}
 
 // ----------------------------------------------------------------------------
 // ---Create a Pixi Application                                             ---
@@ -293,21 +310,6 @@ function connectWebSocket() {
     })
 }
 connectWebSocket();
-
-// ----------------------------------------------------------------------------
-// --- Load Fonts                                                           ---
-// ----------------------------------------------------------------------------
-
-var tahoma_normal_font = new FontFace('Tahoma', 'url(support/Tahoma.ttf)', {weight: 400});
-var tahoma_bold_font = new FontFace('Tahoma', 'url(support/Tahoma%20Bold.ttf)', {weight: 800});
-
-// Load the fonts asynchronously. If they load addthem to the document
-tahoma_normal_font.load().then(function(loaded_face){
-    document.fonts.add(loaded_face);
-});
-tahoma_bold_font.load().then(function(loaded_face){
-    document.fonts.add(loaded_face);
-})
 
 // ----------------------------------------------------------------------------
 // --- Wait for the document to report the fonts are loaded then call setup ---

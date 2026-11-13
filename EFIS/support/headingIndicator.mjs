@@ -1,5 +1,7 @@
 'use strict';
 
+export const VERSION = '1.0.1';
+
 import { Container, Graphics, TextStyle, Text, CanvasTextMetrics } from './pixi.mjs';
 
 /*****************************************************************************     
@@ -62,7 +64,7 @@ export class HeadingIndicator {
         
         [this.changableGraphics, this.bugText] = this.createChangableGraphic(height);
         
-        this.bugText.text = "0";
+        this.bugText.text = String(this._bugValue).padStart(3, '0');
 
         /*********************************************************************
          * add the graphics to the container
@@ -100,7 +102,7 @@ export class HeadingIndicator {
         }
         this._value = new_value;
 
-        this.headingText.text = String(Math.round(this._value));
+        this.headingText.text = String(Math.round(this._value)).padStart(3, '0');   // 090, as on the HSI
 
         this.headingRibbon.x = - this._value * this.pixelsPerDegree;
         
@@ -672,7 +674,7 @@ export class HeadingIndicator {
             this._bugValue = this._bugValue + delta * increment;
             // Wrap to 0-359
             this._bugValue = ((this._bugValue % 360) + 360) % 360;
-            this.bugText.text = this._bugValue.toString();
+            this.bugText.text = String(this._bugValue).padStart(3, '0');   // 025, as on the HSI (no degree sign: the box is sized for three digits)
 
             this.positionHeadingBugOnRibbon(this._value);
 
