@@ -1,8 +1,12 @@
 /*global PIXI */
 'use strict';
 
-export const VERSION = '1.0.2';
+export const VERSION = '1.0.3';
 import { Container, Graphics } from './pixi.mjs';
+
+// Box drawn round the icon when it is selected or being edited
+const BOX_HALF = 15;    // pixels from the centre of the icon to the box edge
+const BOX_RADIUS = 4;   // corner radius, pixels
 // ----------------------------------------------------------------------------
 // Aliases - Allows for changes in PIXI.JS
 // TODO - Make sure we have all of the necessary aliases set
@@ -115,6 +119,12 @@ export class Brightness {
         graphics.circle(0, 0, this.ballDiameter/2);
         graphics.stroke();
 
+        // A 2 px box around the icon, as the selected boxes (the icon on its own is too small to notice)
+        graphics.strokeStyle = { width: 2, color: lineColour, alignment: 1 };   // inside
+        graphics.roundRect(-BOX_HALF, -BOX_HALF, 2 * BOX_HALF, 2 * BOX_HALF, BOX_RADIUS);
+        graphics.stroke();
+        graphics.strokeStyle = { width: lineWidth, color: lineColour };
+
         let radius = this.ballDiameter/2
         let rayOffset = radius + 3;
         let rayEnd = radius + 6;
@@ -156,6 +166,11 @@ export class Brightness {
 
         graphics.moveTo(radius + 10, 0);
         graphics.lineTo(radius + 54, 0);
+        graphics.stroke();
+
+        // A 3 px box around the icon and the slider, as the boxes being edited
+        graphics.strokeStyle = { width: 3, color: lineColour, alignment: 1 };   // inside
+        graphics.roundRect(-BOX_HALF, -BOX_HALF, BOX_HALF + radius + 61, 2 * BOX_HALF, BOX_RADIUS);
         graphics.stroke();
 
         this.brightnessSlider = new Graphics();
