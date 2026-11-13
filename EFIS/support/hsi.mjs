@@ -1,5 +1,7 @@
 'use strict';
 
+export const VERSION = '1.0.1';
+
 import { Container, Graphics, TextStyle, Text } from './pixi.mjs';
 
 /*****************************************************************************
@@ -222,7 +224,7 @@ export class HSI {
     // Heading readout box — digital heading above the rose (fixed)
     // -----------------------------------------------------------------------
     _createHeadingBox() {
-        const boxWidth = 70;   // was 60
+        const boxWidth = 84;   // was 70; room for the degree sign
         const boxHeight = 36;  // was 30
         const r = this.radius;
 
@@ -246,7 +248,7 @@ export class HSI {
             fill: 0xffffff,
             fontWeight: 'bold',
         });
-        this.headingText = new Text({ text: '000', style: style });
+        this.headingText = new Text({ text: '000°', style: style });
         this.headingText.anchor.set(0.5, 0.5);
         headingBox.addChild(this.headingText);
         this.headingBox = headingBox;       // kept so the readout can be dimmed or blanked with the heading
@@ -1004,7 +1006,7 @@ export class HSI {
         this.roseContainer.rotation = -value * Math.PI / 180;
 
         // Update digital readout (zero-padded 3 digits)
-        this.headingText.text = String(Math.round(value)).padStart(3, '0');
+        this.headingText.text = String(Math.round(value)).padStart(3, '0') + '°';   // 256°, as on the G5's HSI
 
         // Reposition ground track indicator relative to new heading
         const trackOffset = (this._groundTrack - value) * Math.PI / 180;

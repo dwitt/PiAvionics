@@ -1,6 +1,6 @@
 'use strict';
 
-export const VERSION = '1.0.1';
+export const VERSION = '1.0.2';
 
 import { Container, Graphics, TextStyle, Text, CanvasTextMetrics } from './pixi.mjs';
 
@@ -64,7 +64,7 @@ export class HeadingIndicator {
         
         [this.changableGraphics, this.bugText] = this.createChangableGraphic(height);
         
-        this.bugText.text = String(this._bugValue).padStart(3, '0');
+        this.bugText.text = String(this._bugValue).padStart(3, '0') + '°';
 
         /*********************************************************************
          * add the graphics to the container
@@ -501,7 +501,7 @@ export class HeadingIndicator {
         const lineWidth = 2;              // 2px
         const boxHorizontalOffset = 10;   // 10px from left
         const boxHeight = 25;             // 25px
-        const boxWidth = 40;              // 40px
+        const boxWidth = 52;              // was 40px; room for three digits and a degree sign
         const boxCornerRadius = 4;        // was 5px
         const bugFontSize = 20;           // was 21pt font
 
@@ -674,7 +674,7 @@ export class HeadingIndicator {
             this._bugValue = this._bugValue + delta * increment;
             // Wrap to 0-359
             this._bugValue = ((this._bugValue % 360) + 360) % 360;
-            this.bugText.text = String(this._bugValue).padStart(3, '0');   // 025, as on the HSI (no degree sign: the box is sized for three digits)
+            this.bugText.text = String(this._bugValue).padStart(3, '0') + '°';   // 025°, as the G5's selected heading
 
             this.positionHeadingBugOnRibbon(this._value);
 
