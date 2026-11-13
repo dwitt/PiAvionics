@@ -50,7 +50,7 @@ import { FAILURE_LOOK } from './failureLook.mjs';
 
 // ----------------------------------------------------------------------------
 
-const VERSION = "0.8.5";
+const VERSION = "0.8.6";
 
 // Viewer mode: a page that is not the Pi's own display only watches. It sends
 // nothing to the server, ignores the encoder, and shows the QNH and brightness
@@ -167,9 +167,23 @@ if (screenH > screenW) {
 const SHARP_DRAWING = pageParams.get('sharp') !== '0';
 const drawingOptions = SHARP_DRAWING ? { resolution: window.devicePixelRatio, autoDensity: true } : {};
 // Antialiasing smooths the edges of angled lines; Pixi's default is off. On the Pi (2026-11-13) both canvases ran at
-// 60 fps without it; with it on both, frames dropped to 30 and 20 fps. Trial: on for the primary canvas (horizon,
-// roll scale, pitch ladder) only. Check the Menu's Frame Rate row after changes.
-const PFD_ANTIALIAS = true;
+// 60 fps without it; with it on both, frames dropped to 30 and 20 fps; on the primary canvas only, the odd drop to 30.
+// The HSI stays off. The primary canvas follows the Menu's "PFD Antialias" row, which is kept in this browser's
+// storage and reloads the page (antialiasing can only be chosen when a canvas is made). On by default.
+const ANTIALIAS_KEY = 'efis.pfdAntialias';
+const FRAME_RATE_KEY = 'efis.frameRateShown';
+function storedFlag(key, fallback) {
+    try {
+        const value = localStorage.getItem(key);
+        return value === null ? fallback : value === 'on';
+    } catch (error) {
+        return fallback;            // storage blocked: use the default
+    }
+}
+function storeFlag(key, on) {
+    try { localStorage.setItem(key, on ? 'on' : 'off'); } catch (error) { /* storage blocked: not kept */ }
+}
+const PFD_ANTIALIAS = storedFlag(ANTIALIAS_KEY, true);
 const HSI_ANTIALIAS = false;
 
 const app = new Application();  // the applicaiton object available globally
@@ -524,19 +538,33 @@ function setup() {
 
     userInput = new UserInput(app);
 
-    // Frame rate readout, bottom left of the HSI canvas (above the VIEW ONLY tag on a viewer). Off at start;
-    // the Menu's "Frame Rate" row shows it. Each canvas has its own ticker, so both rates are shown.
+    // Frame rate readout, bottom left of the HSI canvas (above the VIEW ONLY tag on a viewer), shown by the
+    // Menu's "Frame Rate" row (kept in this browser's storage, so it survives a reload). Both canvases are drawn
+    // in the same browser frame, so one count covers both: frames in the last second, and frames that took
+    // more than 20 ms (a missed 60 Hz refresh) in the last 10 s. AA says whether the PFD is antialiased.
+    const SLOW_FRAME_MS = 20;
     const fpsText = new Text({
         text: "",
         style: new TextStyle({fontFamily: 'Tahoma', fontSize: 16, fill: 0xFFFFFF})
     });
     fpsText.anchor.set(0, 1);
     fpsText.position.set(6, app2.screen.height - (VIEW_ONLY ? 24 : 4));
-    fpsText.visible = false;
+    fpsText.visible = storedFlag(FRAME_RATE_KEY, false);
     app2.stage.addChild(fpsText);
+    const frameTimes = [];      // time of each frame in the last second
+    const slowFrames = [];      // time of each slow frame in the last 10 s
+    app.ticker.add(ticker => {
+        if (!fpsText.visible) return;
+        const now = performance.now();
+        frameTimes.push(now);
+        while (now - frameTimes[0] > 1000) frameTimes.shift();
+        if (ticker.deltaMS > SLOW_FRAME_MS) slowFrames.push(now);
+        while (slowFrames.length > 0 && now - slowFrames[0] > 10000) slowFrames.shift();
+    });
     setInterval(() => {
         if (fpsText.visible) {
-            fpsText.text = "PFD " + Math.round(app.ticker.FPS) + "  HSI " + Math.round(app2.ticker.FPS) + " fps";
+            fpsText.text = frameTimes.length + " fps  slow " + slowFrames.length + "/10s  AA " +
+                (PFD_ANTIALIAS ? "PFD" : "off");
         }
     }, 500);
 
@@ -556,7 +584,22 @@ function setup() {
         {
             label: "Frame Rate",
             getState: () => fpsText.visible,
-            setState: (val) => { fpsText.visible = val; },
+            setState: (val) => {
+                fpsText.visible = val;
+                frameTimes.length = 0;
+                slowFrames.length = 0;
+                storeFlag(FRAME_RATE_KEY, val);
+            },
+        },
+        {
+            label: "PFD Antialias",
+            getState: () => PFD_ANTIALIAS,
+            setState: (val) => {
+                if (val !== PFD_ANTIALIAS) {
+                    storeFlag(ANTIALIAS_KEY, val);
+                    location.reload();          // antialiasing is chosen when the canvas is made
+                }
+            },
         },
     ];
 
