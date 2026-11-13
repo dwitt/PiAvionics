@@ -19,6 +19,13 @@ Agreed 2026-10-27. Item numbers are kept from the review so earlier references s
 
 4. Make units (psi/F) settable, or leave them fixed (the EMS-2 is the primary display).
 5. Line up the G on the Flight page with HDG and ALT.
+5a. Module status annunciator: an Adafruit 0.54" quad 14-segment alphanumeric display (HT16K33, I2C, default 0x70; the Feather wing or the STEMMA QT backpack, which can sit on the panel on a cable) showing the status letters I A G E, one character per module, on every LCD page.
+    - Same scheme as now: capital steady = OK, lower case steady = degraded or starting, a letter flashing against `-` = failed or no heartbeat.
+    - Frees the status letters from row 3 of the Flight page; matters if the LCD becomes 24x2 (not decided).
+    - Brightness (16 levels) could be a field on the System page.
+    - Optional and must not stop the sketch if it is missing (the 25 ms I2C timeout applies, and it must not trip the watchdog).
+    - Check: the product and its I2C address against 0x20 (LCD backpack) and 0x36 (encoder); the 3.3 V current at full brightness; wing stack or panel backpack.
+    - Possible later uses, not decided: a flashing alarm word (OILP, CHT3) until acknowledged; QNH as `30.30`.
 
 ## D. Bench and hardware
 
