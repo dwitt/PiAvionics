@@ -1,7 +1,7 @@
 // 1-June-2025 Update for PixiJS v8
 'use strict';
 
-export const VERSION = '1.0.0';
+export const VERSION = '1.0.1';
 
 import { DisplayRectangle } from './displayRectangle.mjs';
 
@@ -49,6 +49,11 @@ export class TempTimeDisplay extends DisplayRectangle {
 
         this.valueText.text = temperatureValueText;
         this.unitText.text = temperatureUnitsText;
+
+        // The temperature (and time) are measured, so white, with the unit label (ºC, UTC) to match; cyan now
+        // means set by the pilot (QNH, bugs)
+        this.valueText.style.fill = 0xFFFFFF;
+        this.unitText.style.fill = 0xFFFFFF;
 
         this.container.addChild(this.regularRectangle);
         this.container.addChild(this.valueText);

@@ -1,7 +1,11 @@
 /** Enable strict mode for enhanced error checking */
 'use strict';
 
-export const VERSION = '1.0.0';
+export const VERSION = '1.0.1';
+
+// GPS readouts: magenta lightened so the small digits are easy to read (pure magenta 0xFF00FF was too dark;
+// the HSI waypoint text uses the same shade)
+const GPS_TEXT_COLOUR = 0xFF55FF;
 
 import { DisplayRectangle } from './displayRectangle.mjs';
 
@@ -28,7 +32,6 @@ export class AltitudeDisplay extends DisplayRectangle {
             true            // has legend
         );
 
-        let textColour = 'chartreuse';
 
         this.gpsAltitudeValue = 0;
         this.pressureAltitudeValue = 0;
@@ -44,9 +47,7 @@ export class AltitudeDisplay extends DisplayRectangle {
         this.legendText.text = "GPS";
 
 
-        this.valueText.style.fill = textColour;
-        this.unitText.style.fill = textColour;
-        this.legendText.style.fill = textColour;
+        this.applySourceColour();
 
         // Add the display objects to the container
         this.container.addChild(this.regularRectangle);
@@ -73,7 +74,17 @@ export class AltitudeDisplay extends DisplayRectangle {
             else if (this.displayItem == DEN) {
                 this.legendText.text = "DEN";
             }
+            this.applySourceColour();
         }
+    }
+
+    /** Colour by source: GPS altitude magenta (GPS and nav data); pressure and density altitude white
+     *  (from the air data). Was chartreuse for all three. */
+    applySourceColour() {
+        const colour = (this.displayItem == GPS) ? GPS_TEXT_COLOUR : 0xFFFFFF;
+        this.valueText.style.fill = colour;
+        this.unitText.style.fill = colour;
+        this.legendText.style.fill = colour;
     }
 
     update() {

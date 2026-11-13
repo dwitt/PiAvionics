@@ -1,6 +1,10 @@
 'use strict';
 
-export const VERSION = '1.0.0';
+export const VERSION = '1.0.1';
+
+// GPS readouts: magenta lightened so the small digits are easy to read (pure magenta 0xFF00FF was too dark;
+// the HSI waypoint text uses the same shade)
+const GPS_TEXT_COLOUR = 0xFF55FF;
 
 import { DisplayRectangle } from './displayRectangle.mjs';
 
@@ -36,7 +40,6 @@ export class SpeedDisplay extends DisplayRectangle {
             true            // has legend
         );
 
-        let textColour = 'chartreuse';
 
         this.groundSpeedValue = 0;
         this.trueAirSpeedValue = 0;
@@ -55,9 +58,7 @@ export class SpeedDisplay extends DisplayRectangle {
         this.unitText.text = "kts";
         this.legendText.text = "GS";
 
-        this.valueText.style.fill = textColour;
-        this.unitText.style.fill = textColour;
-        this.legendText.style.fill = textColour;
+        this.applySourceColour();
 
         // Add the display objects to the container
         this.container.addChild(this.regularRectangle);
@@ -81,7 +82,17 @@ export class SpeedDisplay extends DisplayRectangle {
             else if (this.displayItem == TAS) {
                 this.legendText.text = "TAS";
             }
+            this.applySourceColour();
         }
+    }
+
+    /** Colour by source: GS comes from the GPS, magenta (GPS and nav data); TAS from the air data, white
+     *  (measured). Was chartreuse for both. */
+    applySourceColour() {
+        const colour = (this.displayItem == GS) ? GPS_TEXT_COLOUR : 0xFFFFFF;
+        this.valueText.style.fill = colour;
+        this.unitText.style.fill = colour;
+        this.legendText.style.fill = colour;
     }
 
     update() {
