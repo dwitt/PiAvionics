@@ -1,7 +1,7 @@
 // 1-June-2025 Update for PixiJS v8
 'use strict';
 
-export const VERSION = '1.0.0';
+export const VERSION = '1.0.4';
 
 import { drawSpecialRectangle } from './specialRectangle.mjs';
 import { calculateCharacterVerticalCentre } from './utilityFunctions.mjs';
@@ -54,8 +54,8 @@ export class DisplayRectangle {
 
         // set up class variables
         this.colour = 0xffffff;         // white - normal
-        this.selectedColour = 0xff0000  // red - when selected
-        this.changableColour = 0x00ffff // cyan or aqua - when changing
+        this.selectedColour = 0x00ffff  // cyan - when selected (thin outline; red is kept for warnings and failures)
+        this.changableColour = 0x00ffff // cyan - when changing (thick outline and a dark teal fill)
 
         this.selected = false;          // not currently selected
         this.changable = false;         // not currently changable
@@ -99,10 +99,11 @@ export class DisplayRectangle {
         } else {
             valueTextX = x + width * 2/3;
         }
+        // + 1: the digits sat high (about 1.6 px above them, 3.2 px below), so they are moved down a pixel
         if (radiusTop) {
-            valueTextY = y - height/2;
+            valueTextY = y - height/2 + 1;
         } else {
-            valueTextY = y + height/2;
+            valueTextY = y + height/2 + 1;
         }
 
 
@@ -233,8 +234,8 @@ export class DisplayRectangle {
         Object.assign(strokeStyle, {
             alignment: 1,       // inside
             alpha: 1.0,         // 100%
-            color: 0xFF0000,    // red
-            width: 2,           // 2 px
+            color: 0x00FFFF,    // cyan - selected (red is kept for warnings and failures)
+            width: 2,           // 2 px, thin
         });
 
         this.selectedRectangle = this.rectangle(
@@ -252,9 +253,15 @@ export class DisplayRectangle {
         // changing rectangle
 
         // Update the strokeStyle and fillStyle for the changing rectangle
+        // Same cyan as selected, but a thick outline and a dark teal fill, so editing can be told from
+        // selected at a glance whatever colour the text is (the QNH value is already cyan)
         strokeStyle.color = 0x00FFFF;   // cyan
+        strokeStyle.width = 4;          // 4 px, thick ...
+        strokeStyle.alignment = 0.5;    // ... centred on the edge: the inside 2 px match the selected outline
+                                        // and the extra 2 px go outward, so the text is not crowded
 
         fillStyle.alpha = 1.0;          // 100%
+        fillStyle.color = 0x003C3C;     // dark teal
 
         this.changingRectangle = this.rectangle(
             x, y, 

@@ -1,7 +1,7 @@
 /*global PIXI */
 'use strict';
 
-export const VERSION = '1.0.0';
+export const VERSION = '1.0.2';
 import { Container, Graphics } from './pixi.mjs';
 // ----------------------------------------------------------------------------
 // Aliases - Allows for changes in PIXI.JS
@@ -106,7 +106,7 @@ export class Brightness {
         // Construct the selected brightness indicator
         var graphics = new Graphics();
         let lineWidth = 2;
-        let lineColour = 0xff0000 // Red
+        let lineColour = 0x00ffff   // cyan - selected (thin outline); editing adds the fill and slider
 
         graphics.strokeStyle = {
             width: lineWidth,

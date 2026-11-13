@@ -1,6 +1,6 @@
 'use strict';
 
-export const VERSION = '1.0.0';
+export const VERSION = '1.0.2';
 
 import { Container, Graphics, Text, TextStyle, Matrix } from './pixi.mjs'
 
@@ -329,11 +329,11 @@ export class Ribbon {
 
         var bugHeight = 20;             
         var bugWidth = 8;
-        var bugLineColour = 0xFF0000; 
+        var bugLineColour = 0x00FFFF;   // cyan - a value the pilot sets
         var bugOutlineWidth = 1;
         var bugOutlineAlpha = 1;
         var bugOutlinePosition = 0;
-        var bugFillColour = 0xFF0000;
+        var bugFillColour = 0x00FFFF;   // cyan
         var bugFillAlpha = 1;
         var bugTriangle = 5;
 
@@ -399,16 +399,15 @@ export class Ribbon {
 
     /**
      * Create a graphic that indicates the bug is selected. The graphic will be
-     *    a red line up the tick mark side of the ribbon with a red box at the
-     *    bottome of the ribbon to display the bug value
+     *    a white line up the tick mark side of the ribbon
      * @param {number} ribbonHeight Total height of ribbon in pixels
      * @param {number} ribbonWidth Total width of the ribbon in pixels
      * @param {boolean} isRightAligned True if the ribbon is right aligned
-     * @returns PIXI.Graphics object that is the red line
+     * @returns PIXI.Graphics object that is the white line
      */
     createSelectedGraphics(ribbonHeight, ribbonWidth, isRightAligned){
 
-        var verticallineColour = 0xFF0000;
+        var verticallineColour = 0x00FFFF;  // cyan - selected; editing shows the bug box instead
         var outlineWidth = 2;
         var outlineAlpha = 1;
         var outlinePosition = 0; // inner

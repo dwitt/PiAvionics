@@ -1,6 +1,6 @@
 'use strict';
 
-export const VERSION = '1.0.2';
+export const VERSION = '1.0.4';
 
 import { Container, Graphics, TextStyle, Text, CanvasTextMetrics } from './pixi.mjs';
 
@@ -387,11 +387,11 @@ export class HeadingIndicator {
 
         const bugHeight = 6;             
         const bugWidth = 24;
-        const bugLineColour = 0xFF0000; 
+        const bugLineColour = 0x00FFFF;   // cyan - a value the pilot sets, as on the HSI
         const bugOutlineWidth = 1;
         const bugOutlineAlpha = 1;
         const bugOutlineAlignment = 0; // Inner
-        const bugFillColour = 0xFF0000;
+        const bugFillColour = 0x00FFFF;   // cyan
         const bugFillAlpha = 1;
         const bugTriangle = 6;
     
@@ -477,7 +477,7 @@ export class HeadingIndicator {
         selectableGraphics.strokeStyle = {
             alignment: 0,               // inner
             alpha: 1,                   // 100%
-            color: 0xff0000,            // red
+            color: 0x00ffff,            // cyan - selected; editing shows the bug box instead
             width: horizontalLineWidth, // 2 px
         };
 

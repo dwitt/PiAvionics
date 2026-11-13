@@ -1,6 +1,6 @@
 'use strict';
 
-export const VERSION = '1.0.1';
+export const VERSION = '1.0.3';
 
 import { Container, Graphics, TextStyle, Text } from './pixi.mjs';
 
@@ -487,12 +487,13 @@ export class HSI {
         this.fixedContainer.addChild(bugBox);
     }
 
-    _drawBugBox(color) {
+    _drawBugBox(color, editing = false) {
+        // Editing: thick outline and a dark teal fill, as the PFD boxes (displayRectangle.mjs)
         const w = this.bugBoxWidth;
         const h = this.bugBoxHeight;
         this.bugBoxBg.clear();
-        this.bugBoxBg.fillStyle = { color: 0x000000 };
-        this.bugBoxBg.strokeStyle = { color: color, width: 2 };
+        this.bugBoxBg.fillStyle = { color: editing ? 0x003c3c : 0x000000 };
+        this.bugBoxBg.strokeStyle = { color: color, width: editing ? 4 : 2 };
         this.bugBoxBg.roundRect(-w / 2, -h / 2, w, h, 4);
         this.bugBoxBg.fill();
         this.bugBoxBg.stroke();
@@ -814,7 +815,7 @@ export class HSI {
 
     // -----------------------------------------------------------------------
     // Selection ring — circle around the rose, hidden by default
-    // Red when selected, cyan when editing
+    // Cyan: thin when selected, thick when editing
     // -----------------------------------------------------------------------
     _createSelectionRing() {
         const r = this.radius;
@@ -823,10 +824,10 @@ export class HSI {
         this.fixedContainer.addChild(this.selectionRing);
     }
 
-    _drawSelectionRing(color) {
+    _drawSelectionRing(color, editing = false) {
         const r = this.radius - 2;  // match tick mark outer edge
         this.selectionRing.clear();
-        this.selectionRing.strokeStyle = { color: color, width: 2 };
+        this.selectionRing.strokeStyle = { color: color, width: editing ? 4 : 2 };   // thick when editing
         this.selectionRing.circle(0, 0, r);
         this.selectionRing.stroke();
         this.selectionRing.visible = true;
@@ -857,11 +858,11 @@ export class HSI {
 
         // Update selection ring and CRS box border
         if (changable) {
-            this._drawSelectionRing(0x00ffff);  // cyan — editing
-            this._drawBugBox(0x00ffff);
+            this._drawSelectionRing(0x00ffff, true);    // cyan, thick — editing
+            this._drawBugBox(0x00ffff, true);
         } else if (selected) {
-            this._drawSelectionRing(0xff0000);  // red — selected
-            this._drawBugBox(0xff0000);
+            this._drawSelectionRing(0x00ffff);          // cyan, thin — selected (red is kept for warnings and failures)
+            this._drawBugBox(0x00ffff);
         } else {
             this.selectionRing.visible = false;
             this._drawBugBox(0x666666);
