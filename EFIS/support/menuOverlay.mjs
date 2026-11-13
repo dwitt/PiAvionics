@@ -1,6 +1,6 @@
 'use strict';
 
-export const VERSION = '1.0.1';
+export const VERSION = '1.0.2';
 
 import { Container, Graphics, TextStyle, Text } from './pixi.mjs';
 
@@ -14,7 +14,8 @@ export class MenuOverlay {
      * @param {object} app - PixiJS Application
      * @param {Array} toggleDefs - Array of {label, getState(), setState(val)}
      * @param {Array} actionDefs - Optional array of {label, getValue(), action()}: rows that show
-     *     a value and run an action when pressed (the menu is closed first)
+     *     a value and run an action when pressed (the menu is closed first, unless keepOpen is
+     *     true: then the menu stays up and the row shows the new value, e.g. a setting that steps)
      * @param {string} title - Title shown at the top of the box
      *************************************************************************/
     constructor(app, toggleDefs, actionDefs = [], title = 'Menu') {
@@ -192,6 +193,11 @@ export class MenuOverlay {
         row.cursor = 'pointer';
         row.on('pointerdown', (e) => {
             e.stopPropagation();
+            if (def.keepOpen) {
+                def.action();
+                valueText.text = def.getValue() + '  >';
+                return;
+            }
             this.hide();
             def.action();
         });

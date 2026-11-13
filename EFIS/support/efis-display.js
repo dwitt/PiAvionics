@@ -50,7 +50,7 @@ import { FAILURE_LOOK } from './failureLook.mjs';
 
 // ----------------------------------------------------------------------------
 
-const VERSION = "0.8.11";
+const VERSION = "0.8.12";
 
 // Viewer mode: a page that is not the Pi's own display only watches. It sends
 // nothing to the server, ignores the encoder, and shows the QNH and brightness
@@ -195,6 +195,13 @@ function storeFlag(key, on) {
 const PFD_ANTIALIAS = storedFlag(ANTIALIAS_KEY, true);
 const HSI_ANTIALIAS = storedFlag(HSI_ANTIALIAS_KEY, false);
 const FPS_CAP_30 = storedFlag(FPS_CAP_KEY, true);
+// Slip/skid cue: the ball at the bottom, the trapezoid under the roll pointer, or both. Chosen with the
+// Menu's "Slip Cue" row (each press steps to the next) and kept in this browser's storage; takes effect at once.
+const SLIP_CUE_KEY = 'efis.slipCue';
+const SLIP_CUES = { both: "Both", ball: "Ball", trapezoid: "Trapezoid" };
+let slipCue = 'both';
+try { slipCue = localStorage.getItem(SLIP_CUE_KEY) || 'both'; } catch (error) { /* storage blocked: use the default */ }
+if (!(slipCue in SLIP_CUES)) slipCue = 'both';
 
 const app = new Application();  // the applicaiton object available globally
 await app.init({width: width,
@@ -661,6 +668,15 @@ function setup() {
     // The module status page is read only, so viewers get it too.
     modulePanel = new ModulePanel(app);
     const actionDefs = [{
+        label: "Slip Cue",
+        getValue: () => SLIP_CUES[slipCue],
+        keepOpen: true,
+        action: () => {
+            const names = Object.keys(SLIP_CUES);
+            slipCue = names[(names.indexOf(slipCue) + 1) % names.length];
+            try { localStorage.setItem(SLIP_CUE_KEY, slipCue); } catch (error) { /* storage blocked: not kept */ }
+        },
+    }, {
         label: "Modules",
         getValue: () => {
             let notOk = 0;
@@ -1066,6 +1082,7 @@ function updateFailureDisplay(status) {
     const valid = status.valid;
 
     attitudeIndicator.failed = !valid.attitude;
+    attitudeIndicator.slipSkidGraphics.visible = valid.attitude && slipCue !== 'ball';
     attFlag.shown = !valid.attitude;
 
     asiCover.visible = !valid.airspeed;
@@ -1082,7 +1099,7 @@ function updateFailureDisplay(status) {
     turnRateIndicator.container.visible = valid.turnRate;
     turnFlag.shown = !valid.turnRate;
 
-    slipBallIndicator.container.visible = valid.acceleration;
+    slipBallIndicator.container.visible = valid.acceleration && slipCue !== 'trapezoid';
 
     // heading: the gyro-only heading stays visible but dimmed under its X, then is blanked
     const heading = status.heading;
