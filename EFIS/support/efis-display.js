@@ -50,7 +50,7 @@ import { FAILURE_LOOK } from './failureLook.mjs';
 
 // ----------------------------------------------------------------------------
 
-const VERSION = "0.8.3";
+const VERSION = "0.8.4";
 
 // Viewer mode: a page that is not the Pi's own display only watches. It sends
 // nothing to the server, ignores the encoder, and shows the QNH and brightness
@@ -166,6 +166,9 @@ if (screenH > screenW) {
 // (autoDensity); only the pixels drawn inside it are finer. ?sharp=0 goes back to drawing at 1x.
 const SHARP_DRAWING = pageParams.get('sharp') !== '0';
 const drawingOptions = SHARP_DRAWING ? { resolution: window.devicePixelRatio, autoDensity: true } : {};
+// Smooth the edges of angled lines (horizon, roll scale, pitch ladder, HSI rose and needles). Pixi's default is off.
+// Both canvases ran at 60 fps on the Pi without it (2026-11-13); check the Menu's Frame Rate row after changes.
+drawingOptions.antialias = true;
 
 const app = new Application();  // the applicaiton object available globally
 await app.init({width: width,
