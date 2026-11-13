@@ -1,10 +1,10 @@
 'use strict';
 
-export const VERSION = '1.0.1';
+export const VERSION = '1.0.2';
 
 // GPS readouts: magenta lightened so the small digits are easy to read (pure magenta 0xFF00FF was too dark;
 // the HSI waypoint text uses the same shade)
-const GPS_TEXT_COLOUR = 0xFF55FF;
+const GPS_TEXT_COLOUR = 0xFF6AFF;
 
 import { DisplayRectangle } from './displayRectangle.mjs';
 

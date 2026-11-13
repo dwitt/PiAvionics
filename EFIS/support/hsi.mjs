@@ -1,6 +1,6 @@
 'use strict';
 
-export const VERSION = '1.0.5';
+export const VERSION = '1.0.6';
 
 import { Container, Graphics, TextStyle, Text } from './pixi.mjs';
 
@@ -541,7 +541,7 @@ export class HSI {
         const navStyle = new TextStyle({
             fontFamily: 'Tahoma',
             fontSize: 20,
-            fill: 0xff55ff,  // magenta, lightened so small text is easy to read (as the PFD's GPS readouts);
+            fill: 0xff6aff,  // magenta, lightened so small text is easy to read (as the PFD's GPS readouts);
                              // the course pointer and other lines stay pure magenta 0xff00ff
         });
         this.navText = new Text({ text: '', style: navStyle });
