@@ -1,6 +1,19 @@
-# Resume here (last saved 2026-10-27)
+# Resume here (last saved 2026-11-13)
 
 Tell Claude: "Read RESUME.md and carry on."
+
+## Update 2026-11-13: EFIS cosmetic clean-up from the G5 review (in progress)
+- **Where:** `EFIS/docs/G5_REVIEW.md`, section "Making the display look professional". Its status block lists what is
+  done, how it was built and what is next. Everything is committed, pushed and deployed to the Pi (page 0.8.10).
+- **Done:** colour code (bugs and selection cyan, GPS text light magenta `0xFF6AFF`), graded sky and ground,
+  antialiasing with a 30 fps cap (defaults: cap on, PFD antialiased, HSI not), pitch ladder (75 degree scale, +/-20
+  in level flight, 2.5 degree marks within +/-10), 3 px dark outline on text over the sky.
+- **Next:** move the test controls (Airspeed Sweep, Encoder Debug, Frame Rate, PFD/HSI Antialias, 30 fps Cap) out of
+  the pilot Menu to a maintenance page; then David decides the slip cue, "kt"/"NM" and units beside the readouts.
+- **Also added to PLAN.md this round:** item 5a (14-segment status annunciator) and section H (tail logger and Pi
+  EFIS logger).
+- **Way of working David likes:** before/after screenshots on the Mac before anything goes to the Pi (headless Chrome
+  at 576x1024, DPR 1.25, with `tests/fake_feed.py`); reload the Pi with ctrl-shift-R.
 
 ## Update 2026-10-27: alarms done, scope decided, open items are in PLAN.md
 - **Read `PLAN.md` first.** It is the agreed list of open items (numbered, with the dropped ones) and the scope decisions. This file is the history.

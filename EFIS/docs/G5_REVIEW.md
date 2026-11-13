@@ -159,6 +159,21 @@ Of 31 G5 features: PiEFIS has 10, has 10 in part, lacks 8; 3 do not apply. Secti
 
 ## Making the display look professional
 
+**Status 2026-11-13 (all deployed to the Pi):**
+- Done: quick fixes 1 to 3 and the three-digit headings with degree sign; 1 (colour code, as changed below);
+  2 (gradient, eased over 40 degrees, 2 px horizon); 3 (antialiasing); 4 (pitch ladder); 9 (outlines).
+- 1 as built: bugs cyan; selection cyan, not white (white disappeared on the tapes and the brightness icon):
+  2 px outline or line when selected, 3 px when editing (boxes grow 1 px outward), brightness icon gets a box;
+  OAT number and unit white; GS and GPS altitude light magenta `0xFF6AFF` (pure magenta was too dark for small
+  digits), TAS/PRE/DEN white; HSI GS and waypoint text light magenta; tape numbers stay grey (David's choice).
+- 3 as built: measured on the Pi, antialiasing costs frames (PFD only 48 fps, both 34). Added a 30 fps cap (every
+  other 60 Hz refresh, own loop, not Pixi's maxFPS). Defaults: cap on, PFD antialiased, HSI not (HSI antialiasing
+  with the Route list open gave slow frames). All three are Menu rows. Comment in `efis-display.js` has the numbers.
+- 4 as built: ladder circle 30 px inside the bank arc; pitch scale 75 degrees on the screen (was 50) so the +/-20
+  marks show in level flight; white 2.5 degree marks only between -10 and +10.
+- Next: 11 (test controls out of the pilot Menu, now also Frame Rate, the antialias rows and the cap); then
+  decisions on 5 (slip cue), 6 ("kt", "NM") and 7 (units beside readouts). Deferred: 8 (B612) and 10 (HSI corners).
+
 1. **Colour code; red only for warnings.** Red now means selected (box borders, tape line, HSI ring), bugs, and
    failures.
 
