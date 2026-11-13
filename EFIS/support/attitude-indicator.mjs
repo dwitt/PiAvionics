@@ -1,6 +1,6 @@
 'use strict';
 
-export const VERSION = '1.0.1';
+export const VERSION = '1.0.2';
 
 import { Container, FillGradient, Graphics, TextStyle, Text } from './pixi.mjs';
 
@@ -231,6 +231,29 @@ export class AttitudeIndicator {
      * Add the pitch lines and label them                                    *
     **************************************************************************/
 
+    /*************************************************************************
+     * Add colour stops from startColour to endColour that ease off towards the
+     * end (the change slows to nothing), so the gradient blends into the solid
+     * end colour with no visible edge.
+     * @param {FillGradient} gradient The gradient to add the stops to
+     * @param {number} startColour Colour at the start (the horizon), 0xRRGGBB
+     * @param {number} endColour Colour at the end and beyond, 0xRRGGBB
+     *************************************************************************/
+    addEasedColourStops(gradient, startColour, endColour) {
+        const steps = 12;
+        for (let i = 0; i <= steps; i++) {
+            const t = i / steps;
+            const k = 1 - Math.pow(1 - t, 2);      // ease out: steady at the horizon, flat at the end
+            let colour = 0;
+            for (const shift of [16, 8, 0]) {
+                const a = (startColour >> shift) & 0xFF;
+                const b = (endColour >> shift) & 0xFF;
+                colour |= Math.round(a + (b - a) * k) << shift;
+            }
+            gradient.addColorStop(t, colour);
+        }
+    }
+
     createAttitudeBackgroundContainer(pitchMaskGraphics){
 
         // --------------------------------------------------------------------
@@ -258,27 +281,26 @@ export class AttitudeIndicator {
 
         // define the background colours
         // Sky and earth are graded as on the G5: lighter at the horizon, darker away from it. The
-        // gradient runs over the pitch visible on the screen (half the display height, 25 degrees);
-        // beyond that the end colour carries on (the gradient texture is clamped at its ends).
+        // gradient runs over 40 degrees of pitch; beyond that the end colour carries on (the gradient
+        // texture is clamped at its ends). The change eases off towards the end: a straight-line
+        // gradient that stops suddenly shows as a band where it stops (a Mach band; it was seen at 25).
         let skyHorizonColour = 0x2A6AD8;    // lighter blue at the horizon
-        let skyFarColour = 0x0A2A9C;        // darker blue 25 degrees up and beyond
+        let skyFarColour = 0x0A2A9C;        // darker blue 40 degrees up and beyond
         let earthHorizonColour = 0x9A5A20;  // lighter brown at the horizon
-        let earthFarColour = 0x5A3410;      // darker brown 25 degrees down and beyond
-        let gradientDepth = this.displayHeight / 2;
+        let earthFarColour = 0x5A3410;      // darker brown 40 degrees down and beyond
+        let gradientDepth = this.pitchRatio * 40;
         let lineColour = 0xFFFFFF;     // white 
 
         // create the sky graphics 
         let skyGradient = new FillGradient(0, 0, 0, -gradientDepth);
-        skyGradient.addColorStop(0, skyHorizonColour);
-        skyGradient.addColorStop(1, skyFarColour);
+        this.addEasedColourStops(skyGradient, skyHorizonColour, skyFarColour);
         let skyGraphics = new Graphics();
         skyGraphics.rect(-skyWidth/2, -skyHeight, skyWidth, skyHeight);
         skyGraphics.fill(skyGradient);
 
         // create the earth graphics
         let earthGradient = new FillGradient(0, 0, 0, gradientDepth);
-        earthGradient.addColorStop(0, earthHorizonColour);
-        earthGradient.addColorStop(1, earthFarColour);
+        this.addEasedColourStops(earthGradient, earthHorizonColour, earthFarColour);
         let earthGraphics = new Graphics();
         earthGraphics.rect(-earthWidth/2, 0, earthWidth, earthHeight);
         earthGraphics.fill(earthGradient);
