@@ -50,7 +50,7 @@ import { FAILURE_LOOK } from './failureLook.mjs';
 
 // ----------------------------------------------------------------------------
 
-const VERSION = "0.8.7";
+const VERSION = "0.8.8";
 
 // Viewer mode: a page that is not the Pi's own display only watches. It sends
 // nothing to the server, ignores the encoder, and shows the QNH and brightness
@@ -168,10 +168,11 @@ const SHARP_DRAWING = pageParams.get('sharp') !== '0';
 const drawingOptions = SHARP_DRAWING ? { resolution: window.devicePixelRatio, autoDensity: true } : {};
 // Antialiasing smooths the edges of angled lines; Pixi's default is off. Measured on the Pi 2026-11-13 with the
 // Menu's Frame Rate readout: off, 60 fps and no slow frames; on for the primary canvas only, about 48 fps; on for
-// both canvases, worse. So it is off by default and the HSI never has it. The primary canvas follows the Menu's
-// "PFD Antialias" row (kept in this browser's storage; reloads the page, since antialiasing can only be chosen
-// when a canvas is made), so it can be tried again on other hardware.
+// both canvases, worse (30 and 20 fps). So both are off by default. Each canvas follows its Menu row, "PFD Antialias"
+// and "HSI Antialias" (kept in this browser's storage; reloads the page, since antialiasing can only be chosen
+// when a canvas is made).
 const ANTIALIAS_KEY = 'efis.pfdAntialias';
+const HSI_ANTIALIAS_KEY = 'efis.hsiAntialias';
 const FRAME_RATE_KEY = 'efis.frameRateShown';
 function storedFlag(key, fallback) {
     try {
@@ -185,7 +186,7 @@ function storeFlag(key, on) {
     try { localStorage.setItem(key, on ? 'on' : 'off'); } catch (error) { /* storage blocked: not kept */ }
 }
 const PFD_ANTIALIAS = storedFlag(ANTIALIAS_KEY, false);
-const HSI_ANTIALIAS = false;
+const HSI_ANTIALIAS = storedFlag(HSI_ANTIALIAS_KEY, false);
 
 const app = new Application();  // the applicaiton object available globally
 await app.init({width: width,
@@ -542,7 +543,7 @@ function setup() {
     // Frame rate readout, bottom left of the HSI canvas (above the VIEW ONLY tag on a viewer), shown by the
     // Menu's "Frame Rate" row (kept in this browser's storage, so it survives a reload). Both canvases are drawn
     // in the same browser frame, so one count covers both: frames in the last second, and frames that took
-    // more than 20 ms (a missed 60 Hz refresh) in the last 10 s. AA says whether the PFD is antialiased.
+    // more than 20 ms (a missed 60 Hz refresh) in the last 10 s. AA says which canvases are antialiased.
     const SLOW_FRAME_MS = 20;
     const fpsText = new Text({
         text: "",
@@ -565,7 +566,7 @@ function setup() {
     setInterval(() => {
         if (fpsText.visible) {
             fpsText.text = frameTimes.length + " fps  slow " + slowFrames.length + "/10s  AA " +
-                (PFD_ANTIALIAS ? "PFD" : "off");
+                ([PFD_ANTIALIAS ? "PFD" : "", HSI_ANTIALIAS ? "HSI" : ""].filter(Boolean).join("+") || "off");
         }
     }, 500);
 
@@ -598,6 +599,16 @@ function setup() {
             setState: (val) => {
                 if (val !== PFD_ANTIALIAS) {
                     storeFlag(ANTIALIAS_KEY, val);
+                    location.reload();          // antialiasing is chosen when the canvas is made
+                }
+            },
+        },
+        {
+            label: "HSI Antialias",
+            getState: () => HSI_ANTIALIAS,
+            setState: (val) => {
+                if (val !== HSI_ANTIALIAS) {
+                    storeFlag(HSI_ANTIALIAS_KEY, val);
                     location.reload();          // antialiasing is chosen when the canvas is made
                 }
             },
