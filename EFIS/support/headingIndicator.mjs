@@ -1,6 +1,6 @@
 'use strict';
 
-export const VERSION = '1.0.4';
+export const VERSION = '1.0.5';
 
 import { Container, Graphics, TextStyle, Text, CanvasTextMetrics } from './pixi.mjs';
 
@@ -532,10 +532,15 @@ export class HeadingIndicator {
             color: 0x000000,            // Black
         };
 
-        // draw horizontal line in new colour
+        // draw horizontal line in new colour, with the same alignment as the selected line
+        // (createSelectableGraphic) so it stays in the same place when editing starts
+        // (the whole style is set; changing one field of strokeStyle is not picked up)
+        leaderAndBoxGraphics.strokeStyle = { alignment: 0, alpha: 1, color: 0x00ffff, width: lineWidth };
         leaderAndBoxGraphics.moveTo(-this.displayWidth/2, height - lineWidth);
         leaderAndBoxGraphics.lineTo(this.displayWidth/2, height - lineWidth);
         leaderAndBoxGraphics.stroke();
+        // back to inside for the leader and box
+        leaderAndBoxGraphics.strokeStyle = { alignment: 1, alpha: 1, color: 0x00ffff, width: lineWidth };
 
         // draw the leader line
         leaderAndBoxGraphics.moveTo(this.displayWidth/2 - (boxWidth / 2 + boxHorizontalOffset), height);
