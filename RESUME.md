@@ -2,6 +2,22 @@
 
 Tell Claude: "Read RESUME.md and carry on."
 
+## Update 2026-11-14 (late night): feature 6, V-speed tags (page 0.8.25, server 1.7.8, all on the Pi)
+- **Done** (tried on the Mac with screenshots, then deployed; the service was restarted):
+  - Tags (`airspeedRibbon.mjs` 1.0.4): cyan R / X / Y / G in small black flags just right of the speed tape,
+    pointing at Vr 52, Vx 70 (the manual's climb with obstacles), Vy 74, Vg 61 kt; they scroll with the tape,
+    under the readout box. With no valid airspeed they are hidden and listed (Vy 74 ... Vr 52) at the foot of the
+    blanked tape, above the OAT box.
+  - Menu: "V-Speed Tags" On/Off (kept per browser, like Slip Cue, so viewers have it too) and "V-Speeds" (controller
+    only): the limits panel made generic (`airspeedLimitsPanel.mjs` 1.0.1, `AIRSPEED_LIMITS` / `V_SPEEDS`).
+  - `aircraft_settings.py` 1.0.3: a `vspeeds` group beside `airspeed`; each group checked on its own (a missing or
+    bad group gets its defaults, the other is kept), `change(group, speeds, speeds_kt)`. Server command is now
+    `{"aircraft_settings": {"group", "speeds"}, "request_id"}` (page and server must go up together).
+  - Still no `aircraft_settings.json` on the Pi (defaults) until the first save from a page.
+- **Open:** the "kt" label beside the airspeed readout covers part of a tag within a few knots of the current
+  speed; David to say if it bothers him (drop the "kt", as the G5, or move the tags).
+- **Next:** feature 7, wind on the HSI.
+
 ## Update 2026-11-14 (night): Menu > Airspeed Limits page (page 0.8.24, server 1.7.7, all on the Pi)
 - **Done** (tried on the Mac with screenshots, then deployed; the service was restarted):
   - `support/airspeedLimitsPanel.mjs` (new, 1.0.0), a "Airspeed Limits" row in the Menu (controller only, as

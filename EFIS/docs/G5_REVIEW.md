@@ -192,7 +192,9 @@ Of 31 G5 features: PiEFIS has 10, has 10 in part, lacks 8; 3 do not apply. Secti
   when the trend reaches Vne.
 - Night 2026-11-14: Menu > Airspeed Limits page (keypad or USB keyboard, knots, ground only, old -> new confirm,
   saved by the server). Controller only.
-- Left in this list: deferred 10 (HSI corners). Next: feature 6 (V-speed tags) onward.
+- Late night 2026-11-14: feature 6 done. Cyan R/X/Y/G tags right of the tape, listed at the foot of the tape when
+  airspeed fails; V-Speed Tags on/off and a V-Speeds page in the Menu; kept on the Pi with the limits.
+- Left in this list: deferred 10 (HSI corners). Next: feature 7 (wind on the HSI) onward.
 
 1. **Colour code; red only for warnings.** Red now means selected (box borders, tape line, HSI ring), bugs, and
    failures.
