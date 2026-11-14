@@ -2,30 +2,36 @@
 
 Tell Claude: "Read RESUME.md and carry on."
 
-## Update 2026-11-14: G5 review features under way (EFIS page 0.8.16, server 1.7.5, all on the Pi)
-- **Done since 2026-11-13** (each tried on the Mac with screenshots, then deployed):
+## Update 2026-11-14 (later): G5 review features 1 to 3 done (EFIS page 0.8.20, server 1.7.5, all on the Pi)
+- **Done** (each tried on the Mac with screenshots, then deployed):
   - Menu: Slip Cue (Both / Ball / Trapezoid), Modules, Orientation, Maintenance (test and tuning rows moved there).
   - "kts" is now "kt"; units otherwise kept; staying with Tahoma (B612 tried and rejected).
-  - Feature 1: knob returns to QNH after 10 s untouched; 1 s hold syncs the item being edited (altitude bug to
-    altitude, heading bug to heading, HSI CRS to the waypoint bearing); on QNH, the hold sets QNH from GPS altitude
-    on the ground only (IAS < 35 kt, 3D fix, VDOP <= 2.5) and the value flashes 2 s.
-  - Feature 2 part 1: selected altitude box (`selectedAltitudeDisplay.mjs`), square, under the GPS altitude box and
-    over the top of the tape, one shared outline, cyan with a bug symbol right of "ft"; dashes until set; cyan line
-    up the tape while selected or edited. The tape's pop-up box is no longer used.
-  - QNH once went to 28.00 with no sync flash (not the sync). Page now ignores knob jumps over 20 clicks per update;
-    server logs QNH changes with source, encoder re-baselines and page reports. Server output is in
-    `/var/log/piefis.log` (not the journal).
-- **Next, agreed 2026-11-14 (not started):** heading bug box, like the selected altitude:
-  - Square, always on screen, inside the heading tape at the far left near the screen edge; cyan `025°` with a small
-    HORIZONTAL bug symbol (the tape's heading bug, notch down) right of the degree sign.
-  - Same outlines as the other boxes (grey; 2 px cyan selected; 3 px editing); keep the cyan line under the tape when
-    selected; drop the leader line and the pop-up box at the right end.
-  - Start at `---°` with no bug on the tape until set; first click puts it on the current heading; long press syncs.
-  - Before building: render a mockup of a 90 px box lined up with the speed column next to a compact 64 px box, and
-    let David choose.
-  - The HSI CRS is still a separate value (G5 review feature 3, one shared heading bug); this box is the PFD bug only.
-- **After that:** feature 2 part 2, altitude alerts on the selected altitude box (flash 5 s at 1,000 ft and 200 ft to
-  go; after capture, yellow on black and flashing beyond +/-200 ft; reset when the target changes).
+  - Feature 1, knob (`userInput.mjs`): returns to QNH in edit mode after 10 s untouched. Long press: at 1 s the value
+    of the item being edited flashes if it can sync; let go before 3 s and it syncs (altitude bug to altitude rounded
+    to 100 ft, heading bug to the current heading, QNH from GPS altitude on the ground only: IAS < 35 kt, 3D fix,
+    VDOP <= 2.5). Held to 3 s, from anywhere: nothing syncs, brightness goes to 100 % in edit mode (to turn it down;
+    home 10 s after letting go). Knob jumps over 20 clicks per update are ignored and logged.
+  - Feature 2 (`selectedAltitudeDisplay.mjs`): square box under the GPS altitude box over the top of the tape, cyan
+    with a bug symbol, dashes until set, cyan line up the tape while selected. Alerting as the G5: flashes 5 s within
+    1,000 ft and within 200 ft; after capture, outside +/-200 ft the value turns the amber caution colour (as the QNH
+    mismatch; David chose amber over the G5's yellow for one caution colour) and flashes 5 s, amber until back within
+    180 ft. A new target resets it.
+  - Feature 3, as the G5 (David's choice): one heading bug. PFD box at the far left of the heading tape (90 x 25,
+    four rounded corners, cyan value and a horizontal bug symbol, `---°` until set); the HSI draws the same bug. The
+    HSI CRS box and knob item are gone: with a flight plan a magenta DTK box, course needle and CDI show the plan's
+    leg; with no plan there is no course needle. Long press on the heading bug: current heading (not DTK, so a
+    heading to rejoin a track can be held).
+  - TAS box (white) under the GS box, square, over the top of the speed tape; the GS/TAS switch is off the knob.
+  - Knob order now: QNH, OAT/time, brightness, heading bug, altitude source, selected altitude.
+  - Fixed: QNH jumped (about 40) on going back to QNH after a page reload: the first message and the reconnection
+    rebase both took the encoder count. Probably the cause of the earlier 28.00 (a larger count hits the limit).
+    Server logs QNH changes with source in `/var/log/piefis.log` (not the journal).
+- **Next:** G5 review features 4 onward (`EFIS/docs/G5_REVIEW.md`, "Recommended features"): airspeed trend vector,
+  speed bands, V-speed tags, wind, bearing pointer, CDI scale, track marker, ALIGNING, message history. Optional
+  from feature 1: move rarely changed items off the knob into the Menu. Optional from feature 2: the selected
+  altitude on CAN for the backup display.
+- **Testing on the Mac:** the scratch fake feed (`knob/fake_feed_knob.py` in the session scratchpad, not in the repo)
+  had controls added for altitude and a flight plan on/off; `EFIS/tests/fake_feed.py` has neither.
 
 ## Update 2026-11-13: EFIS cosmetic clean-up from the G5 review (in progress)
 - **Where:** `EFIS/docs/G5_REVIEW.md`, section "Making the display look professional". Its status block lists what is

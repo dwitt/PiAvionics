@@ -177,10 +177,12 @@ Of 31 G5 features: PiEFIS has 10, has 10 in part, lacks 8; 3 do not apply. Secti
   units). Server sends Cache-Control no-cache so a reload picks up every changed file.
 - 8: B612 and B612 Mono tried in screenshots; staying with Tahoma (David prefers it; B612 Mono overflowed the
   QNH box and spaced out decimals). Tahoma is loaded by the page from `support/Tahoma*.ttf`.
-- Features in progress 2026-11-14: see RESUME.md (feature 1 done with a ground-only QNH-from-GPS hold; feature 2
-  part 1 done as a selected altitude box under the GPS box; heading bug box next, then altitude alerts).
-- Left in this list: deferred 10 (HSI corners). Next per "Suggested order": feature 1 (knob home
-  position and long-press sync).
+- Features 2026-11-14 (details in RESUME.md): 1, 2 and 3 done. Feature 1 with a long press that flashes at 1 s and
+  syncs on release, and a 3 s hold for full brightness; feature 2 as a selected altitude box under the GPS box with
+  G5 alerting (deviation in the amber caution colour); feature 3 as the G5: one heading bug (PFD box at the left of
+  the tape, drawn on the HSI too), DTK box and course needle only with a flight plan, CRS gone. Also a TAS box under
+  the GS box (speed off the knob). Knob: QNH, OAT/time, brightness, heading bug, altitude source, selected altitude.
+- Left in this list: deferred 10 (HSI corners). Next: features 4 onward (not started).
 
 1. **Colour code; red only for warnings.** Red now means selected (box borders, tape line, HSI ring), bugs, and
    failures.
@@ -222,8 +224,8 @@ Of 31 G5 features: PiEFIS has 10, has 10 in part, lacks 8; 3 do not apply. Secti
 | Stray numbers bottom left of PFD; Menu shows "Encoder Debug ON" | `userInput.mjs`: `DEBUG = true`; `createTextObjectAt` passes `stile:` not `style:` | `DEBUG = false`; fix typo |
 | PFD heading "90" and bug box "25" vs HSI "090" | `headingIndicator.mjs` lines 103, 675 | Pad to three digits as `hsi.mjs` does |
 | Altitude bug starts at 0 ft | `ribbon.mjs` `_bugValue = 0` | Set to altitude rounded to 100 ft on first valid altitude |
-| PFD heading bug starts at 5° | `headingIndicator.mjs` `_bugValue = 5` | Start at current heading, or share HSI value (feature 3) |
-| HSI box reads CRS while needle follows plan DTK | `hsi.mjs`: needle `_desiredTrack` (line 435); box `_bugValue` (lines 588, 876) | Show DTK in magenta when a plan is active |
+| PFD heading bug starts at 5° | `headingIndicator.mjs` `_bugValue = 5` | Done 2026-11-14: `---°` until set, first click goes to the current heading (feature 3) |
+| HSI box reads CRS while needle follows plan DTK | `hsi.mjs`: needle `_desiredTrack` (line 435); box `_bugValue` (lines 588, 876) | Done 2026-11-14: DTK box in magenta only with a plan (feature 3) |
 | Vfe placeholder | `airspeedRibbon.mjs` `vfe: 99` | Real Vfe; V-speeds to config |
 | Jagged lines | `app.init` no `antialias` | `antialias: true` both canvases |
 | Out-of-date notes | `UNIMPLEMENTED_FEATURES.md`, `EFIS_WORK_PLAN.md` (slip ball "disabled", `app2` "delete"); `app2` is the HSI canvas | Update or archive; fix the `app2` comment |
