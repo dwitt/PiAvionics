@@ -1,6 +1,6 @@
 'use strict';
 
-export const VERSION = '1.0.3';
+export const VERSION = '1.0.4';
 
 // GPS readouts: magenta lightened so the small digits are easy to read (pure magenta 0xFF00FF was too dark;
 // the HSI waypoint text uses the same shade)
@@ -9,14 +9,14 @@ const GPS_TEXT_COLOUR = 0xFF6AFF;
 import { DisplayRectangle } from './displayRectangle.mjs';
 
 /**     
- * Class representing the speed display.
+ * Class representing the speed display: one box shows GS, another TAS (the knob no longer switches them).
  * 
  * 
  */
 
 
- const GS = 0;
- const TAS = 1;
+ export const GS = 0;
+ export const TAS = 1;
 
 // Used for calibrated airspeed (*** This calculation is not currently used ***)
 const GAMMA = 1.401;                // ratio of specific heats of air
@@ -29,7 +29,10 @@ const GAMMA = 1.401;                // ratio of specific heats of air
 
 
 export class SpeedDisplay extends DisplayRectangle {
-    constructor(app, x, y, width, height, radius) {
+    /**
+     * @param {number} displayItem GS or TAS, the speed this box shows (GS if left out)
+     */
+    constructor(app, x, y, width, height, radius, displayItem = GS) {
         super(
             app,
             x, y,
@@ -48,7 +51,7 @@ export class SpeedDisplay extends DisplayRectangle {
         this.outsideAirTemperatureValue = 0;
         this.mach = 0;
         this.speedOfSound = 0;
-        this.displayItem = GS;
+        this.displayItem = displayItem;
 
         // Set by the page: false shows --- instead of the value (the source cannot be trusted)
         this.validity = { gs: true, tas: true };
@@ -56,7 +59,7 @@ export class SpeedDisplay extends DisplayRectangle {
         // Set initial text values
         this.valueText.text = "0";
         this.unitText.text = "kt";
-        this.legendText.text = "GS";
+        this.legendText.text = (this.displayItem == TAS) ? "TAS" : "GS";
 
         this.applySourceColour();
 

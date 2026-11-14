@@ -25,7 +25,7 @@ import { AttitudeIndicator } from './attitude-indicator.mjs';
 import { SlipBallIndicator } from './slipBall.mjs';
 import { HeadingIndicator } from './headingIndicator.mjs';
 import { QNHDisplay } from './qnhdisplay.mjs'; //
-import { SpeedDisplay } from './speedDisplay.mjs';
+import { SpeedDisplay, TAS } from './speedDisplay.mjs';
 import { AltitudeDisplay } from './altitudeDisplay.mjs'
 import { SelectedAltitudeDisplay } from './selectedAltitudeDisplay.mjs';
 import { TempTimeDisplay } from './tempTimeDisplay.mjs';
@@ -51,7 +51,7 @@ import { FAILURE_LOOK } from './failureLook.mjs';
 
 // ----------------------------------------------------------------------------
 
-const VERSION = "0.8.18";
+const VERSION = "0.8.19";
 
 // Viewer mode: a page that is not the Pi's own display only watches. It sends
 // nothing to the server, ignores the encoder, and shows the QNH and brightness
@@ -384,6 +384,7 @@ var attitudeIndicator,
     slipBallIndicator,
     headingIndicator,
     speedDisplay,
+    tasDisplay,
     altitudeDisplay,
     selectedAltitudeDisplay,
     tempTimeDisplay,
@@ -537,15 +538,25 @@ function setup() {
     airspeedWheel = new AirspeedWheel(app, 12, y/2);
     
     //-------------------------------------------------------------------------
-    // Create a speed display, generally above the airspeed ribbon, that can
-    // display various speeds that the user selects, such as Ground Speed, and
-    // True Air Speed
+    // Create a speed display above the airspeed ribbon showing the Ground
+    // Speed, and a square box below it, over the top of the tape, showing the
+    // True Air Speed (as the selected altitude box on the right)
     //-------------------------------------------------------------------------
     speedDisplay = new SpeedDisplay(
         app,            // the current application to draw on
         0, 140/2,       // the x and y location of the display (lower left)
         90, 25,         // the width and height of the display
         8);             // the radius of the box's top corners
+
+    // Its bottom is 2 px less than a box height down, so the two boxes share one outline (the GS box's: the
+    // TAS box is drawn under it)
+    tasDisplay = new SpeedDisplay(
+        app,
+        0, 140/2 + 25 - 2,  // left edge and bottom of the box
+        90, 25,             // width and height of the box
+        0,                  // square corners
+        TAS);
+    app.stage.setChildIndex(tasDisplay.container, app.stage.getChildIndex(speedDisplay.container));
 
     
     //-------------------------------------------------------------------------
@@ -782,7 +793,6 @@ function setup() {
     userInput.registerCallback(qnhDisplay);
     userInput.registerCallback(tempTimeDisplay);
     userInput.registerCallback(brightness);
-    userInput.registerCallback(speedDisplay);
     userInput.registerCallback(headingIndicator);
     userInput.registerCallback(altitudeDisplay);
     userInput.registerCallback(selectedAltitudeDisplay);  // the altitude bug (was the tape and its pop-up box)
@@ -939,13 +949,14 @@ function DisplayUpdateLoop(delta) {
     if (dataObject.static_pressure != null &&
         dataObject.differential_pressure != null &&
         dataObject.oat != null) {
-        speedDisplay.staticPressure = dataObject.static_pressure;
-        speedDisplay.differentialPressure = dataObject.differential_pressure;
-        speedDisplay.indicatedTemperature = dataObject.oat;
+        tasDisplay.staticPressure = dataObject.static_pressure;
+        tasDisplay.differentialPressure = dataObject.differential_pressure;
+        tasDisplay.indicatedTemperature = dataObject.oat;
     }
     speedDisplay.validity.gs = valid.gps;
-    speedDisplay.validity.tas = valid.trueAirspeed;
     speedDisplay.update();
+    tasDisplay.validity.tas = valid.trueAirspeed;
+    tasDisplay.update();
 
     if (dataObject.oat != null) {
         tempTimeDisplay.temperature = dataObject.oat;
