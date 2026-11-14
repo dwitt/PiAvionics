@@ -1,6 +1,6 @@
 'use strict';
 
-export const VERSION = '1.0.5';
+export const VERSION = '1.0.6';
 import { Container, Graphics, Text, TextStyle } from './pixi.mjs';
 import { Ribbon, Colour_Bar } from './ribbon.mjs';
 
@@ -87,8 +87,10 @@ export class AirspeedRibbon extends Ribbon {
         this.tagContainer.mask = this.tagMask;
         app.stage.addChild(this.tagContainer);
         // the flags' shapes alone, moved with the tags: the mask that shows the "kt" outline over a tag
+        // (on the stage, or PixiJS never updates its position as it moves; as a mask it is not drawn itself)
         this.tagShapes = new Graphics();
         this.tagShapes.position.copyFrom(this.tagContainer.position);
+        app.stage.addChild(this.tagShapes);
         this.vspeeds = null;
         this.vspeedList = null;         // made by createVSpeedList, over the failure flag
         this.setVSpeeds(DEFAULT_VSPEEDS);

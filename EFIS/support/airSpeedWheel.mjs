@@ -1,7 +1,7 @@
 // 1-June-2025 - Updated for PixiJS 8.6.6
 'use strict';
 
-export const VERSION = '1.0.5';
+export const VERSION = '1.0.6';
 
 import { NumericWheelDisplay } from "./numericWheelDisplay.mjs";
 import { Graphics, TextStyle, Text} from './pixi.mjs';
@@ -63,7 +63,7 @@ export class AirspeedWheel  {
                 fontSize: '20px',
                 fill: { color: 0x000000, alpha: 0 },
                 fontWeight: "normal",
-                stroke: { color: "black", width: 3 },
+                stroke: { color: "black", width: 1.5 },    // thinner than the label's own 3 px, so the tag's letter still reads
             })
         });
         this.IASunitsOutline.anchor.set(0,.2);

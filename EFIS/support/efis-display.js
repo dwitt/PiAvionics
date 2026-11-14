@@ -52,7 +52,7 @@ import { FAILURE_LOOK } from './failureLook.mjs';
 
 // ----------------------------------------------------------------------------
 
-const VERSION = "0.8.26";
+const VERSION = "0.8.27";
 
 // Viewer mode: a page that is not the Pi's own display only watches. It sends
 // nothing to the server, ignores the encoder, and shows the QNH and brightness
