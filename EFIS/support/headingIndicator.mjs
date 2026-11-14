@@ -1,6 +1,6 @@
 'use strict';
 
-export const VERSION = '1.0.6';
+export const VERSION = '1.0.7';
 
 import { Container, Graphics, TextStyle, Text, CanvasTextMetrics } from './pixi.mjs';
 
@@ -29,7 +29,7 @@ export class HeadingIndicator {
         // Internal parameters for the heading value
         this._value = 0;
         this._previous_value = 0;
-        this._bugValue = 5;
+        this._bugValue = null;              // degrees, null until the pilot sets it
         this._bugIncrement = 1;
         this._bugFastIncrement = 2;
         this._bugFastDeltaThreshold = 6;    // delta >= this uses fast increment
@@ -62,9 +62,7 @@ export class HeadingIndicator {
         this.headingBugContainer = this.createHeadingBugContainer(height);
         this.selectableGraphics = this.createSelectableGraphic(height);
         
-        [this.changableGraphics, this.bugText] = this.createChangableGraphic(height);
-        
-        this.bugText.text = String(this._bugValue).padStart(3, '0') + '°';
+        this.bugBox = this.createBugBox(height);
 
         /*********************************************************************
          * add the graphics to the container
@@ -78,6 +76,9 @@ export class HeadingIndicator {
         this.headingContainer.addChild(this.headingRibbon);
         this.headingContainer.addChild(this.headingBugContainer);
         this.headingContainer.addChild(magnifierContainer);
+        this.headingContainer.addChild(this.bugBox);
+
+        this.showBug();
 
         /*********************************************************************
          * add the container to the display
@@ -440,6 +441,12 @@ export class HeadingIndicator {
     positionHeadingBugOnRibbon(){
         var bugValue = this._bugValue;
 
+        // no bug on the tape until it is set
+        this.headingBugContainer.visible = (bugValue !== null);
+        if (bugValue === null) {
+            return;
+        }
+
         // check if we are displaying the extra bit of ribbon
         if (this._value < this.extraRibbonDegrees) {
             // extra ribbon is being displayed to the left of the magnifier
@@ -489,88 +496,98 @@ export class HeadingIndicator {
     }
 
     /*************************************************************************
-     * Create a PixiJS Graphics object that draws a horizontal line at the
-     *     bottom of the heading indicator, a leader and a box displaying the
-     *     current heading bug setting to indicate the heading bug can be set
-     * @param {number} height The height of the heading indicator ribbon in pixels. 
-     * @returns A PixiJS Graphics object that draws the changable graphics.
-     *
+     * Create the heading bug box: always on screen at the far left of the
+     *     tape, the size of the GS box below it (90 x 25) with four rounded
+     *     corners. It shows the bug setting in cyan (025°, or ---° until it is
+     *     set) and a small copy of the tape's bug, horizontal with the notch
+     *     down, to say it is the bug setting. The outline is grey, 2 px cyan
+     *     when selected and 3 px cyan when being edited, as the other boxes.
+     * @param {number} height The height of the heading indicator ribbon in pixels.
+     * @returns A PixiJS Container holding the box
      *************************************************************************/
-    createChangableGraphic(height) {
-        
-        const lineWidth = 2;              // 2px
-        const boxHorizontalOffset = 10;   // 10px from left
-        const boxHeight = 25;             // 25px
-        const boxWidth = 52;              // was 40px; room for three digits and a degree sign
-        const boxCornerRadius = 4;        // was 5px
-        const bugFontSize = 20;           // was 21pt font
+    createBugBox(height) {
 
-        const yAnchor = this.calculateCharacterVerticalCentre(bugFontSize);
-        const boxVerticalOffset = (height - boxHeight) / 2;
+        const boxWidth = 90;              // as the GS box below it
+        const boxHeight = 25;             // as the other boxes
+        const boxCornerRadius = 8;        // as the GS box's top corners
+        const bugFontSize = 20;           // as the other boxes' values
+        const symbolWidth = 16;           // the tape's bug (24 x 6) made smaller
+        const symbolHeight = 6;
+        const symbolNotch = symbolWidth / 4;
+        const symbolGap = 4;              // between the degree sign and the bug symbol
 
-        var bugValueTextStyle = new TextStyle({
+        const left = -this.displayWidth / 2;            // the container's x is the centre of the screen
+        const top = (height - boxHeight) / 2;
+
+        const boxContainer = new Container();
+
+        // the three outlines; one is in the container at a time (index 0, behind the text)
+        const box = (strokeStyle) => {
+            const graphics = new Graphics();
+            graphics.roundRect(left, top, boxWidth, boxHeight, boxCornerRadius);
+            graphics.fill({ color: 0x000000 });         // black
+            graphics.stroke(strokeStyle);
+            return graphics;
+        };
+        this.regularBox = box({ alignment: 1, alpha: 0.5, color: 0xFFFFFF, width: 2 });    // grey: 50% white, inside
+        this.selectedBox = box({ alignment: 1, alpha: 1, color: 0x00FFFF, width: 2 });     // cyan, 2 px inside
+        this.changingBox = box({ alignment: 2/3, alpha: 1, color: 0x00FFFF, width: 3 });   // cyan, 2 px inside, 1 px out
+        boxContainer.addChild(this.regularBox);
+
+        const bugValueTextStyle = new TextStyle({
             fontFamily: "Tahoma",
             fontSize: bugFontSize,
-            fill: 0x00ffff,
+            fill: 0x00ffff,             // cyan
             fontWeight: "normal",
-            stroke: 0x00ffff,
-            
         });
 
-        this.changableGraphicsContainer = new Container();        
-        const leaderAndBoxGraphics = new Graphics();
+        // the value and the symbol are centred together in the box, using the width of "000°" so the
+        // value does not move as it changes
+        const textWidth = CanvasTextMetrics.measureText("000°", bugValueTextStyle).width;
+        const groupLeft = left + (boxWidth - (textWidth + symbolGap + symbolWidth)) / 2;
 
-        leaderAndBoxGraphics.strokeStyle = {
-            alignment: 1,               // was 0 (outside), now inside
-            alpha: 1,                   // 100%
-            color: 0x00ffff,            // cyan
-            width: lineWidth,           // 2 px
-        };
-
-        leaderAndBoxGraphics.fillStyle = {
-            alpha: 1,                   // 100%
-            color: 0x000000,            // Black
-        };
-
-        // draw horizontal line in new colour, with the same alignment as the selected line
-        // (createSelectableGraphic) so it stays in the same place when editing starts
-        // (the whole style is set; changing one field of strokeStyle is not picked up)
-        leaderAndBoxGraphics.strokeStyle = { alignment: 0, alpha: 1, color: 0x00ffff, width: lineWidth };
-        leaderAndBoxGraphics.moveTo(-this.displayWidth/2, height - lineWidth);
-        leaderAndBoxGraphics.lineTo(this.displayWidth/2, height - lineWidth);
-        leaderAndBoxGraphics.stroke();
-        // back to inside for the leader and box
-        leaderAndBoxGraphics.strokeStyle = { alignment: 1, alpha: 1, color: 0x00ffff, width: lineWidth };
-
-        // draw the leader line
-        leaderAndBoxGraphics.moveTo(this.displayWidth/2 - (boxWidth / 2 + boxHorizontalOffset), height);
-        leaderAndBoxGraphics.lineTo(this.displayWidth/2 - (boxWidth / 2 + boxHorizontalOffset), height - boxVerticalOffset);
-        leaderAndBoxGraphics.stroke();
-
-        // draw the box
-        let topLeftX = this.displayWidth/2 - (boxWidth + boxHorizontalOffset);
-        let topLeftY = height - (boxHeight + boxVerticalOffset);
-        
-        leaderAndBoxGraphics.roundRect(topLeftX,topLeftY, boxWidth, boxHeight, boxCornerRadius);
-
-        leaderAndBoxGraphics.fill();
-        leaderAndBoxGraphics.stroke();
-
-        this.changableGraphicsContainer.addChild(leaderAndBoxGraphics);
-
-        let textX = this.displayWidth/2 - (boxHorizontalOffset + 2);
-        let textY = height / 2;
-        const bugText = new Text({
-            text: "260",
+        this.bugText = new Text({
+            text: "---°",
             style: bugValueTextStyle,
         });
+        // + 1: as the other boxes, the digits sit a pixel low to look centred
+        this.bugText.anchor.set(1, this.calculateCharacterVerticalCentre(bugFontSize));
+        this.bugText.position.set(groupLeft + textWidth, height / 2 + 1);
+        boxContainer.addChild(this.bugText);
 
-        bugText.anchor.set(1, yAnchor);
-        bugText.position.set(textX, textY);
+        // the bug symbol: a bar with a notch cut down from its top edge, as the tape's bug
+        const symbol = new Graphics();
+        symbol.moveTo(-symbolWidth / 2, 0);
+        symbol.lineTo(-symbolNotch, 0);
+        symbol.lineTo(0, symbolHeight);
+        symbol.lineTo(symbolNotch, 0);
+        symbol.lineTo(symbolWidth / 2, 0);
+        symbol.lineTo(symbolWidth / 2, symbolHeight);
+        symbol.lineTo(-symbolWidth / 2, symbolHeight);
+        symbol.closePath();
+        symbol.fill({ color: 0x00FFFF });             // cyan
+        symbol.position.set(groupLeft + textWidth + symbolGap + symbolWidth / 2, height / 2 - symbolHeight / 2 + 1);
+        boxContainer.addChild(symbol);
 
-        this.changableGraphicsContainer.addChild(bugText);
+        return boxContainer;
+    }
 
-        return [this.changableGraphicsContainer, bugText];
+    /*************************************************************************
+     * Show the bug setting in the box and on the tape (dashes and no bug
+     *     until it is set).
+     *************************************************************************/
+    showBug() {
+        this.bugText.text = (this._bugValue === null)
+            ? "---°" : String(this._bugValue).padStart(3, '0') + '°';   // 025°, as the G5's selected heading
+        this.positionHeadingBugOnRibbon();
+    }
+
+    /*************************************************************************
+     * Put one of the box outlines (regular, selected, changing) in the box.
+     *************************************************************************/
+    showBox(outline) {
+        this.bugBox.removeChildAt(0);
+        this.bugBox.addChildAt(outline, 0);
     }
 
     /*************************************************************************
@@ -589,8 +606,7 @@ export class HeadingIndicator {
      */
     sync() {
         this._bugValue = Math.round(this._value) % 360;
-        this.bugText.text = String(this._bugValue).padStart(3, '0') + '°';
-        this.positionHeadingBugOnRibbon(this._value);
+        this.showBug();
         return true;
     }
 
@@ -612,12 +628,9 @@ export class HeadingIndicator {
             // TODO: Indicate that the element is CHANGEABLE
             // TODO: We came from the SELECTED state
             //
-            this.headingContainer.addChild(this.changableGraphicsContainer);
-            //this.headingCircularContainer.addChild(this.changeableCircularGraphics);
-            
-            // TODO: Remove SELECTED element as we won't know to do this latter
-            
-            this.headingContainer.removeChild(this.selectableGraphics);
+            // the thick outline; the cyan line under the tape stays as a cue to what is being adjusted
+            this.showBox(this.changingBox);
+            this.headingContainer.addChild(this.selectableGraphics);
             //
             // ----------------------------------------------------------------            
         } //else REMOVED else if
@@ -628,7 +641,7 @@ export class HeadingIndicator {
             // ----------------------------------------------------------------
             // TODO: Indicate that the element is NOT CHANGEABLE
             //
-            this.headingContainer.removeChild(this.changableGraphicsContainer);
+            this.showBox(this.regularBox);
             //
             // ----------------------------------------------------------------
             if (selected) {
@@ -636,9 +649,12 @@ export class HeadingIndicator {
                 // ------------------------------------------------------------
                 // TODO: Indcate that we are SELECTED after leaving changeable
 
+                this.showBox(this.selectedBox);
                 this.headingContainer.addChild(this.selectableGraphics);
                 //
                 // ------------------------------------------------------------
+            } else {
+                this.headingContainer.removeChild(this.selectableGraphics);
             }
         }
 
@@ -651,9 +667,8 @@ export class HeadingIndicator {
             // ----------------------------------------------------------------
             // TODO: Indicate that the element is SELECTABLE
             //
+            this.showBox(this.selectedBox);
             this.headingContainer.addChild(this.selectableGraphics);
-
-            
 
 
             //
@@ -669,7 +684,7 @@ export class HeadingIndicator {
             // TODO: This should only occur when going to the NOT SELECTED and
             //          NOT CHANGEABLE state
             this.headingContainer.removeChild(this.selectableGraphics);
-
+            this.showBox(this.regularBox);
         }
 
         if (!selected && !changable) {
@@ -684,14 +699,21 @@ export class HeadingIndicator {
 
             let delta = value - this._lastEncoderValue;
             this._lastEncoderValue = value;
+            if (delta == 0) {
+                return;
+            }
+            if (this._bugValue === null) {
+                // first click: the bug appears at the current heading
+                this._bugValue = Math.round(this._value) % 360;
+                this.showBug();
+                return;
+            }
             let increment = (this._bugSpeedSensitive && Math.abs(delta) >= this._bugFastDeltaThreshold)
                 ? this._bugFastIncrement : this._bugIncrement;
             this._bugValue = this._bugValue + delta * increment;
             // Wrap to 0-359
             this._bugValue = ((this._bugValue % 360) + 360) % 360;
-            this.bugText.text = String(this._bugValue).padStart(3, '0') + '°';   // 025°, as the G5's selected heading
-
-            this.positionHeadingBugOnRibbon(this._value);
+            this.showBug();
 
         } else if (this.changeableFirstPass) {
             // Save the starting encoder value so the first delta is zero
