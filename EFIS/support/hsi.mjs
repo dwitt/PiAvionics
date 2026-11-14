@@ -1,6 +1,6 @@
 'use strict';
 
-export const VERSION = '1.0.11';
+export const VERSION = '1.0.12';
 
 import { Container, Graphics, TextStyle, Text } from './pixi.mjs';
 
@@ -612,7 +612,8 @@ export class HSI {
     }
 
     // -----------------------------------------------------------------------
-    // GPS Status Box — upper-left corner of HSI display. It is a touch button:
+    // GPS Status Box — lower-left corner of HSI display, just above the level of the Route button (the upper left
+    // is kept for the wind). It is a touch button:
     // contracted (the normal state) it shows the fix status and the magnetic variation;
     // a touch expands it to show the satellites, HDOP and VDOP, and another touch contracts it.
     // It starts contracted. The word WAAS beside the status is green when differential
@@ -634,8 +635,11 @@ export class HSI {
         this._gpsHdopValue = null;
 
         const gpsBox = new Container();
-        // the origin is the top left corner so the box grows downward when it expands
-        gpsBox.position.set(-screenX + margin, -screenY + margin);
+        // the bottom edge stays put and the box grows upward when it expands (_drawGpsBox sets y);
+        // the Route button takes the bottom 40 px
+        this._gpsBox = gpsBox;
+        this._gpsBoxBottom = screenY - 40 - 6;
+        gpsBox.position.set(-screenX + margin, 0);
 
         this._gpsBoxBackground = new Graphics();
         gpsBox.addChild(this._gpsBoxBackground);
@@ -717,6 +721,7 @@ export class HSI {
         this._gpsBoxBackground.fillStyle = { color: 0x222222, alpha: 0.85 };
         this._gpsBoxBackground.strokeStyle = { color: 0x666666, width: 1, alpha: 0.8 };
         this._gpsBoxBackground.roundRect(0, 0, this._gpsBoxWidth, height, 6);
+        this._gpsBox.y = this._gpsBoxBottom - height;
         this._gpsBoxBackground.fill();
         this._gpsBoxBackground.stroke();
 
@@ -724,14 +729,14 @@ export class HSI {
             item.visible = this._gpsExpanded;
         }
 
-        // a small triangle at the right of the first row: down to expand, up to contract
+        // a small triangle at the right of the first row: up to expand (the box grows upward), down to contract
         const x = this._gpsBoxWidth - this._gpsPad - 3;
         const y = this._gpsRowY(0);
         this._gpsArrow.clear();
         if (this._gpsExpanded) {
-            this._gpsArrow.poly([x - 4, y + 2, x + 4, y + 2, x, y - 3]);
-        } else {
             this._gpsArrow.poly([x - 4, y - 2, x + 4, y - 2, x, y + 3]);
+        } else {
+            this._gpsArrow.poly([x - 4, y + 2, x + 4, y + 2, x, y - 3]);
         }
         this._gpsArrow.fill({ color: 0x888888 });
     }
