@@ -1,6 +1,6 @@
 'use strict';
 
-export const VERSION = '1.0.4';
+export const VERSION = '1.0.5';
 import { Container, Graphics, Text, TextStyle } from './pixi.mjs';
 import { Ribbon, Colour_Bar } from './ribbon.mjs';
 
@@ -86,6 +86,9 @@ export class AirspeedRibbon extends Ribbon {
         this.tagMask.fill({ color: 0xff0000 });
         this.tagContainer.mask = this.tagMask;
         app.stage.addChild(this.tagContainer);
+        // the flags' shapes alone, moved with the tags: the mask that shows the "kt" outline over a tag
+        this.tagShapes = new Graphics();
+        this.tagShapes.position.copyFrom(this.tagContainer.position);
         this.vspeeds = null;
         this.vspeedList = null;         // made by createVSpeedList, over the failure flag
         this.setVSpeeds(DEFAULT_VSPEEDS);
@@ -104,6 +107,7 @@ export class AirspeedRibbon extends Ribbon {
         this.vspeeds = Object.fromEntries(names.map(n => [n, vspeeds[n]]));
 
         for (const child of this.tagContainer.removeChildren()) child.destroy({ children: true });
+        this.tagShapes.clear();
         for (const name of names) {
             const speed = this.vspeeds[name];
             const tag = new Container();
@@ -114,6 +118,9 @@ export class AirspeedRibbon extends Ribbon {
             flag.fill({ color: 0x000000 });
             flag.stroke({ color: TAG_COLOUR, width: 1.5, alignment: 1 });
             tag.addChild(flag);
+            this.tagShapes.poly([0, 0, 6, -half, TAG_WIDTH, -half, TAG_WIDTH, half, 6, half].map(
+                (v, i) => (i % 2 === 0) ? v + TAG_X : v - speed * this.ribbon_interval_ratio));
+            this.tagShapes.fill({ color: 0xffffff });
             const letter = new Text({
                 text: name.charAt(1).toUpperCase(),
                 style: new TextStyle({ fontFamily: 'Tahoma', fontSize: 15, fontWeight: 'bold', fill: TAG_COLOUR }),
@@ -174,6 +181,8 @@ export class AirspeedRibbon extends Ribbon {
         this.tagContainer.visible = shown && valid;
         if (this.vspeedList) this.vspeedList.visible = shown && !valid;
         if (shown && valid) this.tagContainer.y = this.tagOriginY + airspeed * this.ribbon_interval_ratio;
+        // tags hidden: the mask is moved out of sight (not made invisible) so it still hides the whole outline
+        this.tagShapes.y = this.tagContainer.visible ? this.tagContainer.y : -100000;
     }
 
     /**

@@ -52,7 +52,7 @@ import { FAILURE_LOOK } from './failureLook.mjs';
 
 // ----------------------------------------------------------------------------
 
-const VERSION = "0.8.25";
+const VERSION = "0.8.26";
 
 // Viewer mode: a page that is not the Pi's own display only watches. It sends
 // nothing to the server, ignores the encoder, and shows the QNH and brightness
@@ -543,6 +543,7 @@ function setup() {
         false);         // don't allow negative numbers.
 
     airspeedWheel = new AirspeedWheel(app, 12, y/2);
+    airspeedWheel.placeUnitsAroundTags(airspeedRibbon.tagContainer, airspeedRibbon.tagShapes);
     
     //-------------------------------------------------------------------------
     // Create a speed display above the airspeed ribbon showing the Ground

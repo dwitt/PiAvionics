@@ -1,7 +1,7 @@
 // 1-June-2025 - Updated for PixiJS 8.6.6
 'use strict';
 
-export const VERSION = '1.0.4';
+export const VERSION = '1.0.5';
 
 import { NumericWheelDisplay } from "./numericWheelDisplay.mjs";
 import { Graphics, TextStyle, Text} from './pixi.mjs';
@@ -52,9 +52,25 @@ export class AirspeedWheel  {
             style: this.style
             });
         this.IASunits.anchor.set(0,.2);
-        this.IASunits.position.set(x + airspeedWidth + 8, y + 16);    // 16 px below the digits' centre: just clear of a V-speed tag at the pointer
+        this.IASunits.position.set(x + airspeedWidth + 8, y + 12);    // 12 px below the digits' centre: 2 px below a V-speed tag at the pointer
+
+        // The same "kt" as a black outline only (no fill). The page puts the white "kt" under the V-speed tags and
+        // this over them, masked to the tags (placeUnitsAroundTags), so a tag passing the label shows through it.
+        this.IASunitsOutline = new Text({
+            text: "kt",
+            style: new TextStyle({
+                fontFamily: 'Tahoma',
+                fontSize: '20px',
+                fill: { color: 0x000000, alpha: 0 },
+                fontWeight: "normal",
+                stroke: { color: "black", width: 3 },
+            })
+        });
+        this.IASunitsOutline.anchor.set(0,.2);
+        this.IASunitsOutline.position.copyFrom(this.IASunits.position);
 
         app.stage.addChild(this.IASunits);
+        app.stage.addChild(this.IASunitsOutline);
         app.stage.addChild(this.airspeedOnesWheel.digitContainer);
         app.stage.addChild(this.airspeedTensWheel.digitContainer);
         app.stage.addChild(this.airspeedHundredsWheel.digitContainer);
@@ -120,9 +136,22 @@ export class AirspeedWheel  {
         this.outline.visible = isVisible && this._alert !== 'warning';
         this.warningOutline.visible = isVisible && this._alert === 'warning';
         this.IASunits.visible = isVisible;
+        this.IASunitsOutline.visible = isVisible;
         this.airspeedOnesWheel.digitContainer.visible = isVisible;
         this.airspeedTensWheel.digitContainer.visible = isVisible;
         this.airspeedHundredsWheel.digitContainer.visible = isVisible;
+    }
+
+    /**
+     * Layer the "kt" label with the V-speed tags: the white letters under the tags, the black outline over them,
+     * shown only where a tag is (the mask), so elsewhere the label looks as before.
+     * @param {Container} tags The tags' container (on the stage, made before this wheel)
+     * @param {Graphics} tagShapes The tags' outlines, moved with them
+     */
+    placeUnitsAroundTags(tags, tagShapes) {
+        const stage = tags.parent;
+        stage.addChildAt(this.IASunits, stage.getChildIndex(tags));
+        this.IASunitsOutline.mask = tagShapes;
     }
 
     set value(newValue){
