@@ -1,7 +1,7 @@
 """ Asynchronous I/O based webserver to handle page and websocket"""
 # pyright: reportMissingImports=false
 
-VERSION = "1.7.4"
+VERSION = "1.7.5"
 
 import asyncio
 import ipaddress
@@ -468,10 +468,18 @@ class MyWebSocketResponse:
                     if DEBUG_QNH:
                         print(f"QNH from json= {qnh} (clamped to range {QNH_MIN_INHG_X_100}-{QNH_MAX_INHG_X_100})")
 
-                    # A change by the person at the controller page: hold it and send it at once
+                    # A change by the person at the controller page: hold it and send it at once.
+                    # Every QNH change is logged with its source (finding what set 28.00, 2026-11-14).
                     if self.data is not None:
-                        self.data._qnh.on_user(qnh, time.monotonic())
+                        previous = self.data._qnh.value
+                        if self.data._qnh.on_user(qnh, time.monotonic()):
+                            print(f"QNH {previous} -> {qnh} from the page", flush=True)
                         self.service_qnh()
+
+                # A line the page wants in this log (e.g. a knob jump it ignored), kept short
+                page_log = dict_object.get('log', None)
+                if isinstance(page_log, str):
+                    print(f"Page: {page_log[:200]}", flush=True)
                 
                 # Process brightness if provided
                 brightness = dict_object.get('brightness', None)
@@ -844,7 +852,10 @@ async def process_qnh_message(msg, data, last_received_times):
         data.can_qnh = qnhx4 / QNH_ACCURACY_MULTIPLIER
         data.can_qnh_hpa = qnh_hpa
         # Any ID in the block 0x2C to 0x2F counts; the last frame heard wins (qnh_state.py)
-        data._qnh.on_can(msg.arbitration_id, qnh_hpa, qnhx4, time.monotonic())
+        previous = data._qnh.value
+        adopted = data._qnh.on_can(msg.arbitration_id, qnh_hpa, qnhx4, time.monotonic())
+        if adopted is not None and adopted != previous:
+            print(f"QNH {previous} -> {adopted} from CAN 0x{msg.arbitration_id:X}", flush=True)
         if DEBUG_JSON:
             print(data.can_qnh)
         return True
@@ -1516,6 +1527,7 @@ async def read_input(encoder, button, data):
                 # itself is bad (poisoned by a corrupt read), so re-baseline.
                 consecutive_rejects += 1
                 if consecutive_rejects >= ENCODER_REBASELINE_COUNT:
+                    print(f"Encoder re-baselined: {last_encoder_position} -> {new_encoder_position}", flush=True)
                     data.position = new_encoder_position
                     last_encoder_position = new_encoder_position
                     consecutive_rejects = 0

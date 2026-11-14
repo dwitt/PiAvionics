@@ -1,6 +1,6 @@
 'use strict';
 
-export const VERSION = '1.0.3';
+export const VERSION = '1.0.4';
 import { Container, Graphics, TextStyle, Text, CanvasTextMetrics } from './pixi.mjs';
 
 // The encoder debug numbers (selected item and encoder position, bottom left of the PFD) are always
@@ -12,6 +12,10 @@ const DEBUG = false;
 // editing calls the item's sync() if it has one (altitude bug to current altitude, heading bug to heading, CRS to
 // the bearing to the waypoint, as the G5's push-and-hold); the release after a sync does not leave edit mode.
 const HOME_TIMEOUT_MS = 10000;
+// A change of more than this many clicks in one update (the page gets about 20 a second) cannot be a hand on the
+// knob: it is a bad encoder read (the server re-baselines after 5 far-off reads). It is taken as a new starting
+// point, so the item being edited does not jump (a jump once took the QNH to its 28.00 limit, 2026-11-14).
+const MAX_CLICKS_PER_UPDATE = 20;
 const LONG_PRESS_MS = 1000;
 
 export class UserInput {
@@ -42,6 +46,7 @@ export class UserInput {
         this.itemSelectionMode = false;
         this.firstPass = true;
         this.rebaseNext = false;    // see rebaseEncoder()
+        this.report = null;         // optional function(text): sends a line to the server's log (set by the page)
 
         this.lastActivity = performance.now();  // time of the last turn or press (home position)
         this.pressStart = 0;                    // when the button went down
@@ -152,6 +157,16 @@ export class UserInput {
                 this.encoderAdjustment += position - this.lastPosition;
                 this.lastPosition = position;
                 this.rebaseNext = false;
+                return;
+            }
+
+            // A jump too big for a hand on the knob: take the new position as the starting point (see above)
+            if (Math.abs(position - this.lastPosition) > MAX_CLICKS_PER_UPDATE) {
+                const text = "knob jump ignored: " + this.lastPosition + " -> " + position;
+                console.log(text);
+                if (this.report) this.report(text);
+                this.encoderAdjustment += position - this.lastPosition;
+                this.lastPosition = position;
                 return;
             }
             
