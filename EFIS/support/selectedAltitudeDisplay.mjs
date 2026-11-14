@@ -1,12 +1,12 @@
 'use strict';
 
-export const VERSION = '1.0.3';
+export const VERSION = '1.0.4';
 
 import { Graphics } from './pixi.mjs';
 import { DisplayRectangle } from './displayRectangle.mjs';
-import { FAILURE_LOOK } from './failureLook.mjs';
 
 const SELECTED_COLOUR = 0x00FFFF;   // cyan: a value the pilot sets, as the bug on the tape
+const DEVIATION_COLOUR = 0xFFFF00;  // yellow, as the G5 (and the airspeed yellow arc); the QNH amber looked orange
 const INCREMENT = 25;               // feet per knob step
 const FAST_INCREMENT = 100;         // feet per step when the knob is turned quickly
 const FAST_DELTA_THRESHOLD = 6;     // steps in one update at or above this use FAST_INCREMENT
@@ -102,8 +102,8 @@ export class SelectedAltitudeDisplay extends DisplayRectangle {
 
     /**
      * Altitude alerting, called every frame (G5 2.1.3.2). The cyan value flashes 5 s on coming within 1,000 ft of
-     * the target and again within 200 ft. After that, leaving the +/-200 ft band turns the value caution colour and
-     * it flashes 5 s; it stays that colour until back within the band. A new target resets it: the stages already
+     * the target and again within 200 ft. After that, leaving the +/-200 ft band turns the value yellow and
+     * it flashes 5 s; it stays yellow until back within the band. A new target resets it: the stages already
      * passed at the current altitude do not flash.
      * @param {number|null} altitude Current altitude in feet, null when it is not valid
      * @param {number} nowSeconds Time in seconds
@@ -130,7 +130,7 @@ export class SelectedAltitudeDisplay extends DisplayRectangle {
             }
         }
 
-        const colour = (this.alertStage === 'deviated') ? FAILURE_LOOK.cautionColour : SELECTED_COLOUR;
+        const colour = (this.alertStage === 'deviated') ? DEVIATION_COLOUR : SELECTED_COLOUR;
         if (colour !== this.alertColour) {         // a style change redraws the text: only when it changes
             this.valueText.style.fill = colour;
             this.alertColour = colour;
