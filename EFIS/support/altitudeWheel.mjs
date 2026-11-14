@@ -1,10 +1,11 @@
 // 4-May-2025 - Started Update for PixiJS 8.6.6
 'use strict';
 
-export const VERSION = '1.0.4';
+export const VERSION = '1.0.5';
 
 import { NumericWheelDisplay } from "./numericWheelDisplay.mjs";
 import { Graphics, TextStyle, Text} from './pixi.mjs';
+import { unitsBackground } from './airSpeedWheel.mjs';
 
 /*****************************************************************************     
  * Class representing an Altitude Wheel Display.
@@ -76,6 +77,8 @@ export class AltitudeWheel  {
     placeUnits(left, bottom) {
         this.altUnits.anchor.set(0, 1);
         this.altUnits.position.set(left, bottom);
+        // a black patch behind it, over the tape: a tape number passing goes under the label
+        this.altUnitsBackground = unitsBackground(this.altUnits);
     }
 
     altitudeWheelOutline(app,x,y,right,width,height,left_width,left_height){
@@ -126,6 +129,7 @@ export class AltitudeWheel  {
     set visible(isVisible) {
         this.outline.visible = isVisible;
         this.altUnits.visible = isVisible;
+        if (this.altUnitsBackground) this.altUnitsBackground.visible = isVisible;
         this.tensWheel.digitContainer.visible = isVisible;
         this.hundredsWheel.digitContainer.visible = isVisible;
         this.thousandsWheel.digitContainer.visible = isVisible;
