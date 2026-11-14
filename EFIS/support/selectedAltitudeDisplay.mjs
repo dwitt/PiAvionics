@@ -1,9 +1,10 @@
 'use strict';
 
-export const VERSION = '1.0.2';
+export const VERSION = '1.0.3';
 
 import { Graphics } from './pixi.mjs';
 import { DisplayRectangle } from './displayRectangle.mjs';
+import { FAILURE_LOOK } from './failureLook.mjs';
 
 const SELECTED_COLOUR = 0x00FFFF;   // cyan: a value the pilot sets, as the bug on the tape
 const INCREMENT = 25;               // feet per knob step
@@ -11,6 +12,13 @@ const FAST_INCREMENT = 100;         // feet per step when the knob is turned qui
 const FAST_DELTA_THRESHOLD = 6;     // steps in one update at or above this use FAST_INCREMENT
 const MIN_VALUE = -1000;
 const MAX_VALUE = 12500;
+
+// Altitude alerting (G5 2.1.3.2)
+const ALERT_FAR = 1000;             // feet: coming within this of the target, the value flashes
+const ALERT_BAND = 200;             // feet: within this, flash again (captured); leaving it after capture, caution
+const ALERT_HYSTERESIS = 20;        // feet: back inside the band only when within ALERT_BAND - this (altimeter noise)
+const ALERT_FLASH_SECONDS = 5;
+const ALERT_FLASH_PERIOD = 0.5;     // seconds per on/off cycle of the flash
 
 /**
  * Selected altitude (the altitude bug), always on screen in a square box just below the GPS / PRE / DEN box at
@@ -50,6 +58,8 @@ export class SelectedAltitudeDisplay extends DisplayRectangle {
         this.boxAbove = boxAbove;
         this.target = null;             // feet, null until set
         this.lastEncoderValue = 0;
+        this.alertStage = null;         // null: work it out from the altitude; 'far', 'near', 'captured', 'deviated'
+        this.alertFlashUntil = 0;       // seconds
 
         this.valueText.style.fill = SELECTED_COLOUR;
         this.unitText.style.fill = SELECTED_COLOUR;
@@ -86,6 +96,47 @@ export class SelectedAltitudeDisplay extends DisplayRectangle {
     showTarget() {
         this.valueText.text = (this.target === null) ? "----" : String(this.target);
         this.ribbon.bugValue = this.target;
+        this.alertStage = null;         // a new target resets the alerter
+        this.alertFlashUntil = 0;
+    }
+
+    /**
+     * Altitude alerting, called every frame (G5 2.1.3.2). The cyan value flashes 5 s on coming within 1,000 ft of
+     * the target and again within 200 ft. After that, leaving the +/-200 ft band turns the value caution colour and
+     * it flashes 5 s; it stays that colour until back within the band. A new target resets it: the stages already
+     * passed at the current altitude do not flash.
+     * @param {number|null} altitude Current altitude in feet, null when it is not valid
+     * @param {number} nowSeconds Time in seconds
+     */
+    updateAlert(altitude, nowSeconds) {
+        if (this.target !== null && altitude !== null && altitude !== undefined) {
+            const away = Math.abs(altitude - this.target);
+            if (this.alertStage === null) {
+                this.alertStage = (away <= ALERT_BAND) ? 'captured' : (away <= ALERT_FAR) ? 'near' : 'far';
+            } else if (this.alertStage === 'far' && away <= ALERT_FAR) {
+                this.alertStage = (away <= ALERT_BAND) ? 'captured' : 'near';
+                this.alertFlashUntil = nowSeconds + ALERT_FLASH_SECONDS;
+            } else if (this.alertStage === 'near' && away <= ALERT_BAND) {
+                this.alertStage = 'captured';
+                this.alertFlashUntil = nowSeconds + ALERT_FLASH_SECONDS;
+            } else if (this.alertStage === 'near' && away > ALERT_FAR) {
+                this.alertStage = 'far';        // moved away again: the 1,000 ft flash comes again
+            } else if (this.alertStage === 'captured' && away > ALERT_BAND) {
+                this.alertStage = 'deviated';
+                this.alertFlashUntil = nowSeconds + ALERT_FLASH_SECONDS;
+            } else if (this.alertStage === 'deviated' && away <= ALERT_BAND - ALERT_HYSTERESIS) {
+                this.alertStage = 'captured';
+                this.alertFlashUntil = 0;
+            }
+        }
+
+        const colour = (this.alertStage === 'deviated') ? FAILURE_LOOK.cautionColour : SELECTED_COLOUR;
+        if (colour !== this.alertColour) {         // a style change redraws the text: only when it changes
+            this.valueText.style.fill = colour;
+            this.alertColour = colour;
+        }
+        const flashing = nowSeconds < this.alertFlashUntil;
+        this.valueText.alpha = (!flashing || Math.floor(nowSeconds / (ALERT_FLASH_PERIOD / 2)) % 2 === 0) ? 1 : 0;
     }
 
     /** Draw this box under the GPS box, so the shared line is the GPS box's (and its outline when selected). */

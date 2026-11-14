@@ -51,7 +51,7 @@ import { FAILURE_LOOK } from './failureLook.mjs';
 
 // ----------------------------------------------------------------------------
 
-const VERSION = "0.8.17";
+const VERSION = "0.8.18";
 
 // Viewer mode: a page that is not the Pi's own display only watches. It sends
 // nothing to the server, ignores the encoder, and shows the QNH and brightness
@@ -968,6 +968,9 @@ function DisplayUpdateLoop(delta) {
     altitudeDisplay.validity.pressure = valid.staticPressure;
     altitudeDisplay.validity.density = valid.densityAltitude;
     altitudeDisplay.update();
+
+    // Altitude alerting on the selected altitude box (G5 2.1.3.2)
+    selectedAltitudeDisplay.updateAlert(valid.altitude ? dataObject.altitude : null, Date.now() / 1000);
 
     //magnetometerCalibrate.plotPoint(dataObject.magx,dataObject.magy,dataObject.magz);
     
