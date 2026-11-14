@@ -194,7 +194,9 @@ Of 31 G5 features: PiEFIS has 10, has 10 in part, lacks 8; 3 do not apply. Secti
   saved by the server). Controller only.
 - Late night 2026-11-14: feature 6 done. Cyan R/X/Y/G tags right of the tape, listed at the foot of the tape when
   airspeed fails; V-Speed Tags on/off and a V-Speeds page in the Menu; kept on the Pi with the limits.
-  "kt" and "ft" moved down so "kt" is 2 px below a tag at the pointer; tags drawn in front of "kt".
+  "kt" and "ft" moved to the foot of their tapes (inner side, level, over the tape) so the tags never meet them.
+- Feature 7: wind goes on the HSI only (David). Other units: G5 / G3X upper left of the HSI, G1000 / G500 left of
+  it, GI 275 on the attitude display. Placement on PiEFIS (GPS box is top left) and content still to choose.
 - Left in this list: deferred 10 (HSI corners). Next: feature 7 (wind on the HSI) onward.
 
 1. **Colour code; red only for warnings.** Red now means selected (box borders, tape line, HSI ring), bugs, and

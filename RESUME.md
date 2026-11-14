@@ -2,6 +2,29 @@
 
 Tell Claude: "Read RESUME.md and carry on."
 
+## Update 2026-11-14 (end of day): kt / ft labels, wind research (page 0.8.32, server 1.7.8, all on the Pi)
+- **State:** GitHub, the Mac and the Pi match. No `aircraft_settings.json` on the Pi yet (defaults from the manual
+  until the first save from Menu > Airspeed Limits or V-Speeds). After a page deploy David presses ctrl-shift-R.
+- **kt / ft labels (settled with David after several tries):** both inside the foot of their tape, on the side
+  towards the attitude display, level with each other just above the OAT box line (`placeUnits` in
+  `airSpeedWheel.mjs` 1.0.10 and `altitudeWheel.mjs` 1.0.6, called from `efis-display.js`). White with the usual
+  black outline, drawn over the tape, so a tape number passing goes behind them (David: missing a tape number does
+  not matter, the boxes matter). No box behind them (tried, he did not want it). The V-speed tags no longer pass
+  them. Dropped: the labels beside the readout boxes, the tags in front of "kt", and an outline-only "kt" masked
+  over the tags.
+- **Feature 7, wind: decided on the HSI only** (not the PFD). Research (manuals): G5 HSI page top left; G3X a
+  window upper left of the HSI ("No Wind Data" when invalid); G1000 / G900X / G500 left or upper left of the HSI
+  with options (components with arrows / arrow + speed / arrow + direction + speed); GI 275 on the attitude
+  display above the heading; Dynon SkyView on the PFD (place not found). PiEFIS's HSI top left has the GPS status
+  box.
+- **Next, waiting on David:** where on the HSI (Claude's suggestion: top left as the G5 / G3X, GPS box moved to
+  the bottom left, growing upward when touched; offered a mock-up first) and what it shows (arrow + direction and
+  speed, components, or both). Plan from G5_REVIEW.md feature 7: wind = ground vector (GS, magnetic track) - air
+  vector (TAS, magnetic heading), direction magnetic as the rose; average about 10 s; hide below about 30 kt GS /
+  TAS, while the heading is gyro-only or not valid, without valid TAS or GPS; hold (not update) while turning more
+  than about 2-3 deg/s. TAS is `tasDisplay.trueAirSpeedValue` (valid.trueAirspeed). A 5 deg heading error at 100 kt
+  gives about 9 kt of false crosswind, and IAS is taken as CAS, so expect some error.
+
 ## Update 2026-11-14 (late night): feature 6, V-speed tags (page 0.8.28, server 1.7.8, all on the Pi)
 - **Done** (tried on the Mac with screenshots, then deployed; the service was restarted):
   - Tags (`airspeedRibbon.mjs` 1.0.4): cyan R / X / Y / G in small black flags just right of the speed tape,
@@ -14,13 +37,10 @@ Tell Claude: "Read RESUME.md and carry on."
     bad group gets its defaults, the other is kept), `change(group, speeds, speeds_kt)`. Server command is now
     `{"aircraft_settings": {"group", "speeds"}, "request_id"}` (page and server must go up together).
   - Still no `aircraft_settings.json` on the Pi (defaults) until the first save from a page.
-- **kt label and the tags (settled with David):** "kt" and "ft" moved to 12 px below the readout centre (was 6),
-  so at a V-speed the "kt" sits 2 px below that tag; the tags are drawn in front of "kt" (it is under them), so
-  a tag a few knots below the current speed hides the label as it passes. Tried and dropped: a black outline-only
-  "kt" over the tags (masked to them) with the white letters under them; David did not like it.
+- **kt label and the tags:** superseded, see the end-of-day entry above (labels now at the foot of the tapes).
 - **PixiJS v8 gotcha found:** a Graphics used as a mask but not on the stage never has its position updated
   (fine for a fixed mask like the tapes', not for a moving one); add it to the stage, it is not drawn as a mask.
-- **Next:** feature 7, wind on the HSI.
+- **Next:** feature 7, wind on the HSI (see above).
 
 ## Update 2026-11-14 (night): Menu > Airspeed Limits page (page 0.8.24, server 1.7.7, all on the Pi)
 - **Done** (tried on the Mac with screenshots, then deployed; the service was restarted):
