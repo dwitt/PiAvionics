@@ -171,8 +171,12 @@ Of 31 G5 features: PiEFIS has 10, has 10 in part, lacks 8; 3 do not apply. Secti
   with the Route list open gave slow frames). All three are Menu rows. Comment in `efis-display.js` has the numbers.
 - 4 as built: ladder circle 30 px inside the bank arc; pitch scale 75 degrees on the screen (was 50) so the +/-20
   marks show in level flight; white 2.5 degree marks only between -10 and +10.
-- Next: 11 (test controls out of the pilot Menu, now also Frame Rate, the antialias rows and the cap); then
-  decisions on 5 (slip cue), 6 ("kt", "NM") and 7 (units beside readouts). Deferred: 8 (B612) and 10 (HSI corners).
+- Later 2026-11-13: 11 done (Menu: Slip Cue, Modules, Orientation, Maintenance; the test and tuning rows are on
+  the Maintenance page). 5: both cues kept, choice in the Menu's "Slip Cue" row (Both / Ball / Trapezoid, stored
+  per browser). 6: "kts" is now "kt"; "NM" kept. 7: units kept as they are (David likes the one- and two-line
+  units). Server sends Cache-Control no-cache so a reload picks up every changed file.
+- Left in this list: deferred 8 (B612) and 10 (HSI corners). Next per "Suggested order": feature 1 (knob home
+  position and long-press sync).
 
 1. **Colour code; red only for warnings.** Red now means selected (box borders, tape line, HSI ring), bugs, and
    failures.
