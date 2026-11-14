@@ -41,7 +41,7 @@ import { MenuOverlay } from './menuOverlay.mjs';
 import { HSI } from './hsi.mjs';
 import { RouteOverlay } from './routeOverlay.mjs';
 import { OrientationPanel } from './orientationPanel.mjs';
-import { AirspeedLimitsPanel } from './airspeedLimitsPanel.mjs';
+import { AirspeedLimitsPanel, AIRSPEED_LIMITS, V_SPEEDS } from './airspeedLimitsPanel.mjs';
 import { InstrumentStatus, describeModule } from './instrumentStatus.mjs';
 import { ModulePanel } from './modulePanel.mjs';
 import { FailureFlag } from './failureFlag.mjs';
@@ -52,7 +52,7 @@ import { FAILURE_LOOK } from './failureLook.mjs';
 
 // ----------------------------------------------------------------------------
 
-const VERSION = "0.8.24";
+const VERSION = "0.8.25";
 
 // Viewer mode: a page that is not the Pi's own display only watches. It sends
 // nothing to the server, ignores the encoder, and shows the QNH and brightness
@@ -199,6 +199,9 @@ const HSI_ANTIALIAS = storedFlag(HSI_ANTIALIAS_KEY, false);
 const FPS_CAP_30 = storedFlag(FPS_CAP_KEY, true);
 // Slip/skid cue: the ball at the bottom, the trapezoid under the roll pointer, or both. Chosen with the
 // Menu's "Slip Cue" row (each press steps to the next) and kept in this browser's storage; takes effect at once.
+// V-speed tags on the speed tape: the Menu's "V-Speed Tags" row, kept in this browser's storage
+const VSPEED_TAGS_KEY = 'efis.vspeedTags';
+let vspeedTagsShown = storedFlag(VSPEED_TAGS_KEY, true);
 const SLIP_CUE_KEY = 'efis.slipCue';
 const SLIP_CUES = { both: "Both", ball: "Ball", trapezoid: "Trapezoid" };
 let slipCue = 'both';
@@ -398,6 +401,7 @@ var attitudeIndicator,
     menuOverlay,
     orientationPanel,
     airspeedLimitsPanel,
+    vspeedsPanel,
     modulePanel,
     annunciators,
     asiFlag,
@@ -719,6 +723,14 @@ function setup() {
             try { localStorage.setItem(SLIP_CUE_KEY, slipCue); } catch (error) { /* storage blocked: not kept */ }
         },
     }, {
+        label: "V-Speed Tags",
+        getValue: () => vspeedTagsShown ? "On" : "Off",
+        keepOpen: true,
+        action: () => {
+            vspeedTagsShown = !vspeedTagsShown;
+            storeFlag(VSPEED_TAGS_KEY, vspeedTagsShown);
+        },
+    }, {
         label: "Modules",
         getValue: () => {
             let notOk = 0;
@@ -741,11 +753,17 @@ function setup() {
             action: () => orientationPanel.show(),
         });
         // The speeds that colour the speed tape, kept on the Pi; changed only on the ground
-        airspeedLimitsPanel = new AirspeedLimitsPanel(app, sendCommand);
+        airspeedLimitsPanel = new AirspeedLimitsPanel(app, sendCommand, AIRSPEED_LIMITS);
         actionDefs.push({
             label: "Airspeed Limits",
             getValue: () => "",
             action: () => airspeedLimitsPanel.show(airspeedRibbon.limits),
+        });
+        vspeedsPanel = new AirspeedLimitsPanel(app, sendCommand, V_SPEEDS);
+        actionDefs.push({
+            label: "V-Speeds",
+            getValue: () => "",
+            action: () => vspeedsPanel.show(airspeedRibbon.vspeeds),
         });
     }
     actionDefs.push({
@@ -799,6 +817,8 @@ function setup() {
     vsiCover = createCover(app, x - 35, 40, 35, y - 80);
 
     asiFlag = new FailureFlag(app, 0, tapeTop, 90, tapeHeight, 'ASI');
+    // the V-speeds listed over the failed speed tape, above the OAT box (it covers the tape's last 23 pixels)
+    airspeedRibbon.createVSpeedList(app, 0, tapeTop + tapeHeight - 23);
     altFlag = new FailureFlag(app, x - 125, tapeTop, 90, tapeHeight, 'ALT');
     vsiFlag = new FailureFlag(app, x - 35, 40, 35, y - 80, '');
     attFlag = new FailureFlag(app, 90, tapeTop, x - 90 - 125, tapeHeight, 'ATT');
@@ -866,6 +886,9 @@ function DisplayUpdateLoop(delta) {
     const shownAirspeed = TEST_AIRSPEED_SWEEP ? testAirspeed : (valid.airspeed ? dataObject.airspeed : null);
     airspeedRibbon.updateTrend(shownAirspeed, Date.now() / 1000);
     airspeedWheel.alert = airspeedRibbon.overspeedLevel(shownAirspeed);
+    // V-speed tags kept on the Pi too; with no airspeed they are listed at the foot of the tape instead
+    airspeedRibbon.setVSpeeds(dataObject.aircraft && dataObject.aircraft.vspeeds);
+    airspeedRibbon.updateTags(shownAirspeed, vspeedTagsShown);
     if (valid.vsi) {
         vsiIndicator.value = dataObject.vsi;
     }
@@ -1013,9 +1036,11 @@ function DisplayUpdateLoop(delta) {
     if (orientationPanel) orientationPanel.update(dataObject.display);
 
     // The airspeed limits page (when it is open): the ground rule and the server's answer to a save
-    if (airspeedLimitsPanel) {
-        airspeedLimitsPanel.update(valid.airspeed ? dataObject.airspeed : null,
-                                   valid.gps ? dataObject.gps_speed : null, dataObject.aircraft_save);
+    for (const panel of [airspeedLimitsPanel, vspeedsPanel]) {
+        if (panel) {
+            panel.update(valid.airspeed ? dataObject.airspeed : null,
+                         valid.gps ? dataObject.gps_speed : null, dataObject.aircraft_save);
+        }
     }
 
     // The module status page (when it is open)

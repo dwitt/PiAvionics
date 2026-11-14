@@ -2,28 +2,55 @@
 
 import { Container, Graphics, TextStyle, Text } from './pixi.mjs';
 
-export const VERSION = '1.0.0';
+export const VERSION = '1.0.1';
 
 /*****************************************************************************
- * Airspeed limits page (Menu > Airspeed Limits): the speeds that colour the speed tape, in knots, kept on the Pi
- * (aircraft_settings.py). Opened from the Menu on the controller (the Pi's own page).
+ * Speed pages in the Menu: Airspeed Limits (the speeds that colour the speed tape) and V-Speeds (its tags), in
+ * knots, kept on the Pi (aircraft_settings.py). One panel for each, made with AIRSPEED_LIMITS or V_SPEEDS. Opened
+ * from the Menu on the controller (the Pi's own page).
  *
- *   edit      the five speeds; tap one (or Tab / arrows on a USB keyboard) and type with the keypad or keyboard.
+ *   edit      the speeds; tap one (or Tab / arrows on a USB keyboard) and type with the keypad or keyboard.
  *             Only on the ground: in the air the speeds are shown but cannot be changed.
  *   confirm   the changes, old -> new, [Save] [Back]
  *   saving    waiting for the server's answer (it checks the speeds and the ground rule again, then saves)
  *   message   saved, or why not
  *
- * The same checks as the server (aircraft_settings.check_airspeed), so the page says what is wrong before Save.
+ * The same checks as the server (aircraft_settings.py), so the page says what is wrong before Save.
  ****************************************************************************/
 
-const FIELDS = [
-    { name: 'vso', label: 'Vso', text: 'Stall, landing' },
-    { name: 'vs1', label: 'Vs1', text: 'Stall, clean' },
-    { name: 'vfe', label: 'Vfe', text: 'Max flaps extended' },
-    { name: 'vno', label: 'Vno', text: 'Max structural cruise' },
-    { name: 'vne', label: 'Vne', text: 'Never exceed' },
-];
+/** Airspeed limits: the "airspeed" group (aircraft_settings.check_airspeed) */
+export const AIRSPEED_LIMITS = {
+    group: 'airspeed',
+    title: 'Airspeed Limits (kt)',
+    savedTitle: 'Airspeed limits',
+    fields: [
+        { name: 'vso', label: 'Vso', text: 'Stall, landing' },
+        { name: 'vs1', label: 'Vs1', text: 'Stall, clean' },
+        { name: 'vfe', label: 'Vfe', text: 'Max flaps extended' },
+        { name: 'vno', label: 'Vno', text: 'Max structural cruise' },
+        { name: 'vne', label: 'Vne', text: 'Never exceed' },
+    ],
+    problem: ({ vso, vs1, vfe, vno, vne }) => {
+        if (!(vso <= vs1 && vs1 < vno && vno < vne)) return 'Must be Vso <= Vs1 < Vno < Vne';
+        if (!(vso < vfe && vfe <= vne)) return 'Must be Vso < Vfe <= Vne';
+        return null;
+    },
+};
+
+/** V-speeds: the "vspeeds" group, the speed tape's tags (aircraft_settings.check_vspeeds) */
+export const V_SPEEDS = {
+    group: 'vspeeds',
+    title: 'V-Speeds (kt)',
+    savedTitle: 'V-speeds',
+    fields: [
+        { name: 'vr', label: 'Vr', text: 'Rotation' },
+        { name: 'vx', label: 'Vx', text: 'Best angle of climb' },
+        { name: 'vy', label: 'Vy', text: 'Best rate of climb' },
+        { name: 'vg', label: 'Vg', text: 'Best glide' },
+    ],
+    problem: () => null,
+};
+
 const MAX_KT = 300;             // as aircraft_settings.MAX_KT
 const AIRBORNE_KT = 30;         // as aircraft_settings.AIRBORNE_KT: editing stops above this airspeed or ground speed
 const MAX_DIGITS = 3;
@@ -39,9 +66,12 @@ export class AirspeedLimitsPanel {
     /*************************************************************************
      * @param {object} app - PixiJS Application (the primary canvas)
      * @param {function} sendCommand - sends a command object to the server
+     * @param {object} page - AIRSPEED_LIMITS or V_SPEEDS
      *************************************************************************/
-    constructor(app, sendCommand) {
+    constructor(app, sendCommand, page) {
         this.app = app;
+        this.page = page;
+        this.fields = page.fields;
         this.sendCommand = sendCommand;
         this.state = 'idle';
         this.saved = null;          // the limits when the page was opened
@@ -59,12 +89,12 @@ export class AirspeedLimitsPanel {
 
     /**
      * Open the page (from the Menu).
-     * @param {{vso:number, vs1:number, vfe:number, vno:number, vne:number}} limits The limits in use
+     * @param {object} limits The speeds in use, by name (vso ... or vr ...)
      */
     show(limits) {
         if (this.state !== 'idle' || !limits) return;
-        this.saved = Object.fromEntries(FIELDS.map(f => [f.name, limits[f.name]]));
-        this.values = Object.fromEntries(FIELDS.map(f => [f.name, String(limits[f.name])]));
+        this.saved = Object.fromEntries(this.fields.map(f => [f.name, limits[f.name]]));
+        this.values = Object.fromEntries(this.fields.map(f => [f.name, String(limits[f.name])]));
         this.selected = 0;
         this.fresh = true;
         this.state = 'edit';
@@ -97,7 +127,7 @@ export class AirspeedLimitsPanel {
     /** The speeds as numbers, or null if one is empty */
     numbers() {
         const n = {};
-        for (const f of FIELDS) {
+        for (const f of this.fields) {
             if (this.values[f.name] === '') return null;
             n[f.name] = Number(this.values[f.name]);
         }
@@ -106,32 +136,29 @@ export class AirspeedLimitsPanel {
 
     /** Why the speeds cannot be saved, or null (aircraft_settings.check_airspeed) */
     problem() {
-        for (const f of FIELDS) {
+        for (const f of this.fields) {
             if (this.values[f.name] === '') return f.label + ' is empty';
             const v = Number(this.values[f.name]);
             if (!(v > 0 && v < MAX_KT)) return f.label + ' must be 1 to ' + (MAX_KT - 1) + ' kt';
         }
-        const { vso, vs1, vfe, vno, vne } = this.numbers();
-        if (!(vso <= vs1 && vs1 < vno && vno < vne)) return 'Must be Vso <= Vs1 < Vno < Vne';
-        if (!(vso < vfe && vfe <= vne)) return 'Must be Vso < Vfe <= Vne';
-        return null;
+        return this.page.problem(this.numbers());
     }
 
     changes() {
         const n = this.numbers();
         if (!n) return [];
-        return FIELDS.filter(f => n[f.name] !== this.saved[f.name]);
+        return this.fields.filter(f => n[f.name] !== this.saved[f.name]);
     }
 
     // ------------------------------------------------------------------ actions
     select(index) {
-        this.selected = (index + FIELDS.length) % FIELDS.length;
+        this.selected = (index + this.fields.length) % this.fields.length;
         this.fresh = true;
         this.render();
     }
 
     digit(d) {
-        const name = FIELDS[this.selected].name;
+        const name = this.fields[this.selected].name;
         const current = this.fresh ? '' : this.values[name];
         if (current.length >= MAX_DIGITS) return;
         this.values[name] = (current + d).replace(/^0+(?=\d)/, '');
@@ -140,7 +167,7 @@ export class AirspeedLimitsPanel {
     }
 
     deleteDigit() {
-        const name = FIELDS[this.selected].name;
+        const name = this.fields[this.selected].name;
         this.values[name] = this.fresh ? '' : this.values[name].slice(0, -1);
         this.fresh = false;
         this.render();
@@ -160,7 +187,7 @@ export class AirspeedLimitsPanel {
         if (!this.canSave()) return;
         this.requestId = Date.now();
         this.saveStartedAt = Date.now();
-        this.sendCommand({ airspeed_limits: this.numbers(), request_id: this.requestId });
+        this.sendCommand({ aircraft_settings: { group: this.page.group, speeds: this.numbers() }, request_id: this.requestId });
         this.state = 'saving';
         this.render();
     }
@@ -194,7 +221,7 @@ export class AirspeedLimitsPanel {
             else if (key === 'ArrowUp' || (key === 'Tab' && e.shiftKey)) this.select(this.selected - 1);
             else if (key === 'ArrowDown' || key === 'Tab') this.select(this.selected + 1);
             else if (key === 'Enter') {
-                if (this.selected === FIELDS.length - 1) this.review();
+                if (this.selected === this.fields.length - 1) this.review();
                 else this.select(this.selected + 1);
             }
             else return;
@@ -263,10 +290,10 @@ export class AirspeedLimitsPanel {
         const top = padding + titleHeight;
         const editable = !this.airborne;
 
-        box.addChild(this.makeText('Airspeed Limits (kt)', boxWidth / 2, padding + titleHeight / 2, 22, 0xffffff, true, 0.5));
+        box.addChild(this.makeText(this.page.title, boxWidth / 2, padding + titleHeight / 2, 22, 0xffffff, true, 0.5));
 
         // the speeds
-        FIELDS.forEach((f, i) => {
+        this.fields.forEach((f, i) => {
             const row = new Container();
             row.position.set(padding, top + i * rowHeight);
             const selected = editable && i === this.selected;
@@ -295,7 +322,7 @@ export class AirspeedLimitsPanel {
         const keys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', 'Del', '0', 'Next'];
         const gap = 6;
         const keyWidth = (keypadWidth - 2 * gap) / 3;
-        const keyHeight = (FIELDS.length * rowHeight - 6 - 3 * gap) / 4;
+        const keyHeight = (this.fields.length * rowHeight - 6 - 3 * gap) / 4;
         keys.forEach((k, j) => {
             const x = keypadX + (j % 3) * (keyWidth + gap);
             const y = top + Math.floor(j / 3) * (keyHeight + gap);
@@ -307,7 +334,7 @@ export class AirspeedLimitsPanel {
         });
 
         // status line: why it cannot be saved yet
-        const statusY = top + FIELDS.length * rowHeight;
+        const statusY = top + this.fields.length * rowHeight;
         const problem = this.problem();
         let status, colour;
         if (this.airborne) { status = 'Editing only on the ground'; colour = AMBER; }
@@ -331,7 +358,7 @@ export class AirspeedLimitsPanel {
     rowsContent(boxWidth) {
         const rows = [];
         if (this.state === 'confirm') {
-            rows.push({ type: 'title', text: 'Save these limits?' });
+            rows.push({ type: 'title', text: 'Save these speeds?' });
             const n = this.numbers();
             for (const f of this.changes()) {
                 rows.push({ type: 'text', text: f.label + '   ' + this.saved[f.name] + '  →  ' + n[f.name] + ' kt',
@@ -347,8 +374,8 @@ export class AirspeedLimitsPanel {
             rows.push({ type: 'text', text: 'Please wait...' });
         } else {
             const ok = this.message && this.message.ok;
-            rows.push({ type: 'title', text: ok ? 'Airspeed limits saved' : 'Airspeed limits not saved' });
-            rows.push(ok ? { type: 'text', text: 'The speed tape now uses them.' }
+            rows.push({ type: 'title', text: this.page.savedTitle + (ok ? ' saved' : ' not saved') });
+            rows.push(ok ? { type: 'text', text: 'The speed tape now shows them.' }
                          : { type: 'text', text: (this.message && this.message.reason) || '', color: AMBER });
             rows.push({ type: 'button', text: 'OK', onTap: () => this.close() });
         }

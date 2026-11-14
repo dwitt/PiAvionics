@@ -1,7 +1,7 @@
 """ Asynchronous I/O based webserver to handle page and websocket"""
 # pyright: reportMissingImports=false
 
-VERSION = "1.7.7"
+VERSION = "1.7.8"
 
 import asyncio
 import ipaddress
@@ -269,7 +269,7 @@ class AvionicsData:
         self.clients = None         # {"controller": n, "viewers": n} connected display pages
         self.efis = None            # this server's own heartbeat (version, state, mask, uptime, display_clients)
         self.display = None         # screen orientation, saved setting and any trial (display_orientation.py)
-        self.aircraft = None        # aircraft settings: airspeed limits in knots (aircraft_settings.py)
+        self.aircraft = None        # aircraft settings: airspeed limits and V-speeds in knots (aircraft_settings.py)
         self.aircraft_save = None   # answer to the page's last save: {"id", "ok", "reason"}
         # The web page decides what to show (wording, colours, flashing) from these facts.
         # Navigation (computed from flight plan + GPS position)
@@ -551,10 +551,12 @@ class MyWebSocketResponse:
                     if dict_object.get('orientation_revert', False):
                         self._start_orientation(self.orientation_revert())
 
-                # New airspeed limits from the Menu's Airspeed Limits page (refused in the air)
-                limits = dict_object.get('airspeed_limits', None)
-                if limits is not None and self.aircraft_settings is not None:
-                    self._start_orientation(self.save_airspeed_limits(limits, dict_object.get('request_id')))
+                # New speeds from the Menu's Airspeed Limits or V-Speeds page (refused in the air):
+                # {"aircraft_settings": {"group": "airspeed" or "vspeeds", "speeds": {...}}, "request_id": n}
+                change = dict_object.get('aircraft_settings', None)
+                if isinstance(change, dict) and self.aircraft_settings is not None:
+                    self._start_orientation(self.save_aircraft_settings(change.get('group'), change.get('speeds'),
+                                                                        dict_object.get('request_id')))
 
             except (KeyError, ValueError, TypeError) as e:
                 # Data not received or invalid format, ignore it
@@ -582,13 +584,13 @@ class MyWebSocketResponse:
         ok, reason = await self.orientation.request(name, speeds)
         print(f"Display orientation trial of {name}: " + ("started" if ok else f"refused ({reason})"), flush=True)
 
-    async def save_airspeed_limits(self, limits, request_id):
-        """Save the page's airspeed limits (in a thread: the save waits for the SD card) and answer the page"""
-        speeds = (self.data.airspeed if self.data is not None else None,
-                  self.data.gps_speed if self.data is not None else None)
-        ok, reason = await asyncio.to_thread(self.aircraft_settings.change_airspeed, limits, speeds)
+    async def save_aircraft_settings(self, group, speeds, request_id):
+        """Save one group of the page's speeds (in a thread: the save waits for the SD card) and answer the page"""
+        speeds_kt = (self.data.airspeed if self.data is not None else None,
+                     self.data.gps_speed if self.data is not None else None)
+        ok, reason = await asyncio.to_thread(self.aircraft_settings.change, group, speeds, speeds_kt)
         if not ok:
-            print(f"Airspeed limits from the page not saved: {reason}", flush=True)
+            print(f"Aircraft settings ({group}) from the page not saved: {reason}", flush=True)
         if self.data is not None:
             self.data.aircraft = self.aircraft_settings.settings
             self.data.aircraft_save = {"id": request_id, "ok": ok, "reason": reason}
