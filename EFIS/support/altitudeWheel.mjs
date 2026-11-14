@@ -1,7 +1,7 @@
 // 4-May-2025 - Started Update for PixiJS 8.6.6
 'use strict';
 
-export const VERSION = '1.0.3';
+export const VERSION = '1.0.4';
 
 import { NumericWheelDisplay } from "./numericWheelDisplay.mjs";
 import { Graphics, TextStyle, Text} from './pixi.mjs';
@@ -65,6 +65,17 @@ export class AltitudeWheel  {
         this.app.stage.addChild(this.hundredsWheel.digitContainer);
         this.app.stage.addChild(this.thousandsWheel.digitContainer);
         this.app.stage.addChild(this.tenThousandsWheel.digitContainer);
+    }
+
+    /**
+     * Move the "ft" label (the page puts it at the foot of the altitude tape, on the side towards the attitude
+     * display)
+     * @param {number} left Pixels: the label's left edge
+     * @param {number} bottom Pixels: the label's bottom
+     */
+    placeUnits(left, bottom) {
+        this.altUnits.anchor.set(0, 1);
+        this.altUnits.position.set(left, bottom);
     }
 
     altitudeWheelOutline(app,x,y,right,width,height,left_width,left_height){

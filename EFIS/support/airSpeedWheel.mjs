@@ -1,7 +1,7 @@
 // 1-June-2025 - Updated for PixiJS 8.6.6
 'use strict';
 
-export const VERSION = '1.0.7';
+export const VERSION = '1.0.8';
 
 import { NumericWheelDisplay } from "./numericWheelDisplay.mjs";
 import { Graphics, TextStyle, Text} from './pixi.mjs';
@@ -123,6 +123,16 @@ export class AirspeedWheel  {
         this.airspeedOnesWheel.digitContainer.visible = isVisible;
         this.airspeedTensWheel.digitContainer.visible = isVisible;
         this.airspeedHundredsWheel.digitContainer.visible = isVisible;
+    }
+
+    /**
+     * Move the "kt" label (the page puts it at the foot of the speed tape, on the side towards the attitude display)
+     * @param {number} right Pixels: the label's right edge
+     * @param {number} bottom Pixels: the label's bottom
+     */
+    placeUnits(right, bottom) {
+        this.IASunits.anchor.set(1, 1);
+        this.IASunits.position.set(right, bottom);
     }
 
     /**
