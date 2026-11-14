@@ -1,6 +1,6 @@
 'use strict';
 
-export const VERSION = '1.0.4';
+export const VERSION = '1.0.5';
 
 import { Container, Graphics, Text, TextStyle, Matrix } from './pixi.mjs'
 
@@ -67,6 +67,7 @@ export class Ribbon {
         this._ribbonUndefined = false;
 
         this._bugValue = 0;
+        this.bugTopInset = 0;               // pixels at the top of the tape covered by a box; the bug parks below them
         this._bugMinValue = -1000;
         this._bugMaxValue = 12500;
         this._bugIncrement = 25;
@@ -394,7 +395,29 @@ export class Ribbon {
             ribbonDisplayValue = 0;
         }
         var bugGraphicPosition = -1 * (this._bugValue - ribbonDisplayValue) * this.ribbon_interval_ratio;
+        // A bug beyond the tape parks at its edge (half the bug, 10 px, inside), below any box over the top
+        const bugHalfHeight = 10;
+        bugGraphicPosition = Math.max(-this.ribbonHeight / 2 + this.bugTopInset + bugHalfHeight,
+                                      Math.min(this.ribbonHeight / 2 - bugHalfHeight, bugGraphicPosition));
         this.bugGraphic.position.set(0,bugGraphicPosition);
+    }
+
+    /**
+     * Bug setting from a separate box (selectedAltitudeDisplay.mjs), or null to hide the bug (not set).
+     * @param {number | null} value
+     */
+    set bugValue(value) {
+        if (!this.hasBug) return;
+        this.bugGraphic.visible = (value !== null && value !== undefined);
+        if (!this.bugGraphic.visible) return;
+        this._bugValue = value;
+        this.positionBugOnRibbon(this._value);
+    }
+
+    /** The value the tape is showing, or null before the first value or while it is undefined. */
+    get currentValue() {
+        if (this._ribbonUndefined || this._value === undefined || this._value === null) return null;
+        return this._value;
     }
 
     /**

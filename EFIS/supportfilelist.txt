@@ -4,6 +4,7 @@ ribbon.mjs
 altitudeWheel.mjs
 numericWheelDisplay.mjs
 altitudeDisplay.mjs
+selectedAltitudeDisplay.mjs
 displayRectangle.mjs
 qnhdisplay.mjs
 headingIndicator.mjs

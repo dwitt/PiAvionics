@@ -27,6 +27,7 @@ import { HeadingIndicator } from './headingIndicator.mjs';
 import { QNHDisplay } from './qnhdisplay.mjs'; //
 import { SpeedDisplay } from './speedDisplay.mjs';
 import { AltitudeDisplay } from './altitudeDisplay.mjs'
+import { SelectedAltitudeDisplay } from './selectedAltitudeDisplay.mjs';
 import { TempTimeDisplay } from './tempTimeDisplay.mjs';
 // import { calculateCharacterVerticalCentre } from './utilityFunctions.mjs';
 import { UserInput } from './userInput.mjs';
@@ -50,7 +51,7 @@ import { FAILURE_LOOK } from './failureLook.mjs';
 
 // ----------------------------------------------------------------------------
 
-const VERSION = "0.8.14";
+const VERSION = "0.8.15";
 
 // Viewer mode: a page that is not the Pi's own display only watches. It sends
 // nothing to the server, ignores the encoder, and shows the QNH and brightness
@@ -384,6 +385,7 @@ var attitudeIndicator,
     headingIndicator,
     speedDisplay,
     altitudeDisplay,
+    selectedAltitudeDisplay,
     tempTimeDisplay,
     brightness,
     egtGraph,
@@ -504,6 +506,16 @@ function setup() {
         x - (35), 140/2,        // location of the altitude display
         90, 25,                 // width and height of the box
         8);                     // radius of the box's top corners
+
+    // Selected altitude (the altitude bug), under the GPS box and over the top of the tape. Its bottom is
+    // 2 px less than a box height down, so the two boxes share one outline. The tape's bug parks below it.
+    selectedAltitudeDisplay = new SelectedAltitudeDisplay(
+        app,
+        x - (35), 140/2 + 25 - 2,   // right edge and bottom of the box
+        90, 25,                     // width and height of the box
+        altimeter_ribbon,           // draws the bug
+        altitudeDisplay);           // the box above (drawing order)
+    altimeter_ribbon.bugTopInset = 25 - 2;
 
     // ------------------------------------------------------------------------
     // Create the airspeed ribbon to be displayed on the left side of the 
@@ -767,7 +779,7 @@ function setup() {
     userInput.registerCallback(speedDisplay);
     userInput.registerCallback(headingIndicator);
     userInput.registerCallback(altitudeDisplay);
-    userInput.registerCallback(altimeter_ribbon);
+    userInput.registerCallback(selectedAltitudeDisplay);  // the altitude bug (was the tape and its pop-up box)
     userInput.registerCallback(hsi);
 
     app.ticker.add(delta => DisplayUpdateLoop(delta));
