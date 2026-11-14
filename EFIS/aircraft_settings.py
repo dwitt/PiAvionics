@@ -3,8 +3,8 @@ the airspeed correction table is filled in from flight testing).
 
 The file is aircraft_settings.json beside this module. It is not in copytopiefis.sh, so a deploy never overwrites
 it; without it the defaults below are used (David's Sonex flight manual, 197 / 125 / 100 / 46 / 40 mph CAS
-converted to knots). Until the Menu's Airspeed Limits page is built it is changed over SSH; the server picks up a
-change within a few seconds. A file that cannot be read or fails the checks is ignored as a whole (the log says
+converted to knots). It is changed from the Menu's Airspeed Limits page (on the ground only) or over SSH; the
+server picks up a change within a few seconds. A file that cannot be read or fails the checks is ignored as a whole (the log says
 why) and the defaults are used, so the tape is never drawn from half a set of speeds.
 
     {"airspeed": {"vso": 35, "vs1": 40, "vfe": 87, "vno": 108, "vne": 171}}
@@ -12,7 +12,7 @@ why) and the defaults are used, so the tape is never drawn from half a set of sp
 import json
 import os
 
-VERSION = "1.0.1"
+VERSION = "1.0.2"
 
 SAVE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "aircraft_settings.json")
 
@@ -24,6 +24,7 @@ DEFAULT_AIRSPEED = {
     "vne": 171,     # never exceed: red line and the barber pole above it (197 mph)
 }
 MAX_KT = 300        # the tape's colour strips go to 300
+AIRBORNE_KT = 30    # a change is refused when airspeed or ground speed is above this (as display_orientation.py)
 
 
 def check_airspeed(speeds):
@@ -102,3 +103,23 @@ class AircraftSettings:
         self.settings, note = load(self._path)
         self._log(f"aircraft settings {note}: {self.settings['airspeed']}")
         return True
+
+    def change_airspeed(self, speeds, speeds_kt=()):
+        """Save new airspeed limits (the Menu's Airspeed Limits page). `speeds_kt` are the airspeed and ground speed
+        in knots (None entries ignored): any above AIRBORNE_KT refuses the change. Returns (True, None) or
+        (False, reason); the reason is shown on the page."""
+        if any(s is not None and s > AIRBORNE_KT for s in speeds_kt):
+            return False, "Not while flying"
+        problem = check_airspeed(speeds)
+        if problem:
+            return False, problem
+        old = dict(self.settings["airspeed"])
+        new = {name: speeds[name] for name in DEFAULT_AIRSPEED}
+        try:
+            save(dict(self.settings, airspeed=new), self._path)
+        except OSError as e:
+            return False, f"The file could not be written: {e}"
+        changes = ", ".join(f"{n} {old[n]} -> {new[n]}" for n in DEFAULT_AIRSPEED if old[n] != new[n]) or "no change"
+        self._log(f"aircraft settings: airspeed limits saved from the page ({changes})")
+        self.reload_if_changed()
+        return True, None

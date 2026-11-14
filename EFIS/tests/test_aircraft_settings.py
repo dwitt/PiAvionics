@@ -1,7 +1,7 @@
 """Tests for aircraft_settings.py (standard library only; run anywhere):
     python3 -m unittest tests.test_aircraft_settings       (from the EFIS directory)
 or  python3 -m unittest discover -s tests
-VERSION 1.0.0
+VERSION 1.0.1
 """
 import json
 import os
@@ -74,6 +74,20 @@ class TestAircraftSettings(unittest.TestCase):
         self.assertTrue(settings.reload_if_changed())
         self.assertEqual(settings.settings["airspeed"]["vfe"], 87)
         self.assertEqual(len(self.lines), 3)
+
+    def test_change_airspeed_from_the_page(self):
+        settings = ac.AircraftSettings(self.path, log=self.lines.append)
+        self.assertEqual(settings.change_airspeed(dict(GOOD, vfe=85), (31, 0)), (False, "Not while flying"))
+        self.assertEqual(settings.change_airspeed(dict(GOOD, vfe=85), (None, 40))[0], False)
+        self.assertFalse(os.path.exists(self.path))
+        ok, reason = settings.change_airspeed(dict(GOOD, vno=200), (0, 0))
+        self.assertFalse(ok)
+        self.assertIn("in order", reason)
+        self.assertEqual(settings.change_airspeed(dict(GOOD, vfe=85), (20, None)), (True, None))
+        self.assertEqual(settings.settings["airspeed"]["vfe"], 85)
+        self.assertEqual(ac.load(self.path)[0]["airspeed"]["vfe"], 85)
+        self.assertTrue(any("vfe 87 -> 85" in line for line in self.lines))
+        self.assertFalse(settings.reload_if_changed())       # already loaded after the save
 
 
 if __name__ == "__main__":

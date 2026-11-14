@@ -29,3 +29,4 @@ failureLook.mjs
 failureFlag.mjs
 annunciators.mjs
 modulePanel.mjs
+airspeedLimitsPanel.mjs

@@ -1,7 +1,7 @@
 """ Asynchronous I/O based webserver to handle page and websocket"""
 # pyright: reportMissingImports=false
 
-VERSION = "1.7.6"
+VERSION = "1.7.7"
 
 import asyncio
 import ipaddress
@@ -270,6 +270,7 @@ class AvionicsData:
         self.efis = None            # this server's own heartbeat (version, state, mask, uptime, display_clients)
         self.display = None         # screen orientation, saved setting and any trial (display_orientation.py)
         self.aircraft = None        # aircraft settings: airspeed limits in knots (aircraft_settings.py)
+        self.aircraft_save = None   # answer to the page's last save: {"id", "ok", "reason"}
         # The web page decides what to show (wording, colours, flashing) from these facts.
         # Navigation (computed from flight plan + GPS position)
         self.dtk = None         # desired track (degrees)
@@ -320,6 +321,7 @@ class MyWebSocketResponse:
         self.qnh_send_errors = RepeatedErrorReporter("QNH send", QNH_SEND_LOG_PERIOD)
         self.orientation = None     # display_orientation.DisplayOrientation, set in main()
         self._orientation_tasks = set()   # keeps the orientation commands from being garbage collected
+        self.aircraft_settings = None     # aircraft_settings.AircraftSettings, set in main()
         # Initialize backlight with error handling
         self.backlight = None
         self.last_brightness = None
@@ -549,6 +551,11 @@ class MyWebSocketResponse:
                     if dict_object.get('orientation_revert', False):
                         self._start_orientation(self.orientation_revert())
 
+                # New airspeed limits from the Menu's Airspeed Limits page (refused in the air)
+                limits = dict_object.get('airspeed_limits', None)
+                if limits is not None and self.aircraft_settings is not None:
+                    self._start_orientation(self.save_airspeed_limits(limits, dict_object.get('request_id')))
+
             except (KeyError, ValueError, TypeError) as e:
                 # Data not received or invalid format, ignore it
                 if DEBUG:
@@ -559,7 +566,7 @@ class MyWebSocketResponse:
                 print(f"Error decoding JSON message: {e}")
 
     def _start_orientation(self, coroutine):
-        """Run an orientation command in the background (the message handler is not async)"""
+        """Run an orientation or settings command in the background (the message handler is not async)"""
         try:
             task = asyncio.get_running_loop().create_task(coroutine)
         except RuntimeError:        # no running loop (not expected in the server)
@@ -574,6 +581,17 @@ class MyWebSocketResponse:
                   self.data.gps_speed if self.data is not None else None)
         ok, reason = await self.orientation.request(name, speeds)
         print(f"Display orientation trial of {name}: " + ("started" if ok else f"refused ({reason})"), flush=True)
+
+    async def save_airspeed_limits(self, limits, request_id):
+        """Save the page's airspeed limits (in a thread: the save waits for the SD card) and answer the page"""
+        speeds = (self.data.airspeed if self.data is not None else None,
+                  self.data.gps_speed if self.data is not None else None)
+        ok, reason = await asyncio.to_thread(self.aircraft_settings.change_airspeed, limits, speeds)
+        if not ok:
+            print(f"Airspeed limits from the page not saved: {reason}", flush=True)
+        if self.data is not None:
+            self.data.aircraft = self.aircraft_settings.settings
+            self.data.aircraft_save = {"id": request_id, "ok": ok, "reason": reason}
 
     async def orientation_keep(self):
         if await self.orientation.keep():
@@ -1731,6 +1749,7 @@ async def main():
 
     # Aircraft settings (airspeed limits) from aircraft_settings.json, or the defaults
     settings = aircraft_settings.AircraftSettings(log=lambda text: print(text, flush=True))
+    web_socket_response.aircraft_settings = settings
 
     # -------------------------------------------------------------------------
     # --- create a dictionary to keep track of when CAN messages are

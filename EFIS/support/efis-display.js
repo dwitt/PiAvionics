@@ -41,6 +41,7 @@ import { MenuOverlay } from './menuOverlay.mjs';
 import { HSI } from './hsi.mjs';
 import { RouteOverlay } from './routeOverlay.mjs';
 import { OrientationPanel } from './orientationPanel.mjs';
+import { AirspeedLimitsPanel } from './airspeedLimitsPanel.mjs';
 import { InstrumentStatus, describeModule } from './instrumentStatus.mjs';
 import { ModulePanel } from './modulePanel.mjs';
 import { FailureFlag } from './failureFlag.mjs';
@@ -51,7 +52,7 @@ import { FAILURE_LOOK } from './failureLook.mjs';
 
 // ----------------------------------------------------------------------------
 
-const VERSION = "0.8.23";
+const VERSION = "0.8.24";
 
 // Viewer mode: a page that is not the Pi's own display only watches. It sends
 // nothing to the server, ignores the encoder, and shows the QNH and brightness
@@ -396,6 +397,7 @@ var attitudeIndicator,
     softButtons,
     menuOverlay,
     orientationPanel,
+    airspeedLimitsPanel,
     modulePanel,
     annunciators,
     asiFlag,
@@ -738,6 +740,13 @@ function setup() {
             },
             action: () => orientationPanel.show(),
         });
+        // The speeds that colour the speed tape, kept on the Pi; changed only on the ground
+        airspeedLimitsPanel = new AirspeedLimitsPanel(app, sendCommand);
+        actionDefs.push({
+            label: "Airspeed Limits",
+            getValue: () => "",
+            action: () => airspeedLimitsPanel.show(airspeedRibbon.limits),
+        });
     }
     actionDefs.push({
         label: "Maintenance",
@@ -1002,6 +1011,12 @@ function DisplayUpdateLoop(delta) {
     
     // The server's orientation facts drive the choose / confirm / Keep panels (controller only)
     if (orientationPanel) orientationPanel.update(dataObject.display);
+
+    // The airspeed limits page (when it is open): the ground rule and the server's answer to a save
+    if (airspeedLimitsPanel) {
+        airspeedLimitsPanel.update(valid.airspeed ? dataObject.airspeed : null,
+                                   valid.gps ? dataObject.gps_speed : null, dataObject.aircraft_save);
+    }
 
     // The module status page (when it is open)
     modulePanel.update(dataObject.modules, dataObject.efis);
