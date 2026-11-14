@@ -1,6 +1,6 @@
 'use strict';
 
-export const VERSION = '1.0.13';
+export const VERSION = '1.0.14';
 
 import { Container, Graphics, TextStyle, Text } from './pixi.mjs';
 
@@ -627,6 +627,7 @@ export class HSI {
         const pad = 8;
 
         this._windBoxWidth = boxWidth;
+        this._windPad = pad;
         this._windExpanded = false;
         this._wind = null;
 
@@ -644,7 +645,7 @@ export class HSI {
         this._windArrow.stroke({ color: 0xffffff, width: 3 });
         this._windArrow.poly([-7, -4, 7, -4, 0, -14]);
         this._windArrow.fill({ color: 0xffffff });
-        this._windArrow.position.set(pad + 15, (this._gpsRowY(0) + this._gpsRowY(1)) / 2);
+        this._windArrow.position.set(pad + 15, (this._windRowY(0) + this._windRowY(1)) / 2);
         windBox.addChild(this._windArrow);
 
         // Row 0: the direction it comes from, Row 1: its speed (right, before the expand arrow)
@@ -652,11 +653,11 @@ export class HSI {
         const valueStyle = () => new TextStyle({ fontFamily: 'Tahoma', fontSize: 16, fill: 0xffffff, fontWeight: 'bold' });
         this._windDirText = new Text({ text: '---°', style: valueStyle() });
         this._windDirText.anchor.set(1, 0.5);
-        this._windDirText.position.set(valueRight, this._gpsRowY(0));
+        this._windDirText.position.set(valueRight, this._windRowY(0));
         windBox.addChild(this._windDirText);
         this._windSpeedText = new Text({ text: '-- kt', style: valueStyle() });
         this._windSpeedText.anchor.set(1, 0.5);
-        this._windSpeedText.position.set(valueRight, this._gpsRowY(1));
+        this._windSpeedText.position.set(valueRight, this._windRowY(1));
         windBox.addChild(this._windSpeedText);
 
         this._windExpandArrow = new Graphics();
@@ -686,20 +687,25 @@ export class HSI {
         this.fixedContainer.addChild(windBox);
     }
 
-    // A label on the left and a value on the right, rows as the GPS box; returns the value's Text (label: .windLabel)
+    // y of the centre of a row of the wind box, from the top
+    _windRowY(row) {
+        return this._windPad + 7 + row * 18;
+    }
+
+    // A label on the left and a value on the right; returns the value's Text (label: .windLabel)
     _createWindRow(windBox, label, row) {
         const labelText = new Text({ text: label, style: new TextStyle({
             fontFamily: 'Tahoma', fontSize: 13, fill: 0x888888,
         })});
         labelText.anchor.set(0, 0.5);
-        labelText.position.set(this._gpsPad, this._gpsRowY(row));
+        labelText.position.set(this._windPad, this._windRowY(row));
         windBox.addChild(labelText);
 
         const valueText = new Text({ text: '-- kt', style: new TextStyle({
             fontFamily: 'Tahoma', fontSize: 14, fill: 0xffffff,
         })});
         valueText.anchor.set(1, 0.5);
-        valueText.position.set(this._windBoxWidth - this._gpsPad, this._gpsRowY(row));
+        valueText.position.set(this._windBoxWidth - this._windPad, this._windRowY(row));
         windBox.addChild(valueText);
         valueText.windLabel = labelText;
         return valueText;
@@ -708,7 +714,7 @@ export class HSI {
     // Redraw the box background and expand arrow for the contracted or expanded state
     _drawWindBox() {
         const rows = this._windExpanded ? 4 : 2;
-        const height = this._gpsRowY(rows - 1) + 13;
+        const height = this._windRowY(rows - 1) + 13;
 
         this._windBoxBackground.clear();
         this._windBoxBackground.fillStyle = { color: 0x222222, alpha: 0.85 };
@@ -722,8 +728,8 @@ export class HSI {
         }
 
         // a small triangle at the right of the first row: down to expand, up to contract (as the GPS box was)
-        const x = this._windBoxWidth - this._gpsPad - 3;
-        const y = this._gpsRowY(0);
+        const x = this._windBoxWidth - this._windPad - 3;
+        const y = this._windRowY(0);
         this._windExpandArrow.clear();
         if (this._windExpanded) {
             this._windExpandArrow.poly([x - 4, y + 2, x + 4, y + 2, x, y - 3]);
@@ -764,15 +770,15 @@ export class HSI {
         this._windCrossText.text = cross !== null ? Math.abs(cross) + ' kt' : '-- kt';
 
         // the triangles sit after the labels: HEAD down, TAIL up; XWIND from the right points left
-        const markX = this._gpsPad + 58;
-        let y = this._gpsRowY(2);
+        const markX = this._windPad + 58;
+        let y = this._windRowY(2);
         this._windHeadMark.clear();
         if (head !== null && head !== 0) {
             if (head > 0) this._windHeadMark.poly([markX - 5, y - 3, markX + 5, y - 3, markX, y + 4]);
             else this._windHeadMark.poly([markX - 5, y + 3, markX + 5, y + 3, markX, y - 4]);
             this._windHeadMark.fill({ color: 0xffffff });
         }
-        y = this._gpsRowY(3);
+        y = this._windRowY(3);
         this._windCrossMark.clear();
         if (cross !== null && cross !== 0) {
             if (cross > 0) this._windCrossMark.poly([markX + 4, y - 5, markX + 4, y + 5, markX - 3, y]);
@@ -782,12 +788,12 @@ export class HSI {
     }
 
     // -----------------------------------------------------------------------
-    // GPS Status Box — lower-left corner of HSI display, just above the level of the Route button (the upper left
-    // is kept for the wind). It is a touch button:
-    // contracted (the normal state) it shows the fix status and the magnetic variation;
-    // a touch expands it to show the satellites, HDOP and VDOP, and another touch contracts it.
-    // It starts contracted. The word WAAS beside the status is green when differential
-    // corrections are in use and dim when they are not.
+    // GPS Status Box — lower-right corner of HSI display, just above the Route button. It is a touch button:
+    // contracted (the normal state) it shows the fix status (bottom row) and the magnetic variation above it;
+    // a touch expands it upward to show the satellites, HDOP and VDOP above those, and another touch contracts it.
+    // The bottom edge stays put. The side towards the rose is scalloped to follow the HSI circle, and the
+    // labels move in where it does. It starts contracted. The word WAAS beside the status is green when
+    // differential corrections are in use and dim when they are not.
     // -----------------------------------------------------------------------
     _createGpsStatusBox() {
         const screenX = this.app.screen.width / 2;
@@ -805,22 +811,22 @@ export class HSI {
         this._gpsHdopValue = null;
 
         const gpsBox = new Container();
-        // the bottom edge stays put and the box grows upward when it expands (_drawGpsBox sets y);
-        // the Route button takes the bottom 40 px
-        this._gpsBox = gpsBox;
-        this._gpsBoxBottom = screenY - 40 - 6;
-        gpsBox.position.set(-screenX + margin, 0);
+        // the origin is the bottom left corner (rows go up from it); the Route button takes the bottom 40 px
+        gpsBox.position.set(screenX - margin - boxWidth, screenY - 40 - 6);
+        // the scallop: the HSI circle (its centre is the HSI's, the origin of fixedContainer) plus a small gap,
+        // in the box's coordinates
+        this._gpsScallop = { x: -gpsBox.x, y: -gpsBox.y, r: this.radius + 4 };
 
         this._gpsBoxBackground = new Graphics();
         gpsBox.addChild(this._gpsBoxBackground);
 
-        // Row 0: the fix status (colour changes dynamically) on the left, the word WAAS next to the arrow
-        // that shows the box can be touched
+        // Row 0 (bottom): the fix status (colour changes dynamically) on the left, the word WAAS next to the
+        // arrow that shows the box can be touched
         this._gpsFixText = new Text({ text: '---', style: new TextStyle({
             fontFamily: 'Tahoma', fontSize: 14, fill: 0x888888, fontWeight: 'bold',
         })});
         this._gpsFixText.anchor.set(0, 0.5);
-        this._gpsFixText.position.set(pad, this._gpsRowY(0));
+        this._gpsFixText.position.set(this._gpsLabelX(0), this._gpsRowY(0));
         gpsBox.addChild(this._gpsFixText);
 
         this._gpsWaasText = new Text({ text: 'WAAS', style: new TextStyle({
@@ -836,10 +842,10 @@ export class HSI {
         // Row 1: VAR, the magnetic variation (declination) the GPS module calculated, for example 10°W
         this._gpsVarText = this._createGpsRow(gpsBox, 'VAR', 1);
 
-        // Rows 2 to 4, only while expanded
-        this._gpsSatText = this._createGpsRow(gpsBox, 'SAT', 2);
+        // Rows 2 to 4, only while expanded, read top down: SAT, HDOP, VDOP
+        this._gpsSatText = this._createGpsRow(gpsBox, 'SAT', 4);
         this._gpsHdopText = this._createGpsRow(gpsBox, 'HDOP', 3);
-        this._gpsVdopText = this._createGpsRow(gpsBox, 'VDOP', 4);
+        this._gpsVdopText = this._createGpsRow(gpsBox, 'VDOP', 2);
         this._gpsExpandedItems = [];
         for (const row of [this._gpsSatText, this._gpsHdopText, this._gpsVdopText]) {
             this._gpsExpandedItems.push(row, row.gpsLabel);
@@ -858,9 +864,24 @@ export class HSI {
         this.fixedContainer.addChild(gpsBox);
     }
 
-    // y of the centre of a row of the GPS box
+    // y of the centre of a row of the GPS box, counted up from the bottom row (0); the box's bottom is y = 0
     _gpsRowY(row) {
-        return this._gpsPad + 7 + row * this._gpsLineHeight;
+        return -(this._gpsPad + 5 + row * this._gpsLineHeight);
+    }
+
+    // x of the box's left edge at height y: the scallop (the HSI circle) or the straight side, whichever is
+    // further in
+    _gpsEdgeX(y) {
+        const c = this._gpsScallop;
+        const dy = y - c.y;
+        if (Math.abs(dy) >= c.r) return 0;
+        return Math.max(0, c.x + Math.sqrt(c.r * c.r - dy * dy));
+    }
+
+    // x of a row's label: the padding in from the edge, taken over the height of the text
+    _gpsLabelX(row) {
+        const y = this._gpsRowY(row);
+        return Math.max(this._gpsEdgeX(y - 8), this._gpsEdgeX(y + 8)) + this._gpsPad;
     }
 
     // A label on the left and a value on the right; returns the value's Text (the label is its .gpsLabel)
@@ -869,7 +890,7 @@ export class HSI {
             fontFamily: 'Tahoma', fontSize: 13, fill: 0x888888,
         })});
         labelText.anchor.set(0, 0.5);
-        labelText.position.set(this._gpsPad, this._gpsRowY(row));
+        labelText.position.set(this._gpsLabelX(row), this._gpsRowY(row));
         gpsBox.addChild(labelText);
 
         const valueText = new Text({ text: '--', style: new TextStyle({
@@ -885,22 +906,39 @@ export class HSI {
     // Redraw the box background and arrow for the contracted or expanded state
     _drawGpsBox() {
         const rows = this._gpsExpanded ? 5 : 2;
-        const height = this._gpsRowY(rows - 1) + 13;
+        const height = rows * this._gpsLineHeight + 10;
+        const width = this._gpsBoxWidth;
+        const r = 6;    // corner radius
+
+        // the outline: the right side with rounded corners, then up the left side, which follows the larger of
+        // a rounded corner and the scallop
+        const points = [width - r, 0];
+        for (let a = 1; a <= 4; a++) {          // bottom right corner
+            const t = a * Math.PI / 8;
+            points.push(width - r + r * Math.sin(t), -r + r * Math.cos(t));
+        }
+        for (let a = 0; a <= 4; a++) {          // top right corner
+            const t = a * Math.PI / 8;
+            points.push(width - r + r * Math.cos(t), -height + r - r * Math.sin(t));
+        }
+        for (let y = -height; y <= 0; y += 2) { // the left side, top to bottom
+            let corner = 0;
+            if (y < -height + r) corner = r - Math.sqrt(r * r - (y + height - r) ** 2);
+            else if (y > -r) corner = r - Math.sqrt(r * r - (y + r) ** 2);
+            points.push(Math.max(corner, this._gpsEdgeX(y)), y);
+        }
 
         this._gpsBoxBackground.clear();
-        this._gpsBoxBackground.fillStyle = { color: 0x222222, alpha: 0.85 };
-        this._gpsBoxBackground.strokeStyle = { color: 0x666666, width: 1, alpha: 0.8 };
-        this._gpsBoxBackground.roundRect(0, 0, this._gpsBoxWidth, height, 6);
-        this._gpsBox.y = this._gpsBoxBottom - height;
-        this._gpsBoxBackground.fill();
-        this._gpsBoxBackground.stroke();
+        this._gpsBoxBackground.poly(points);
+        this._gpsBoxBackground.fill({ color: 0x222222, alpha: 0.85 });
+        this._gpsBoxBackground.stroke({ color: 0x666666, width: 1, alpha: 0.8 });
 
         for (const item of this._gpsExpandedItems) {
             item.visible = this._gpsExpanded;
         }
 
-        // a small triangle at the right of the first row: up to expand (the box grows upward), down to contract
-        const x = this._gpsBoxWidth - this._gpsPad - 3;
+        // a small triangle at the right of the bottom row: up to expand (the box grows upward), down to contract
+        const x = width - this._gpsPad - 3;
         const y = this._gpsRowY(0);
         this._gpsArrow.clear();
         if (this._gpsExpanded) {
