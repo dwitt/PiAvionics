@@ -177,6 +177,8 @@ Of 31 G5 features: PiEFIS has 10, has 10 in part, lacks 8; 3 do not apply. Secti
   units). Server sends Cache-Control no-cache so a reload picks up every changed file.
 - 8: B612 and B612 Mono tried in screenshots; staying with Tahoma (David prefers it; B612 Mono overflowed the
   QNH box and spaced out decimals). Tahoma is loaded by the page from `support/Tahoma*.ttf`.
+- Features in progress 2026-11-14: see RESUME.md (feature 1 done with a ground-only QNH-from-GPS hold; feature 2
+  part 1 done as a selected altitude box under the GPS box; heading bug box next, then altitude alerts).
 - Left in this list: deferred 10 (HSI corners). Next per "Suggested order": feature 1 (knob home
   position and long-press sync).
 
