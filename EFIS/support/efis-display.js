@@ -28,7 +28,7 @@ import { QNHDisplay } from './qnhdisplay.mjs'; //
 import { SpeedDisplay, TAS } from './speedDisplay.mjs';
 import { AltitudeDisplay } from './altitudeDisplay.mjs'
 import { SelectedAltitudeDisplay } from './selectedAltitudeDisplay.mjs';
-import { TempTimeDisplay } from './tempTimeDisplay.mjs';
+import { TempTimeDisplay, TEMP, TIME } from './tempTimeDisplay.mjs';
 // import { calculateCharacterVerticalCentre } from './utilityFunctions.mjs';
 import { UserInput } from './userInput.mjs';
 import { AirspeedWheel } from './airSpeedWheel.mjs';
@@ -51,7 +51,7 @@ import { FAILURE_LOOK } from './failureLook.mjs';
 
 // ----------------------------------------------------------------------------
 
-const VERSION = "0.8.21";
+const VERSION = "0.8.22";
 
 // Viewer mode: a page that is not the Pi's own display only watches. It sends
 // nothing to the server, ignores the encoder, and shows the QNH and brightness
@@ -387,7 +387,8 @@ var attitudeIndicator,
     tasDisplay,
     altitudeDisplay,
     selectedAltitudeDisplay,
-    tempTimeDisplay,
+    oatDisplay,
+    utcDisplay,
     brightness,
     egtGraph,
     chtGraph,
@@ -560,13 +561,23 @@ function setup() {
 
     
     //-------------------------------------------------------------------------
-    // Create a display below the speed ribbon to display the time or the OAT
+    // The foot of the speed tape mirrors its top: the UTC box (rounded bottom corners) just below the tape and a
+    // square OAT box over the bottom of the tape. Its bottom is 2 px below the tape, so the two boxes share one
+    // outline (the UTC box's: the OAT box is drawn under it)
     //-------------------------------------------------------------------------
-    tempTimeDisplay = new TempTimeDisplay(
-        app, 
-        0, y-140/2, // was + 25 for the height
-        90, 25, 
-        8);
+    utcDisplay = new TempTimeDisplay(
+        app,
+        0, y-140/2,         // left edge and top of the box
+        90, 25,             // width and height of the box
+        8,                  // the radius of the box's bottom corners
+        TIME);
+    oatDisplay = new TempTimeDisplay(
+        app,
+        0, y-140/2 - 25 + 2,    // left edge and top of the box
+        90, 25,
+        0,                      // square corners
+        TEMP);
+    app.stage.setChildIndex(oatDisplay.container, app.stage.getChildIndex(utcDisplay.container));
 
     //-------------------------------------------------------------------------
     // Create a VSI Indicator
@@ -791,7 +802,6 @@ function setup() {
     annunciators = new Annunciators(app, y - 50 - 22, x - 90 - 125);
 
     userInput.registerCallback(qnhDisplay);
-    userInput.registerCallback(tempTimeDisplay);
     userInput.registerCallback(brightness);
     userInput.registerCallback(headingIndicator);
     userInput.registerCallback(altitudeDisplay);
@@ -960,14 +970,15 @@ function DisplayUpdateLoop(delta) {
     tasDisplay.update();
 
     if (dataObject.oat != null) {
-        tempTimeDisplay.temperature = dataObject.oat;
+        oatDisplay.temperature = dataObject.oat;
     }
     if (dataObject.tm_hour != null && dataObject.tm_min != null) {
-        tempTimeDisplay.timeHour = dataObject.tm_hour;
-        tempTimeDisplay.timeMinute = dataObject.tm_min;
+        utcDisplay.timeHour = dataObject.tm_hour;
+        utcDisplay.timeMinute = dataObject.tm_min;
     }
-    tempTimeDisplay.validity.temperature = valid.oat;
-    tempTimeDisplay.update();
+    oatDisplay.validity.temperature = valid.oat;
+    oatDisplay.update();
+    utcDisplay.update();
 
     altitudeDisplay.gpsAltitude = dataObject.gps_altitude;
     if (dataObject.static_pressure != null) {

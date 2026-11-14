@@ -1,20 +1,31 @@
 // 1-June-2025 Update for PixiJS v8
 'use strict';
 
-export const VERSION = '1.0.1';
+export const VERSION = '1.0.2';
 
 import { DisplayRectangle } from './displayRectangle.mjs';
 
-/**     
- * Class representing the temperature or time display objects
+/**
+ * Class representing the outside air temperature or the UTC time box. There are two, one for each, at the foot of
+ * the speed tape: the square OAT box over the bottom of the tape and the UTC box (rounded bottom corners) below it,
+ * as the GS and TAS boxes at the top. Neither is on the knob (it used to switch one box between them).
  */
 
-const TEMP = 0;
-const TIME = 1;
+export const TEMP = 0;
+export const TIME = 1;
 
 export class TempTimeDisplay extends DisplayRectangle {
 
-    constructor(app, x , y, width, height, radius){
+    /**
+     * @param {PIXI.Application} app The PixiJS application that is the EFIS display
+     * @param {number} x The left edge of the box in pixels
+     * @param {number} y The top of the box in pixels
+     * @param {number} width The width of the box in pixels
+     * @param {number} height The height of the box in pixels
+     * @param {number} radius The radius of the box's bottom corners (0 for square)
+     * @param {number} displayItem TEMP or TIME
+     */
+    constructor(app, x , y, width, height, radius, displayItem = TEMP){
         super(
             app,
             x, y,
@@ -24,93 +35,50 @@ export class TempTimeDisplay extends DisplayRectangle {
             false,          // not aligned from the right
             false           // no legend
         )
-        let colour, timeValueText, temperatureUnitsText, temperatureValueText;
-        let timeZoneText; 
-
 
         this.screen_width = app.screen.width;
 
         this._temperature = 0;
-        this._timeHour = 0;
-        this._timeMinute = 0;
+        this._timeHour = null;          // null until the GPS gives a time
+        this._timeMinute = null;
 
-        this._displayItem = TEMP;
+        this._displayItem = displayItem;
 
         // Set by the page: false shows --- instead of the temperature (the sensor cannot be trusted)
         this.validity = { temperature: true };
-        
-        colour = "chartreuse";
 
+        this.valueText.text = (displayItem == TIME) ? "--:--" : "0";
+        this.unitText.text = (displayItem == TIME) ? "UTC" : "ºC";
 
-        temperatureValueText = "0";
-        temperatureUnitsText = "ºC";
-        timeValueText = "00:00"
-        timeZoneText = "UTC"
-
-        this.valueText.text = temperatureValueText;
-        this.unitText.text = temperatureUnitsText;
-
-        // The temperature (and time) are measured, so white, with the unit label (ºC, UTC) to match; cyan now
-        // means set by the pilot (QNH, bugs)
+        // The temperature and time are measured, so white, with the unit label (ºC, UTC) to match; cyan means
+        // set by the pilot (QNH, bugs)
         this.valueText.style.fill = 0xFFFFFF;
         this.unitText.style.fill = 0xFFFFFF;
 
         this.container.addChild(this.regularRectangle);
         this.container.addChild(this.valueText);
         this.container.addChild(this.unitText);
-  
+
         app.stage.addChild(this.container);
     }
 
-    callback(selected, changable, value){
-        
-        super.callback(selected, changable, value);
-        // Handle a call back from the main line to deal with selecting and
-        // changing the time temp value. We expect to be selected first then
-        // have the changable flag added to allow changes. The value should be 
-        // in sequence from where it was last.
-
-        // process the encoder value provided
-
-        if (selected && changable) {
-            this._displayItem = Math.abs(value % 2);
-        
-            if (this._displayItem == TEMP) {
-                this.unitText.text = "ºC";
-            }
-            else if (this._displayItem == TIME) {
-                this.unitText.text = "UTC";
-            
-            }
-            
-            this.update();
-        }
-
-    }
-
     update() {
+        let text;
         if (this._displayItem == TEMP) {
             if (!this.validity.temperature) {
-                this.valueText.text = "---";
+                text = "---";
             }
             else if (this._temperature !== undefined && this._temperature !== null) {
-                this.valueText.text = String(this._temperature);
+                text = String(this._temperature);
             }
         }
         else if (this._displayItem == TIME) {
-            if (this._timeHour !== undefined && this._timeMinute !== undefined) {
-                //TODO: properly format the time
-                let hourString = String(this._timeHour);
-                if (hourString.length == 1) {
-                    hourString = '0' + hourString;
-                }
-                let minuteString = String(this._timeMinute);
-                if (minuteString.length == 1) {
-                    minuteString = '0' + minuteString;
-                }
-                this.valueText.text = hourString + ":" + minuteString
-             }
-        
+            if (this._timeHour !== null && this._timeMinute !== null) {
+                text = String(this._timeHour).padStart(2, '0') + ":" + String(this._timeMinute).padStart(2, '0');
+            }
+        }
+        if (text !== undefined && text !== this.valueText.text) {      // a text change redraws it: only when it changes
+            this.valueText.text = text;
         }
     }
 
