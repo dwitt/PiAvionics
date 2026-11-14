@@ -1,6 +1,6 @@
 'use strict';
 
-export const VERSION = '1.0.5';
+export const VERSION = '1.0.6';
 
 import { Container, Graphics, TextStyle, Text, CanvasTextMetrics } from './pixi.mjs';
 
@@ -584,6 +584,16 @@ export class HeadingIndicator {
      *     to the value parameter but only on the second pass through the function 
      * @param {*} value The value of the encoder when changeable is true
      *************************************************************************/
+    /**
+     * Long press on the knob while editing (userInput): move the heading bug to the current heading.
+     */
+    sync() {
+        this._bugValue = Math.round(this._value) % 360;
+        this.bugText.text = String(this._bugValue).padStart(3, '0') + '°';
+        this.positionHeadingBugOnRibbon(this._value);
+        return true;
+    }
+
      callback(selected, changable, value){
 
         // Process changeable first as it should be enabled last

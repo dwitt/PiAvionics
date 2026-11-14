@@ -1,6 +1,6 @@
 'use strict';
 
-export const VERSION = '1.0.3';
+export const VERSION = '1.0.4';
 
 import { Container, Graphics, Text, TextStyle, Matrix } from './pixi.mjs'
 
@@ -568,6 +568,19 @@ export class Ribbon {
      *     to the value parameter but only on the second pass through the function 
      * @param {*} value The value of the encoder when changeable is true
      */
+    /**
+     * Long press on the knob while editing (userInput): move the bug to the current value, rounded to 100
+     * (altitude bug to current altitude, as the G5). Returns false when there is no bug or no value to sync to.
+     */
+    sync() {
+        if (!this.hasBug || this._value === undefined || this._ribbonUndefined) return false;
+        const target = Math.round(this._value / 100) * 100;
+        this._bugValue = Math.max(this._bugMinValue, Math.min(this._bugMaxValue, target));
+        this.bugText.text = this._bugValue.toString();
+        this.positionBugOnRibbon(this._value);
+        return true;
+    }
+
     callback(selected, changable, value){
 
         // Process changeable first as it should be enabled last

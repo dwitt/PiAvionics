@@ -1,11 +1,18 @@
 'use strict';
 
-export const VERSION = '1.0.2';
+export const VERSION = '1.0.3';
 import { Container, Graphics, TextStyle, Text, CanvasTextMetrics } from './pixi.mjs';
 
 // The encoder debug numbers (selected item and encoder position, bottom left of the PFD) are always
 // created; DEBUG only says whether they show at start. The Menu's "Encoder Debug" row shows and hides them.
 const DEBUG = false;
+
+// Home position: after HOME_TIMEOUT_MS with no turn or press, the knob goes back to the first item (QNH) in edit
+// mode, as at start-up, so a quick turn always sets baro. Long press: holding the knob LONG_PRESS_MS while
+// editing calls the item's sync() if it has one (altitude bug to current altitude, heading bug to heading, CRS to
+// the bearing to the waypoint, as the G5's push-and-hold); the release after a sync does not leave edit mode.
+const HOME_TIMEOUT_MS = 10000;
+const LONG_PRESS_MS = 1000;
 
 export class UserInput {
 
@@ -35,6 +42,11 @@ export class UserInput {
         this.itemSelectionMode = false;
         this.firstPass = true;
         this.rebaseNext = false;    // see rebaseEncoder()
+
+        this.lastActivity = performance.now();  // time of the last turn or press (home position)
+        this.pressStart = 0;                    // when the button went down
+        this.pressChecked = true;               // the long press has been checked for this press
+        this.ignoreRelease = false;             // this press synced the item: its release does not change mode
 
         // storage for call back and virtual encoder
         this.numberOfCallbacksRegistered = 0;
@@ -147,11 +159,22 @@ export class UserInput {
              * Handle changes to the push button state first                  *
              ******************************************************************/
 
+            const now = performance.now();
+
             // Check if the button has changed
             if (button != this.lastButton) {
 
                 this.lastButton = button
-                if (button == false) {
+                this.lastActivity = now;
+                if (button) {
+                    // pressed: time it for a long press
+                    this.pressStart = now;
+                    this.pressChecked = false;
+                    this.ignoreRelease = false;
+                } else if (this.ignoreRelease) {
+                    // released after a long press synced the item: stay in edit mode
+                    this.ignoreRelease = false;
+                } else {
                     // The button was just released therefore the item selection
                     // mode just changed.
                     // Toggle the item selection mode
@@ -204,6 +227,15 @@ export class UserInput {
                     // save the current encoder position to be applied
                     // as the encoder makes adjustments
                     this.encoderAdjustment = position
+                }
+            }
+
+            // Long press while editing: sync the item once, when the hold reaches LONG_PRESS_MS
+            if (button && !this.pressChecked && now - this.pressStart >= LONG_PRESS_MS) {
+                this.pressChecked = true;
+                const item = this.callbackFunction[this.currentSelection];
+                if (!this.itemSelectionMode && typeof item.sync === 'function' && item.sync()) {
+                    this.ignoreRelease = true;
                 }
             }
 
@@ -279,11 +311,37 @@ export class UserInput {
 
                 // Save the last positoin for the next time through
                 this.lastPosition = position;
+                this.lastActivity = now;
+            }
+
+            // Home position: left alone anywhere but QNH editing, go back there
+            const atHome = !this.itemSelectionMode && this.currentSelection == 0;
+            if (!atHome && !button && now - this.lastActivity >= HOME_TIMEOUT_MS) {
+                this.goHome(position);
             }
     
         }
 
 
+    }
+
+    /**
+     * Go back to the first item (QNH) in edit mode, as at start-up. An item left while being edited keeps its
+     * virtual encoder value, so it carries on from there when it is edited again.
+     * @param {number} position The encoders position
+     */
+    goHome(position) {
+        if (!this.itemSelectionMode) {
+            this.virtualEncoderValue[this.currentSelection] = (position +
+                this.virtualEncoderValue[this.currentSelection] - this.encoderAdjustment);
+        }
+        this.callbackFunction[this.currentSelection].callback(false, false, 0);
+
+        this.currentSelection = 0;
+        this.itemSelectionMode = false;
+        this.virtualEncoderForSelection = 0;    // the next press selects QNH, and turning moves on from it
+        this.encoderAdjustment = position;
+        this.callbackFunction[0].callback(true, true, this.virtualEncoderValue[0]);
     }
 
     /**

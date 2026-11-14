@@ -50,7 +50,7 @@ import { FAILURE_LOOK } from './failureLook.mjs';
 
 // ----------------------------------------------------------------------------
 
-const VERSION = "0.8.12";
+const VERSION = "0.8.13";
 
 // Viewer mode: a page that is not the Pi's own display only watches. It sends
 // nothing to the server, ignores the encoder, and shows the QNH and brightness
@@ -864,6 +864,7 @@ function DisplayUpdateLoop(delta) {
         hsi.courseDeviation = dataObject.xtrack;
     }
     hsi.toFrom = (valid.gps && dataObject.to_from !== undefined) ? dataObject.to_from : null;
+    hsi.bearing = dataObject.bearing;       // for the CRS sync (long press on the knob)
     if (dataObject.dtk !== undefined && dataObject.dtk !== null) {
         hsi.desiredTrack = dataObject.dtk;
     } else {

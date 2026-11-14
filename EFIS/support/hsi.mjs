@@ -1,6 +1,6 @@
 'use strict';
 
-export const VERSION = '1.0.8';
+export const VERSION = '1.0.9';
 
 import { Container, Graphics, TextStyle, Text } from './pixi.mjs';
 
@@ -837,6 +837,23 @@ export class HSI {
     // -----------------------------------------------------------------------
     // Encoder callback — matches the pattern used by headingIndicator
     // -----------------------------------------------------------------------
+    /**
+     * Bearing to the active waypoint (magnetic degrees), or null when there is none. Used by sync().
+     */
+    set bearing(value) {
+        this._bearing = (value === undefined) ? null : value;
+    }
+
+    /**
+     * Long press on the knob while editing (userInput): CRS to the bearing to the waypoint, as the G5;
+     * with no waypoint, to the current heading.
+     */
+    sync() {
+        const target = (this._bearing !== null && this._bearing !== undefined) ? this._bearing : this._heading;
+        this.headingBug = Math.round(target);
+        return true;
+    }
+
     callback(selected, changable, value) {
         // Handle changeable state transitions
         if (changable && !this.changable) {
