@@ -1,7 +1,7 @@
 // 1-June-2025 - Updated for PixiJS 8.6.6
 'use strict';
 
-export const VERSION = '1.0.3';
+export const VERSION = '1.0.4';
 
 import { NumericWheelDisplay } from "./numericWheelDisplay.mjs";
 import { Graphics, TextStyle, Text} from './pixi.mjs';
@@ -52,7 +52,7 @@ export class AirspeedWheel  {
             style: this.style
             });
         this.IASunits.anchor.set(0,.2);
-        this.IASunits.position.set(x + airspeedWidth + 8, y + 6);     // the units sit 6 pixels lower than the digits' centre
+        this.IASunits.position.set(x + airspeedWidth + 8, y + 16);    // 16 px below the digits' centre: just clear of a V-speed tag at the pointer
 
         app.stage.addChild(this.IASunits);
         app.stage.addChild(this.airspeedOnesWheel.digitContainer);

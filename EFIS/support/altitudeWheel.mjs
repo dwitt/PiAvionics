@@ -1,7 +1,7 @@
 // 4-May-2025 - Started Update for PixiJS 8.6.6
 'use strict';
 
-export const VERSION = '1.0.1';
+export const VERSION = '1.0.2';
 
 import { NumericWheelDisplay } from "./numericWheelDisplay.mjs";
 import { Graphics, TextStyle, Text} from './pixi.mjs';
@@ -58,7 +58,7 @@ export class AltitudeWheel  {
 
         this.altUnits = new Text({text:"ft", style: this.style});
         this.altUnits.anchor.set(1,0.2);
-        this.altUnits.position.set((this.x - width) - 5, this.y + 6);     // the units sit 6 pixels lower than the digits' centre
+        this.altUnits.position.set((this.x - width) - 5, this.y + 16);    // 16 px below the digits' centre, as "kt"
 
         this.app.stage.addChild(this.altUnits);
         this.app.stage.addChild(this.tensWheel.digitContainer);
