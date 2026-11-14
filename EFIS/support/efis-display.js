@@ -52,7 +52,7 @@ import { FAILURE_LOOK } from './failureLook.mjs';
 
 // ----------------------------------------------------------------------------
 
-const VERSION = "0.8.31";
+const VERSION = "0.8.32";
 
 // Viewer mode: a page that is not the Pi's own display only watches. It sends
 // nothing to the server, ignores the encoder, and shows the QNH and brightness
@@ -492,8 +492,8 @@ function setup() {
     // parallel to the screen
     //-------------------------------------------------------------------------    
     altitudeWheel = new AltitudeWheel(app) //, 755, 240);
-    // "ft" inside the foot of the tape, on its left (towards the attitude display), just above the QNH box
-    altitudeWheel.placeUnits(x - 125 + 4, y - 70 - 3);
+    // "ft" inside the foot of the tape, on its left (towards the attitude display), level with "kt"
+    altitudeWheel.placeUnits(x - 125 + 4, y - 70 - 23 - 3);
     
     //------------------------------------------------------------------------- 
     // Create an qnh display, generally below the airspeed ribbon that
