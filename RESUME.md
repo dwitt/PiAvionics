@@ -2,6 +2,25 @@
 
 Tell Claude: "Read RESUME.md and carry on."
 
+## Update 2026-11-14 (evening): feature 4, knob home, OAT and UTC (EFIS page 0.8.22, all on the Pi)
+- **Done** (tried on the Mac with screenshots, then deployed):
+  - Feature 4, airspeed trend vector (`airspeedRibbon.mjs` 1.0.1): light magenta line right of the colour strip
+    from the pointer to the speed 6 s ahead. Speed and rate each smoothed (1 s); hidden under 2 kt and when the
+    airspeed is not valid. David cannot check real pitot noise; on the Mac it stayed hidden with +/-1 kt of noise
+    at 60 kt (about three times the expected pitot noise). Raise the threshold if it flickers.
+  - Knob (`userInput.mjs` 1.0.9): the home position (after 10 s untouched) and start-up are now QNH **selected,
+    not edited**, so a turn by mistake only moves the selection (David's choice). Push and turn to set baro; QNH
+    sync from GPS needs a push first. The 3 s hold still leaves brightness in edit mode.
+  - OAT and UTC both shown (`tempTimeDisplay.mjs` 1.0.2), mirroring the top of the speed tape: square OAT box
+    over the bottom of the tape, UTC box (rounded bottom corners) below it. UTC only, no local time and no switch
+    (David: ATC uses UTC, local is on his watch). `--:--` until the GPS gives a time. Brightness stays bottom
+    left. OAT/time is off the knob: QNH, brightness, heading bug, altitude source, selected altitude.
+- **Next:** feature 5, speed bands and overspeed cues (`EFIS/docs/G5_REVIEW.md`). Needs David's real Sonex
+  V-speeds first (code has Vso 35, Vs1 40, Vfe 99, Vno 108, Vne 171; the review says "fix Vfe (99)"). Then
+  features 6 onward.
+- **Testing on the Mac:** the scratch fake feed now also has `rate=` (kt/s ramp), `noise=` (kt) and sends GPS UTC;
+  still not in `EFIS/tests/fake_feed.py`.
+
 ## Update 2026-11-14 (later): G5 review features 1 to 3 done (EFIS page 0.8.20, server 1.7.5, all on the Pi)
 - **Done** (each tried on the Mac with screenshots, then deployed):
   - Menu: Slip Cue (Both / Ball / Trapezoid), Modules, Orientation, Maintenance (test and tuning rows moved there).

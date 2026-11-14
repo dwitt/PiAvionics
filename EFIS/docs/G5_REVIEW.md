@@ -182,7 +182,11 @@ Of 31 G5 features: PiEFIS has 10, has 10 in part, lacks 8; 3 do not apply. Secti
   G5 alerting (deviation in the amber caution colour); feature 3 as the G5: one heading bug (PFD box at the left of
   the tape, drawn on the HSI too), DTK box and course needle only with a flight plan, CRS gone. Also a TAS box under
   the GS box (speed off the knob). Knob: QNH, OAT/time, brightness, heading bug, altitude source, selected altitude.
-- Left in this list: deferred 10 (HSI corners). Next: features 4 onward (not started).
+- Later 2026-11-14: feature 4 done (trend vector, light magenta, right of the colour strip). Knob home and
+  start-up are now QNH selected, not edited (a stray turn cannot change the QNH). OAT and UTC both shown at the
+  foot of the speed tape (UTC only, no local time); OAT/time off the knob: QNH, brightness, heading bug, altitude
+  source, selected altitude.
+- Left in this list: deferred 10 (HSI corners). Next: feature 5 (needs the real V-speeds), then 6 onward.
 
 1. **Colour code; red only for warnings.** Red now means selected (box borders, tape line, HSI ring), bugs, and
    failures.
