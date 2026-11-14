@@ -53,7 +53,7 @@ import { FAILURE_LOOK } from './failureLook.mjs';
 
 // ----------------------------------------------------------------------------
 
-const VERSION = "0.8.33";
+const VERSION = "0.8.34";
 
 // Viewer mode: a page that is not the Pi's own display only watches. It sends
 // nothing to the server, ignores the encoder, and shows the QNH and brightness
@@ -967,6 +967,8 @@ function DisplayUpdateLoop(delta) {
     } else {
         hsi.waypointDistance = null;
     }
+    // the bearing pointer: straight at the active waypoint (magnetic), only with a trusted GPS position
+    hsi.bearing = (valid.gps && dataObject.bearing !== undefined) ? dataObject.bearing : null;
     if (valid.gps && dataObject.wpt_id !== undefined && dataObject.wpt_id !== null) {
         hsi.waypointId = dataObject.wpt_id;
     } else {

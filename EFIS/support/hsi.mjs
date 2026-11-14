@@ -1,6 +1,6 @@
 'use strict';
 
-export const VERSION = '1.0.17';
+export const VERSION = '1.0.18';
 
 import { Container, Graphics, TextStyle, Text } from './pixi.mjs';
 
@@ -28,6 +28,7 @@ export class HSI {
         this._desiredTrack = null;   // DTK from the flight plan: the course needle and the DTK box show only with one
         this._waypointDistance = null;
         this._waypointId = null;
+        this._bearing = null;        // magnetic bearing to the active waypoint (from the server's flight plan); null: none
 
         // --- Root container ---
         this.hsiContainer = new Container();
@@ -50,6 +51,7 @@ export class HSI {
         // --- Fixed elements (don't rotate) ---
         this.fixedContainer = new Container();
         this._createHeadingBug();    // behind lubber line
+        this._createBearingPointer(); // under the course needle
         this._createCoursePointer(); // Phase 2: needle, CDI, TO/FROM
         this._createLubberLine();
         this._createAircraftSymbol();
@@ -444,6 +446,53 @@ export class HSI {
         this.bugContainer.visible = this._headingShown && this._bugValue !== null;
         this.courseContainer.visible = this._headingShown && haveCourse;
         this.dtkBox.visible = haveCourse;
+    }
+
+    // -----------------------------------------------------------------------
+    // Bearing pointer — a thin cyan needle that points straight at the active waypoint (G5 2.2.1.1); the course
+    // needle shows the planned track, this where the waypoint is from here. It lies in the band between the rose
+    // ticks and the course needle's ends, so the two never hide each other: the head (arrow and a ring on its
+    // shaft) towards the waypoint, a plain tail opposite. Hidden without a bearing (no flight plan), without a
+    // trusted GPS position, or without the heading.
+    // -----------------------------------------------------------------------
+    _createBearingPointer() {
+        const r = this.radius;
+        const tip = r - 8;          // just inside the rose's ticks
+        const inner = r - 58;       // a little inside the course needle's ends (r - 52)
+        const colour = 0x00ffff;    // cyan
+        const width = 2;
+
+        this.bearingContainer = new Container();
+        const pointer = new Graphics();
+        // head: the shaft, an open arrowhead and a ring on the shaft
+        pointer.moveTo(0, -inner);
+        pointer.lineTo(0, -tip);
+        pointer.moveTo(-8, -tip + 12);
+        pointer.lineTo(0, -tip);
+        pointer.lineTo(8, -tip + 12);
+        pointer.stroke({ color: colour, width: width, cap: 'round', join: 'round' });
+        pointer.circle(0, -inner - 9, 5);
+        pointer.stroke({ color: colour, width: width });
+        // tail
+        pointer.moveTo(0, inner);
+        pointer.lineTo(0, tip);
+        pointer.stroke({ color: colour, width: width, cap: 'round' });
+        this.bearingContainer.addChild(pointer);
+        this.bearingContainer.visible = false;
+        this.fixedContainer.addChild(this.bearingContainer);
+    }
+
+    /** Magnetic bearing to the active waypoint, or null for none. */
+    set bearing(value) {
+        this._bearing = (value === null || value === undefined) ? null : value;
+        this._updateBearingPointer();
+    }
+
+    _updateBearingPointer() {
+        this.bearingContainer.visible = this._bearing !== null && this._headingShown && this._gpsValid;
+        if (this._bearing !== null) {
+            this.bearingContainer.rotation = (this._bearing - this._heading) * Math.PI / 180;
+        }
     }
 
     // -----------------------------------------------------------------------
@@ -1177,6 +1226,7 @@ export class HSI {
         this.trackContainer.visible = this._headingShown && this._gpsValid && this._trackUsable;
         this.cdiBar.visible = this._gpsValid;
         this.toFrom = this._toFrom;     // shows or hides the TO/FROM triangles for the current state
+        this._updateBearingPointer();
     }
 
     set heading(value) {
@@ -1196,6 +1246,7 @@ export class HSI {
 
         // Reposition heading bug relative to new heading
         this._updateBugPosition();
+        this._updateBearingPointer();
     }
 
     get heading() {
