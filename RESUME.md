@@ -2,7 +2,7 @@
 
 Tell Claude: "Read RESUME.md and carry on."
 
-## Update 2026-11-14 (late night): feature 6, V-speed tags (page 0.8.25, server 1.7.8, all on the Pi)
+## Update 2026-11-14 (late night): feature 6, V-speed tags (page 0.8.28, server 1.7.8, all on the Pi)
 - **Done** (tried on the Mac with screenshots, then deployed; the service was restarted):
   - Tags (`airspeedRibbon.mjs` 1.0.4): cyan R / X / Y / G in small black flags just right of the speed tape,
     pointing at Vr 52, Vx 70 (the manual's climb with obstacles), Vy 74, Vg 61 kt; they scroll with the tape,
@@ -14,8 +14,12 @@ Tell Claude: "Read RESUME.md and carry on."
     bad group gets its defaults, the other is kept), `change(group, speeds, speeds_kt)`. Server command is now
     `{"aircraft_settings": {"group", "speeds"}, "request_id"}` (page and server must go up together).
   - Still no `aircraft_settings.json` on the Pi (defaults) until the first save from a page.
-- **Open:** the "kt" label beside the airspeed readout covers part of a tag within a few knots of the current
-  speed; David to say if it bothers him (drop the "kt", as the G5, or move the tags).
+- **kt label and the tags (settled with David):** "kt" and "ft" moved to 12 px below the readout centre (was 6),
+  so at a V-speed the "kt" sits 2 px below that tag; the tags are drawn in front of "kt" (it is under them), so
+  a tag a few knots below the current speed hides the label as it passes. Tried and dropped: a black outline-only
+  "kt" over the tags (masked to them) with the white letters under them; David did not like it.
+- **PixiJS v8 gotcha found:** a Graphics used as a mask but not on the stage never has its position updated
+  (fine for a fixed mask like the tapes', not for a moving one); add it to the stage, it is not drawn as a mask.
 - **Next:** feature 7, wind on the HSI.
 
 ## Update 2026-11-14 (night): Menu > Airspeed Limits page (page 0.8.24, server 1.7.7, all on the Pi)
