@@ -51,7 +51,7 @@ import { FAILURE_LOOK } from './failureLook.mjs';
 
 // ----------------------------------------------------------------------------
 
-const VERSION = "0.8.20";
+const VERSION = "0.8.21";
 
 // Viewer mode: a page that is not the Pi's own display only watches. It sends
 // nothing to the server, ignores the encoder, and shows the QNH and brightness
@@ -842,6 +842,8 @@ function DisplayUpdateLoop(delta) {
         airspeedWheel.value = dataObject.airspeed;
         airspeedRibbon.value = dataObject.airspeed;
     }
+    airspeedRibbon.updateTrend(TEST_AIRSPEED_SWEEP ? testAirspeed : (valid.airspeed ? dataObject.airspeed : null),
+                               Date.now() / 1000);
     if (valid.vsi) {
         vsiIndicator.value = dataObject.vsi;
     }
