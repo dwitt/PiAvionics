@@ -1,6 +1,6 @@
 'use strict';
 
-export const VERSION = '1.0.8';
+export const VERSION = '1.0.9';
 import { Container, Graphics, TextStyle, Text, CanvasTextMetrics } from './pixi.mjs';
 
 // The encoder debug numbers (selected item and encoder position, bottom left of the PFD) are always
@@ -9,7 +9,8 @@ const DEBUG = false;
 
 // Home position: after HOME_TIMEOUT_MS with no turn or press, the knob goes back to the first item (QNH) selected,
 // not being edited: a push and a turn sets baro, and a turn by mistake only moves the selection, so the QNH cannot
-// be changed by someone who forgot it was being edited (David, 2026-11-14; it was edit mode before). Long press: when the knob has been held LONG_PRESS_MS
+// be changed by someone who forgot it was being edited (David, 2026-11-14; it was edit mode before). Start-up is
+// the same. Long press: when the knob has been held LONG_PRESS_MS
 // while editing an item that can sync (canSync(), or a sync() if it has no canSync()), its value flashes: the cue
 // to let go. Let go before LONG_HOLD_MS, the item's sync() runs (altitude bug to current altitude, heading bug to
 // heading, CRS to the bearing to the waypoint, QNH from GPS on the ground, as the G5's push-and-hold) and it stays
@@ -439,12 +440,13 @@ export class UserInput {
         this.virtualEncoderValue[this.numberOfCallbacksRegistered - 1] = 0;
 
         if (this.numberOfCallbacksRegistered == 1) {
-            // This is the first callback registered so select it and allow it 
-            // to be changed
+            // This is the first callback registered (QNH): start at the home position, selected but not being
+            // edited, so a turn by mistake right after power-on cannot change it (a push and a turn sets it)
+            this.itemSelectionMode = true;
             this.callbackFunction[this.currentSelection].callback(
                 true,   // item is selected
-                true,   // item can be edited
-                this.virtualEncoderValue[this.currentSelection]  // 0 to start
+                false,  // item cannot be edited until the knob is pushed
+                0       // should be ignored
                 );
         }
     }
