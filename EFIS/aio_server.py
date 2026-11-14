@@ -1,7 +1,7 @@
 """ Asynchronous I/O based webserver to handle page and websocket"""
 # pyright: reportMissingImports=false
 
-VERSION = "1.7.5"
+VERSION = "1.7.6"
 
 import asyncio
 import ipaddress
@@ -47,6 +47,7 @@ from enum import Enum
 from flightplan import FlightPlan, compute_navigation
 import module_status
 import display_orientation
+import aircraft_settings
 import efis_heartbeat
 import qnh_state
 
@@ -159,6 +160,7 @@ MARKER_INSTRUMENT = {
     "accel_z": "acceleration",
 }
 ORIENTATION_UPDATE_PERIOD = 0.2  # seconds between display orientation checks (trial timeout)
+AIRCRAFT_SETTINGS_PERIOD = 2     # seconds between checks for a changed aircraft settings file
 
 # Display clients (EFIS/docs/MULTI_CLIENT_PLAN.md). The page served to this computer's own browser
 # (the Pi's kiosk Chromium) is the controller: its commands are processed. Any other page is a
@@ -267,6 +269,7 @@ class AvionicsData:
         self.clients = None         # {"controller": n, "viewers": n} connected display pages
         self.efis = None            # this server's own heartbeat (version, state, mask, uptime, display_clients)
         self.display = None         # screen orientation, saved setting and any trial (display_orientation.py)
+        self.aircraft = None        # aircraft settings: airspeed limits in knots (aircraft_settings.py)
         # The web page decides what to show (wording, colours, flashing) from these facts.
         # Navigation (computed from flight plan + GPS position)
         self.dtk = None         # desired track (degrees)
@@ -1374,6 +1377,15 @@ async def monitor_orientation(data, orientation):
         data.display = orientation.facts()
         await asyncio.sleep(ORIENTATION_UPDATE_PERIOD)
 
+
+async def monitor_aircraft_settings(data, settings):
+    """Publish the aircraft settings (airspeed limits) for the pages, reloading the file when it changes, so an
+    edit over SSH shows within a few seconds (aircraft_settings.py)."""
+    while True:
+        settings.reload_if_changed()
+        data.aircraft = settings.settings
+        await asyncio.sleep(AIRCRAFT_SETTINGS_PERIOD)
+
 # -----------------------------------------------------------------------------
 # --- Send regular updates to the client using json                         ---
 # -----------------------------------------------------------------------------
@@ -1717,6 +1729,9 @@ async def main():
     orientation = display_orientation.DisplayOrientation(display_orientation.run_wlr_randr)
     web_socket_response.orientation = orientation
 
+    # Aircraft settings (airspeed limits) from aircraft_settings.json, or the defaults
+    settings = aircraft_settings.AircraftSettings(log=lambda text: print(text, flush=True))
+
     # -------------------------------------------------------------------------
     # --- create a dictionary to keep track of when CAN messages are
     # --- received. 
@@ -1734,6 +1749,7 @@ async def main():
         send_json(web_socket_response, avionics_data),
         monitor_flight_plan(avionics_data),
         monitor_orientation(avionics_data, orientation),
+        monitor_aircraft_settings(avionics_data, settings),
         monitor_qnh(web_socket_response),
         send_efis_heartbeat(avionics_data, bus, efis_heartbeat.EfisHeartbeat(VERSION, time.monotonic())),
     #    read_input(encoder, button, avionics_data)

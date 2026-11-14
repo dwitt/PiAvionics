@@ -51,7 +51,7 @@ import { FAILURE_LOOK } from './failureLook.mjs';
 
 // ----------------------------------------------------------------------------
 
-const VERSION = "0.8.22";
+const VERSION = "0.8.23";
 
 // Viewer mode: a page that is not the Pi's own display only watches. It sends
 // nothing to the server, ignores the encoder, and shows the QNH and brightness
@@ -852,8 +852,11 @@ function DisplayUpdateLoop(delta) {
         airspeedWheel.value = dataObject.airspeed;
         airspeedRibbon.value = dataObject.airspeed;
     }
-    airspeedRibbon.updateTrend(TEST_AIRSPEED_SWEEP ? testAirspeed : (valid.airspeed ? dataObject.airspeed : null),
-                               Date.now() / 1000);
+    // Airspeed limits kept on the Pi (aircraft_settings.py); the tape keeps its defaults until they arrive
+    airspeedRibbon.setLimits(dataObject.aircraft && dataObject.aircraft.airspeed);
+    const shownAirspeed = TEST_AIRSPEED_SWEEP ? testAirspeed : (valid.airspeed ? dataObject.airspeed : null);
+    airspeedRibbon.updateTrend(shownAirspeed, Date.now() / 1000);
+    airspeedWheel.alert = airspeedRibbon.overspeedLevel(shownAirspeed);
     if (valid.vsi) {
         vsiIndicator.value = dataObject.vsi;
     }

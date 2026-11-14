@@ -25,6 +25,8 @@ rsync module_status.py "$user"@"$destination_server":"$piefis_main_dir"module_st
 rsync display_orientation.py "$user"@"$destination_server":"$piefis_main_dir"display_orientation.py
 rsync qnh_state.py "$user"@"$destination_server":"$piefis_main_dir"qnh_state.py
 rsync efis_heartbeat.py "$user"@"$destination_server":"$piefis_main_dir"efis_heartbeat.py
+rsync aircraft_settings.py "$user"@"$destination_server":"$piefis_main_dir"aircraft_settings.py
+# aircraft_settings.json (the airspeed limits) is never copied: it is kept on the Pi
 
 # Read the support files line by line
 while IFS= read -r line || [[ -n "$line" ]]; do

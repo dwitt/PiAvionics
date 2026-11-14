@@ -1,17 +1,25 @@
 'use strict';
 
-export const VERSION = '1.0.1';
+export const VERSION = '1.0.2';
 import { Graphics } from './pixi.mjs';
 import { Ribbon, Colour_Bar } from './ribbon.mjs';
 
-// V-Speed Configuration (will be made editable via menu system)
-const V_SPEEDS = {
+// Airspeed limits in knots until the server sends the ones kept on the Pi (aircraft_settings.py, the same
+// defaults: David's Sonex flight manual, 40 / 46 / 100 / 125 / 197 mph CAS)
+const DEFAULT_LIMITS = {
     vso: 35,    // Stall speed, landing configuration (bottom of white arc)
-    vs1: 40,    // Stall speed, clean configuration (bottom of green arc)
-    vfe: 99,    // Maximum flap extended speed (top of white arc)
+    vs1: 40,    // Stall speed, clean configuration (bottom of green arc, top of the low-speed red band)
+    vfe: 87,    // Maximum flap extended speed (top of white arc); was 99, from 114 mph
     vno: 108,   // Maximum structural cruising speed (green→yellow transition)
-    vne: 171,   // Never exceed speed (yellow→red line)
+    vne: 171,   // Never exceed speed (yellow→red line, barber pole above)
 };
+const STRIP_TOP = 300;              // knots: the colour strips end here
+const LOW_SPEED_COLOUR = 0xff0000;  // red band below Vs1
+const GREEN = 0x00ff00;
+const YELLOW = 0xffff00;
+const RED = 0xff0000;
+const WHITE = 0xffffff;
+const BARBER_STRIPE = 6;            // pixels: height of each red and each white stripe above Vne
 
 // Airspeed trend vector (G5 2.1.1.2)
 const TREND_COLOUR = 0xFF6AFF;      // light magenta, as the GPS readouts
@@ -29,31 +37,19 @@ export class AirspeedRibbon extends Ribbon {
 
         let scale = (height / majorIntervals) / majorIntervalSize;
 
-        // Green/Yellow/Red strip (left half of bar, x=0, width=10)
-        let speeds_colours = [
-            {position: V_SPEEDS.vs1, colour: 0x00ff00},   // Green: Vs1 to Vno
-            {position: V_SPEEDS.vno, colour: 0xffff00},   // Yellow: Vno to Vne
-            {position: V_SPEEDS.vne, colour: 0xff0000},   // Red: Vne and above
-        ];
-        let speeds_bar = new Colour_Bar(speeds_colours, 0, 10, 300, scale, false);
-
-        // Add a red Vne tick mark to the speeds bar graphics
-        // The matrix transform handles the vertical flip and scale,
-        // so positions are in knots and the tick height is in knots too
-        let tickHeightInKnots = 2 / scale;  // 2 pixels converted to knot-space
-        speeds_bar.graphics.fillStyle = { alpha: 1, color: 0xff0000 };
-        speeds_bar.graphics.rect(-10, V_SPEEDS.vne, 30, tickHeightInKnots);
-        speeds_bar.graphics.fill();
-
-        // White strip (overlaps green on right side, x=5, width=5)
-        let flaps_colours = [
-            {position: V_SPEEDS.vso, colour: 0xffffff},   // White: Vso to Vfe
-        ];
-        let flaps_bar = new Colour_Bar(flaps_colours, 5, 5, V_SPEEDS.vfe, scale, false);
+        // The colour strips are drawn by setLimits (they change with the settings): the speeds strip (left
+        // edge, 10 px: low-speed red, green, yellow, barber pole) and the white flap arc over its right half.
+        // Their graphics are in knots up the tape (the Colour_Bar transform flips and scales y).
+        let speeds_bar = new Colour_Bar([], 0, 10, STRIP_TOP, scale, false);
+        let flaps_bar = new Colour_Bar([], 5, 5, STRIP_TOP, scale, false);
 
         super(app, x, y, height, width, rightSideMarks,
             majorIntervalSize, majorIntervals, minorIntervals, allowNegative,
             speeds_bar, flaps_bar);
+
+        this.knotsPerPixel = 1 / scale;
+        this.limits = null;
+        this.setLimits(DEFAULT_LIMITS);
 
         // Trend vector: drawn over the tick marks, under the numbers and the pointer box. Its origin is the
         // pointer (the middle of the tape); it is redrawn each frame from there up or down.
@@ -63,6 +59,57 @@ export class AirspeedRibbon extends Ribbon {
         this.trendSpeed = null;         // knots, smoothed
         this.trendRate = 0;             // knots per second, smoothed
         this.trendLastSeconds = null;
+        this.trendKnots = 0;            // knots the speed will change in TREND_SECONDS, 0 while the line is hidden
+    }
+
+    /**
+     * Draw the colour strips for these airspeed limits (knots). Called every frame with the server's settings;
+     * only redraws when they change. Ignored if any is missing.
+     * @param {{vso:number, vs1:number, vfe:number, vno:number, vne:number}} limits
+     */
+    setLimits(limits) {
+        if (!limits) return;
+        const names = ['vso', 'vs1', 'vfe', 'vno', 'vne'];
+        if (names.some(n => typeof limits[n] !== 'number')) return;
+        if (this.limits && names.every(n => this.limits[n] === limits[n])) return;
+        this.limits = Object.fromEntries(names.map(n => [n, limits[n]]));
+        const { vso, vs1, vfe, vno, vne } = this.limits;
+        const k = this.knotsPerPixel;
+
+        // clear() also resets the drawing transform (knots up the tape) that Colour_Bar set: set it again
+        const speeds = this.colour_bar1.graphics;
+        speeds.clear();
+        speeds.setTransform(this.colour_bar1.matrix);
+        // barber pole above Vne: white with red stripes slanting up to the right, started a stripe below Vne so
+        // the slant fills the strip; the yellow drawn after it covers what is below Vne
+        speeds.rect(0, vne, 10, STRIP_TOP - vne).fill({ color: WHITE });
+        const slant = 10 * k;
+        for (let y = vne - 2 * BARBER_STRIPE * k; y < STRIP_TOP; y += 2 * BARBER_STRIPE * k) {
+            speeds.poly([0, y, 10, y + slant, 10, y + slant + BARBER_STRIPE * k, 0, y + BARBER_STRIPE * k])
+                  .fill({ color: RED });
+        }
+        speeds.rect(0, 0, 10, vs1).fill({ color: LOW_SPEED_COLOUR });
+        speeds.rect(0, vs1, 10, vno - vs1).fill({ color: GREEN });
+        speeds.rect(0, vno, 10, vne - vno).fill({ color: YELLOW });
+        // red line at Vne, 2 px, across the strip and the tick marks
+        speeds.rect(-10, vne, 30, 2 * k).fill({ color: RED });
+
+        const flaps = this.colour_bar2.graphics;
+        flaps.clear();
+        flaps.setTransform(this.colour_bar2.matrix);
+        flaps.rect(0, vso, 5, vfe - vso).fill({ color: WHITE });
+    }
+
+    /**
+     * Overspeed cue for the airspeed readout: 'warning' at or above Vne, 'caution' when the trend vector reaches
+     * Vne, otherwise null.
+     * @param {number|null} airspeed Indicated airspeed in knots, null when it is not valid
+     */
+    overspeedLevel(airspeed) {
+        if (airspeed === null || airspeed === undefined || !this.limits) return null;
+        if (airspeed >= this.limits.vne) return 'warning';
+        if (airspeed + this.trendKnots >= this.limits.vne) return 'caution';
+        return null;
     }
 
     /**
@@ -79,6 +126,7 @@ export class AirspeedRibbon extends Ribbon {
             // no airspeed, the first frame or a long gap: start again from here
             this.trendSpeed = (airspeed === null || airspeed === undefined) ? null : airspeed;
             this.trendRate = 0;
+            this.trendKnots = 0;
             this.trendGraphic.visible = false;
             return;
         }
@@ -90,9 +138,11 @@ export class AirspeedRibbon extends Ribbon {
 
         const trendKnots = this.trendRate * TREND_SECONDS;
         if (Math.abs(trendKnots) < TREND_MIN_KNOTS) {
+            this.trendKnots = 0;
             this.trendGraphic.visible = false;
             return;
         }
+        this.trendKnots = trendKnots;
         // up the tape is negative y; the line stops at the tape's edge
         const halfHeight = this.ribbonHeight / 2;
         const end = Math.max(-halfHeight, Math.min(halfHeight, -trendKnots * this.ribbon_interval_ratio));

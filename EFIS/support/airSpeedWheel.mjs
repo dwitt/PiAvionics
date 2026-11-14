@@ -1,10 +1,11 @@
 // 1-June-2025 - Updated for PixiJS 8.6.6
 'use strict';
 
-export const VERSION = '1.0.2';
+export const VERSION = '1.0.3';
 
 import { NumericWheelDisplay } from "./numericWheelDisplay.mjs";
 import { Graphics, TextStyle, Text} from './pixi.mjs';
+import { FAILURE_LOOK } from './failureLook.mjs';
 
 /**     
  * Class representing an Airspeed Wheel Display.
@@ -25,7 +26,12 @@ export class AirspeedWheel  {
 
         let airspeedWidth = this.airspeedOnesWheel.digitWidth + this.airspeedTensWheel.digitWidth + this.airspeedHundredsWheel.digitWidth;
 
-        this.airspeedWheelOutline(app, x ,y , airspeedWidth, 15);
+        this.outline = this.airspeedWheelOutline(app, x ,y , airspeedWidth, 15, 0x000000);
+        // the same box filled red, shown at or above Vne (see alert)
+        this.warningOutline = this.airspeedWheelOutline(app, x ,y , airspeedWidth, 15, FAILURE_LOOK.warningColour);
+        this.warningOutline.visible = false;
+        this._alert = null;
+        this._visible = true;
 
         // Add text for kt
         // Create a style to be used for the units characters
@@ -55,7 +61,7 @@ export class AirspeedWheel  {
 
     }
 
-    airspeedWheelOutline(app,x,y,width,height){
+    airspeedWheelOutline(app,x,y,width,height,fillColour){
         let line = new Graphics();
 
         line.strokeStyle = {
@@ -64,7 +70,7 @@ export class AirspeedWheel  {
         };
 
         line.fillStyle = {
-            color: 0x000000,    // black
+            color: fillColour,  // black, or red for the overspeed warning
         };
 
         // strart drawing the point
@@ -84,9 +90,24 @@ export class AirspeedWheel  {
         line.fill();
         line.stroke();
     
-        this.outline = line;        // kept so the whole wheel can be hidden
         app.stage.addChild(line);
-    
+        return line;                // kept so the whole wheel can be hidden
+    }
+
+    /**
+     * Overspeed cue (G5 2.1.1.1): 'warning' (at or above Vne) fills the box red, 'caution' (the trend vector
+     * reaches Vne) turns the digits the amber caution colour, null is normal.
+     * @param {string|null} level
+     */
+    set alert(level) {
+        if (level === this._alert) return;
+        this._alert = level;
+        this.outline.visible = this._visible && level !== 'warning';
+        this.warningOutline.visible = this._visible && level === 'warning';
+        const tint = (level === 'caution') ? FAILURE_LOOK.cautionColour : 0xFFFFFF;
+        this.airspeedOnesWheel.digitContainer.tint = tint;
+        this.airspeedTensWheel.digitContainer.tint = tint;
+        this.airspeedHundredsWheel.digitContainer.tint = tint;
     }
 
     /**
@@ -95,7 +116,9 @@ export class AirspeedWheel  {
      * @param {boolean} isVisible
      */
     set visible(isVisible) {
-        this.outline.visible = isVisible;
+        this._visible = isVisible;
+        this.outline.visible = isVisible && this._alert !== 'warning';
+        this.warningOutline.visible = isVisible && this._alert === 'warning';
         this.IASunits.visible = isVisible;
         this.airspeedOnesWheel.digitContainer.visible = isVisible;
         this.airspeedTensWheel.digitContainer.visible = isVisible;
