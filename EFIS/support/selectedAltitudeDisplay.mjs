@@ -1,6 +1,6 @@
 'use strict';
 
-export const VERSION = '1.0.1';
+export const VERSION = '1.0.2';
 
 import { Graphics } from './pixi.mjs';
 import { DisplayRectangle } from './displayRectangle.mjs';
@@ -116,6 +116,11 @@ export class SelectedAltitudeDisplay extends DisplayRectangle {
         this.target = Math.max(MIN_VALUE, Math.min(MAX_VALUE, Math.round(altitude / 100) * 100));
         this.showTarget();
         return true;
+    }
+
+    /** The text that flashes while a sync is held (userInput). */
+    get syncFlashTarget() {
+        return this.valueText;
     }
 
     callback(selected, changable, value) {

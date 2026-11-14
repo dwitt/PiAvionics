@@ -1,6 +1,6 @@
 'use strict';
 
-export const VERSION = '1.0.9';
+export const VERSION = '1.0.10';
 
 import { Container, Graphics, TextStyle, Text } from './pixi.mjs';
 
@@ -852,6 +852,11 @@ export class HSI {
         const target = (this._bearing !== null && this._bearing !== undefined) ? this._bearing : this._heading;
         this.headingBug = Math.round(target);
         return true;
+    }
+
+    /** The text that flashes while a sync is held (userInput). */
+    get syncFlashTarget() {
+        return this.bugText;
     }
 
     callback(selected, changable, value) {

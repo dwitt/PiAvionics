@@ -1,6 +1,6 @@
 'use strict';
 
-export const VERSION = '1.0.5';
+export const VERSION = '1.0.6';
 import { Container, Graphics, TextStyle, Text, CanvasTextMetrics } from './pixi.mjs';
 
 // The encoder debug numbers (selected item and encoder position, bottom left of the PFD) are always
@@ -8,12 +8,13 @@ import { Container, Graphics, TextStyle, Text, CanvasTextMetrics } from './pixi.
 const DEBUG = false;
 
 // Home position: after HOME_TIMEOUT_MS with no turn or press, the knob goes back to the first item (QNH) in edit
-// mode, as at start-up, so a quick turn always sets baro. Long press: holding the knob LONG_PRESS_MS while
-// editing, and letting go before LONG_HOLD_MS, calls the item's sync() if it has one (altitude bug to current
-// altitude, heading bug to heading, CRS to the bearing to the waypoint, QNH from GPS on the ground, as the G5's
-// push-and-hold); the release after a sync does not leave edit mode. Long hold: holding LONG_HOLD_MS from anywhere
-// calls onLongHold (the page sets full brightness) and edits the item it returns (brightness), so a screen left
-// dark on the bench can be found again; it goes home to QNH HOME_TIMEOUT_MS after the knob is let go.
+// mode, as at start-up, so a quick turn always sets baro. Long press: when the knob has been held LONG_PRESS_MS
+// while editing an item that can sync (canSync(), or a sync() if it has no canSync()), its value flashes: the cue
+// to let go. Let go before LONG_HOLD_MS, the item's sync() runs (altitude bug to current altitude, heading bug to
+// heading, CRS to the bearing to the waypoint, QNH from GPS on the ground, as the G5's push-and-hold) and it stays
+// in edit mode. Long hold: held on to LONG_HOLD_MS, from anywhere, nothing is synced; onLongHold runs (the page
+// sets full brightness) and the item it returns (brightness) is edited, so a screen left dark on the bench can be
+// found again; it goes home to QNH HOME_TIMEOUT_MS after the knob is let go.
 const HOME_TIMEOUT_MS = 10000;
 // A change of more than this many clicks in one update (the page gets about 20 a second) cannot be a hand on the
 // knob: it is a bad encoder read (the server re-baselines after 5 far-off reads). It is taken as a new starting
@@ -21,6 +22,7 @@ const HOME_TIMEOUT_MS = 10000;
 const MAX_CLICKS_PER_UPDATE = 20;
 const LONG_PRESS_MS = 1000;
 const LONG_HOLD_MS = 3000;
+const SYNC_FLASH_PERIOD_MS = 250;   // one on/off cycle of the flash while a long press is held
 
 export class UserInput {
 
@@ -55,8 +57,9 @@ export class UserInput {
 
         this.lastActivity = performance.now();  // time of the last turn or press (home position)
         this.pressStart = 0;                    // when the button went down
-        this.pressChecked = true;               // the long hold has been checked for this press
+        this.holdStage = 2;                     // 0 pressed, 1 past LONG_PRESS_MS, 2 past LONG_HOLD_MS (or done)
         this.ignoreRelease = false;             // this press was a long hold: its release does not change mode
+        this.syncItem = null;                   // the item flashing, to sync when the knob is let go
 
         // storage for call back and virtual encoder
         this.numberOfCallbacksRegistered = 0;
@@ -189,13 +192,16 @@ export class UserInput {
                 if (button) {
                     // pressed: time it for a long press
                     this.pressStart = now;
-                    this.pressChecked = false;
+                    this.holdStage = 0;
                     this.ignoreRelease = false;
                 } else if (this.ignoreRelease) {
                     // released after a long hold: stay on the item it went to, in edit mode
                     this.ignoreRelease = false;
-                } else if (now - this.pressStart >= LONG_PRESS_MS && this.syncItem()) {
-                    // released after a long press that synced the item: stay in edit mode
+                } else if (this.syncItem) {
+                    // released after a long press: sync the item, stay in edit mode
+                    const item = this.syncItem;
+                    this.stopFlash();
+                    item.sync();
                 } else {
                     // The button was just released therefore the item selection
                     // mode just changed.
@@ -252,9 +258,23 @@ export class UserInput {
                 }
             }
 
-            // Long hold: once, when the hold reaches LONG_HOLD_MS, go to the item onLongHold returns, in edit mode
-            if (button && !this.pressChecked && now - this.pressStart >= LONG_HOLD_MS) {
-                this.pressChecked = true;
+            // Long press: once, when the hold reaches LONG_PRESS_MS, flash the item being edited if it can sync
+            if (button && this.holdStage == 0 && now - this.pressStart >= LONG_PRESS_MS) {
+                this.holdStage = 1;
+                const item = this.callbackFunction[this.currentSelection];
+                const canSync = (typeof item.canSync === 'function') ? item.canSync() : (typeof item.sync === 'function');
+                if (!this.itemSelectionMode && canSync) {
+                    this.syncItem = item;
+                }
+            }
+
+            // Long hold: once, when the hold reaches LONG_HOLD_MS, stop the flash (nothing is synced) and go to the
+            // item onLongHold returns, in edit mode
+            if (button && this.holdStage == 1 && now - this.pressStart >= LONG_HOLD_MS) {
+                this.holdStage = 2;
+                if (this.syncItem) {
+                    this.stopFlash();
+                }
                 if (this.onLongHold) {
                     const index = this.callbackFunction.indexOf(this.onLongHold());
                     if (index >= 0) {
@@ -339,6 +359,11 @@ export class UserInput {
                 this.lastActivity = now;
             }
 
+            // The item to sync flashes while the knob is held
+            if (this.syncItem && this.syncItem.syncFlashTarget) {
+                this.syncItem.syncFlashTarget.visible = Math.floor(now / (SYNC_FLASH_PERIOD_MS / 2)) % 2 === 0;
+            }
+
             // Home position: left alone anywhere but QNH editing, go back there
             const atHome = !this.itemSelectionMode && this.currentSelection == 0;
             if (!atHome && !button && now - this.lastActivity >= HOME_TIMEOUT_MS) {
@@ -380,11 +405,14 @@ export class UserInput {
     }
 
     /**
-     * Long press while editing: sync the item being edited, if it has a sync(). Returns true when it synced.
+     * Stop the long press flash (let go, or the long hold).
      */
-    syncItem() {
-        const item = this.callbackFunction[this.currentSelection];
-        return !this.itemSelectionMode && typeof item.sync === 'function' && item.sync();
+    stopFlash() {
+        const item = this.syncItem;
+        this.syncItem = null;
+        if (item.syncFlashTarget) {
+            item.syncFlashTarget.visible = true;
+        }
     }
 
     /**

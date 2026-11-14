@@ -1,6 +1,6 @@
 'use strict';
 
-export const VERSION = '1.0.7';
+export const VERSION = '1.0.8';
 
 import { Container, Graphics, TextStyle, Text, CanvasTextMetrics } from './pixi.mjs';
 
@@ -608,6 +608,11 @@ export class HeadingIndicator {
         this._bugValue = Math.round(this._value) % 360;
         this.showBug();
         return true;
+    }
+
+    /** The text that flashes while a sync is held (userInput). */
+    get syncFlashTarget() {
+        return this.bugText;
     }
 
      callback(selected, changable, value){
