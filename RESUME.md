@@ -2,7 +2,18 @@
 
 Tell Claude: "Read RESUME.md and carry on."
 
-## Update 2026-11-14 (late): wind box and GPS box on the HSI (page 0.8.33, hsi 1.0.17, all on the Pi)
+## Update 2026-11-14 (latest): bearing pointer (page 0.8.34, hsi 1.0.18, server 1.7.8, all on the Pi)
+- **State:** GitHub, the Mac and the Pi match. After a page deploy David presses ctrl-shift-R.
+- **Feature 8, bearing pointer, done:** cyan pointer to the active waypoint in the outer band of the rose (details
+  in G5_REVIEW.md). Open question from David ("why this style?"): the colour and ring follow the Garmin convention,
+  the shortened length is Claude's choice; offered to check the G5 guide figure and match it (full length across
+  the rose). Wait for his view after seeing it on the Pi.
+- **Test feed** (scratchpad `knob/fake_feed_knob.py`) now sends `bearing` (control `bearing=`, default 98).
+- **Next:** the bearing pointer style if David wants changes; then G5_REVIEW.md feature 9 (CDI scale 5.00 / 1.25 /
+  0.25 NM), 10 (track marker on the PFD heading tape), 11 (ALIGNING), 12 (message history). Wind still needs a
+  flight to check.
+
+## Update 2026-11-14 (late): wind box and GPS box on the HSI (page 0.8.33, hsi 1.0.17; since updated, see above)
 - **State:** GitHub, the Mac and the Pi match (server unchanged, 1.7.8). After a page deploy David presses
   ctrl-shift-R.
 - **Feature 7, wind, done** (G5_REVIEW.md has the details): box at the HSI top left. Closed: arrow, direction from
@@ -13,7 +24,7 @@ Tell Claude: "Read RESUME.md and carry on."
 - **GPS box** now lower right above the Route button, fix row at the bottom, grows upward, scalloped to the HSI
   circle with an 8 px gap and rounded corners (David asked for each of these).
 - **Corner standard** (David agreed): 8 px stand-alone boxes, 4 px rows / buttons inside panels.
-- **Next:** G5_REVIEW.md feature 8 (bearing pointer) onward, or flight-test the wind.
+- **Next:** feature 8 (bearing pointer), done since (see above).
 
 ## Update 2026-11-14 (end of day): kt / ft labels, wind research (wind since built, see above) (page 0.8.32, server 1.7.8, all on the Pi)
 - **State:** GitHub, the Mac and the Pi match. No `aircraft_settings.json` on the Pi yet (defaults from the manual

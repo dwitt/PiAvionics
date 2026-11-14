@@ -204,8 +204,14 @@ Of 31 G5 features: PiEFIS has 10, has 10 in part, lacks 8; 3 do not apply. Secti
   it meets the top and the side); labels move in where it cuts.
 - Corners: 8 px for every stand-alone box (readouts, panels, DTK, wind, GPS, the tape's bug edit box); 4 px for
   rows and buttons inside panels; the HSI heading box stays square.
-- Left in this list: deferred 10 (HSI corners; wind top left and GPS bottom right done). Next: feature 8 (bearing
-  pointer) onward.
+- Feature 8 done 2026-11-14 (hsi 1.0.18, page 0.8.34): cyan bearing pointer to the active waypoint from the
+  server's `bearing` (magnetic). Thin 2 px line, open arrowhead, ring on the head's shaft, plain tail. Drawn only in
+  the band between the rose ticks and the course needle's ends (Claude's choice, so it never hides under the course
+  needle); Garmin's run across the whole rose under the CDI. Hidden without a bearing, a trusted GPS position or a
+  heading. Style taken from these notes / the Garmin convention, not yet checked against the G5 guide's figure;
+  David may want it matched (full length) after seeing it on the Pi.
+- Left in this list: deferred 10 (HSI corners; wind top left and GPS bottom right done). Next: feature 9 (CDI
+  scale) onward.
 
 1. **Colour code; red only for warnings.** Red now means selected (box borders, tape line, HSI ring), bugs, and
    failures.
