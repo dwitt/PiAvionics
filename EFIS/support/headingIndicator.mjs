@@ -1,6 +1,6 @@
 'use strict';
 
-export const VERSION = '1.0.8';
+export const VERSION = '1.0.9';
 
 import { Container, Graphics, TextStyle, Text, CanvasTextMetrics } from './pixi.mjs';
 
@@ -580,6 +580,14 @@ export class HeadingIndicator {
         this.bugText.text = (this._bugValue === null)
             ? "---°" : String(this._bugValue).padStart(3, '0') + '°';   // 025°, as the G5's selected heading
         this.positionHeadingBugOnRibbon();
+    }
+
+    /*************************************************************************
+     * The heading bug in degrees, null until it is set. The page gives it to
+     *     the HSI, which draws the same bug (one bug, as the G5).
+     *************************************************************************/
+    get bugValue() {
+        return this._bugValue;
     }
 
     /*************************************************************************

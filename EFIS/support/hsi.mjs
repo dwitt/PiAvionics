@@ -1,6 +1,6 @@
 'use strict';
 
-export const VERSION = '1.0.10';
+export const VERSION = '1.0.11';
 
 import { Container, Graphics, TextStyle, Text } from './pixi.mjs';
 
@@ -17,24 +17,17 @@ export class HSI {
         this.radius = diameter / 2;
         this._heading = 0;
         this._groundTrack = 0;
-        this._bugValue = 0;
+        this._bugValue = null;       // the heading bug, set by the page from the PFD's (one bug, as the G5); null: not set
         this._groundSpeed = 0;
-        this._bugIncrement = 1;
-        this._bugFastIncrement = 5;
-        this._bugFastDeltaThreshold = 3;
-        this._lastEncoderValue = 0;
         this._courseDeviation = 0;   // cross-track error in NM
         this._toFrom = null;         // "TO", "FROM", or null
         this._headingShown = true;   // false when the heading cannot be trusted (see setHeadingDisplay)
         this._gpsValid = true;       // false when the GPS data cannot be trusted (see gpsValid)
         this._trackUsable = true;    // false when the ground track means nothing, for example at low speed (see trackUsable)
         this._cdiFullScaleNM = 2;    // full-scale CDI deflection in NM
-        this._desiredTrack = null;   // DTK from flight plan (overrides CRS knob)
+        this._desiredTrack = null;   // DTK from the flight plan: the course needle and the DTK box show only with one
         this._waypointDistance = null;
         this._waypointId = null;
-        this.changeableFirstPass = false;
-        this.selected = false;
-        this.changable = false;
 
         // --- Root container ---
         this.hsiContainer = new Container();
@@ -62,11 +55,11 @@ export class HSI {
         this._createAircraftSymbol();
         this._createHeadingBox();
         this._createTrackIndicator();
-        this._createBugReadout();
+        this._createDtkReadout();
         this._createGroundSpeedReadout();
         this._createNavReadout();
         this._createGpsStatusBox();
-        this._createSelectionRing();
+        this._applyBugCourseVisibility();
         this.hsiContainer.addChild(this.fixedContainer);
 
         app.stage.addChild(this.hsiContainer);
@@ -433,20 +426,30 @@ export class HSI {
     }
 
     _updateCoursePointerRotation() {
-        let course;
-        if (this._desiredTrack !== null && this._desiredTrack !== undefined) {
-            course = this._desiredTrack;  // flight plan DTK drives pointer
-        } else {
-            course = this._bugValue;      // manual CRS knob drives pointer
+        if (this._desiredTrack === null || this._desiredTrack === undefined) {
+            return;                       // no flight plan: no course needle (hidden)
         }
-        const offset = (course - this._heading) * Math.PI / 180;
+        const offset = (this._desiredTrack - this._heading) * Math.PI / 180;
         this.courseContainer.rotation = offset;
     }
 
+    /**
+     * The heading bug shows only when it is set, and the course needle (with the CDI and TO/FROM) and the DTK box
+     * only with a flight plan (a DTK), as the G5: with no navigation source it has no course. Both also need the
+     * heading (setHeadingDisplay).
+     */
+    _applyBugCourseVisibility() {
+        const haveCourse = this._desiredTrack !== null && this._desiredTrack !== undefined;
+        this.bugContainer.visible = this._headingShown && this._bugValue !== null;
+        this.courseContainer.visible = this._headingShown && haveCourse;
+        this.dtkBox.visible = haveCourse;
+    }
+
     // -----------------------------------------------------------------------
-    // Heading bug readout — fixed cyan box showing bug value
+    // DTK readout — fixed box, upper right, showing the flight plan's desired track in magenta (GPS), as the G5.
+    // Was the CRS box, the HSI's own course and heading bug, set on the knob.
     // -----------------------------------------------------------------------
-    _createBugReadout() {
+    _createDtkReadout() {
         const screenX = this.app.screen.width / 2;
         const screenY = this.app.screen.height / 2;
         const margin = 10;
@@ -454,49 +457,40 @@ export class HSI {
         const boxHeight = 26;
         const pad = 6;
 
-        const bugBox = new Container();
+        this.dtkBox = new Container();
         // Position in upper-right corner of HSI display window
-        bugBox.position.set(screenX - margin - boxWidth / 2, -screenY + margin + boxHeight / 2);
+        this.dtkBox.position.set(screenX - margin - boxWidth / 2, -screenY + margin + boxHeight / 2);
 
-        this.bugBoxWidth = boxWidth;
-        this.bugBoxHeight = boxHeight;
-        this.bugBoxBg = new Graphics();
-        this._drawBugBox(0x666666);
-        bugBox.addChild(this.bugBoxBg);
+        const boxBg = new Graphics();
+        boxBg.fillStyle = { color: 0x000000 };
+        boxBg.strokeStyle = { color: 0x666666, width: 2 };     // grey: it is not set on the knob
+        boxBg.roundRect(-boxWidth / 2, -boxHeight / 2, boxWidth, boxHeight, 4);
+        boxBg.fill();
+        boxBg.stroke();
+        this.dtkBox.addChild(boxBg);
 
+        // light magenta, as the other GPS text on the HSI (the needle stays pure magenta)
         const labelStyle = new TextStyle({
             fontFamily: 'Tahoma',
             fontSize: 16,
-            fill: 0x00ffff,
+            fill: 0xff6aff,
         });
-        const label = new Text({ text: 'CRS', style: labelStyle });
+        const label = new Text({ text: 'DTK', style: labelStyle });
         label.anchor.set(0, 0.5);
         label.position.set(-boxWidth / 2 + pad, 0);
-        bugBox.addChild(label);
+        this.dtkBox.addChild(label);
 
         const valueStyle = new TextStyle({
             fontFamily: 'Tahoma',
             fontSize: 20,
-            fill: 0x00ffff,
+            fill: 0xff6aff,
         });
-        this.bugText = new Text({ text: '000°', style: valueStyle });
-        this.bugText.anchor.set(1, 0.5);
-        this.bugText.position.set(boxWidth / 2 - pad, 0);
-        bugBox.addChild(this.bugText);
+        this.dtkText = new Text({ text: '000°', style: valueStyle });
+        this.dtkText.anchor.set(1, 0.5);
+        this.dtkText.position.set(boxWidth / 2 - pad, 0);
+        this.dtkBox.addChild(this.dtkText);
 
-        this.fixedContainer.addChild(bugBox);
-    }
-
-    _drawBugBox(color, editing = false) {
-        // Editing: 3 px outline instead of 2, black fill, as the PFD boxes (displayRectangle.mjs)
-        const w = this.bugBoxWidth;
-        const h = this.bugBoxHeight;
-        this.bugBoxBg.clear();
-        this.bugBoxBg.fillStyle = { color: 0x000000 };
-        this.bugBoxBg.strokeStyle = { color: color, width: editing ? 3 : 2 };
-        this.bugBoxBg.roundRect(-w / 2, -h / 2, w, h, 4);
-        this.bugBoxBg.fill();
-        this.bugBoxBg.stroke();
+        this.fixedContainer.addChild(this.dtkBox);
     }
 
     // -----------------------------------------------------------------------
@@ -554,8 +548,12 @@ export class HSI {
     // Desired track property — overrides course pointer when flight plan active
     // -----------------------------------------------------------------------
     set desiredTrack(value) {
-        this._desiredTrack = value;
+        this._desiredTrack = (value === undefined) ? null : value;
+        if (this._desiredTrack !== null) {
+            this.dtkText.text = String(Math.round(this._desiredTrack) % 360).padStart(3, '0') + '°';
+        }
         this._updateCoursePointerRotation();
+        this._applyBugCourseVisibility();
     }
 
     get desiredTrack() {
@@ -584,13 +582,21 @@ export class HSI {
     }
 
     // -----------------------------------------------------------------------
-    // Heading bug property — positions the bug triangle
+    // Heading bug property — positions the bug triangle. Set by the page from the PFD's heading bug (one bug, as
+    // the G5); null hides it (not set).
     // -----------------------------------------------------------------------
     set headingBug(value) {
-        value = ((value % 360) + 360) % 360;
+        if (value !== null && value !== undefined) {
+            value = ((value % 360) + 360) % 360;
+        } else {
+            value = null;
+        }
+        if (value === this._bugValue) {
+            return;
+        }
         this._bugValue = value;
-        this.bugText.text = String(Math.round(value)).padStart(3, '0') + '°';
         this._updateBugPosition();
+        this._applyBugCourseVisibility();
     }
 
     get headingBug() {
@@ -598,8 +604,10 @@ export class HSI {
     }
 
     _updateBugPosition() {
-        const offset = (this._bugValue - this._heading) * Math.PI / 180;
-        this.bugContainer.rotation = offset;
+        if (this._bugValue !== null) {
+            const offset = (this._bugValue - this._heading) * Math.PI / 180;
+            this.bugContainer.rotation = offset;
+        }
         this._updateCoursePointerRotation();
     }
 
@@ -815,99 +823,6 @@ export class HSI {
     }
 
     // -----------------------------------------------------------------------
-    // Selection ring — circle around the rose, hidden by default
-    // Cyan: thin when selected, thick when editing
-    // -----------------------------------------------------------------------
-    _createSelectionRing() {
-        const r = this.radius;
-        this.selectionRing = new Graphics();
-        this.selectionRing.visible = false;
-        this.fixedContainer.addChild(this.selectionRing);
-    }
-
-    _drawSelectionRing(color, editing = false) {
-        const r = this.radius - 2;  // match tick mark outer edge
-        this.selectionRing.clear();
-        this.selectionRing.strokeStyle = { color: color, width: editing ? 4 : 2 };   // thick when editing
-        this.selectionRing.circle(0, 0, r);
-        this.selectionRing.stroke();
-        this.selectionRing.visible = true;
-    }
-
-    // -----------------------------------------------------------------------
-    // Encoder callback — matches the pattern used by headingIndicator
-    // -----------------------------------------------------------------------
-    /**
-     * Bearing to the active waypoint (magnetic degrees), or null when there is none. Used by sync().
-     */
-    set bearing(value) {
-        this._bearing = (value === undefined) ? null : value;
-    }
-
-    /**
-     * Long press on the knob while editing (userInput): CRS to the bearing to the waypoint, as the G5;
-     * with no waypoint, to the current heading.
-     */
-    sync() {
-        const target = (this._bearing !== null && this._bearing !== undefined) ? this._bearing : this._heading;
-        this.headingBug = Math.round(target);
-        return true;
-    }
-
-    /** The text that flashes while a sync is held (userInput). */
-    get syncFlashTarget() {
-        return this.bugText;
-    }
-
-    callback(selected, changable, value) {
-        // Handle changeable state transitions
-        if (changable && !this.changable) {
-            this.changable = true;
-            this.changeableFirstPass = true;
-            this.selected = false;
-        }
-
-        if (!changable && this.changable) {
-            this.changable = false;
-        }
-
-        if (!changable && (selected && !this.selected)) {
-            this.selected = true;
-        }
-
-        if (!selected && this.selected) {
-            this.selected = false;
-        }
-
-        // Update selection ring and CRS box border
-        if (changable) {
-            this._drawSelectionRing(0x00ffff, true);    // cyan, thick — editing
-            this._drawBugBox(0x00ffff, true);
-        } else if (selected) {
-            this._drawSelectionRing(0x00ffff);          // cyan, thin — selected (red is kept for warnings and failures)
-            this._drawBugBox(0x00ffff);
-        } else {
-            this.selectionRing.visible = false;
-            this._drawBugBox(0x666666);
-        }
-
-        // Process encoder value
-        if (changable && !this.changeableFirstPass) {
-            let delta = value - this._lastEncoderValue;
-            this._lastEncoderValue = value;
-            let increment = (Math.abs(delta) >= this._bugFastDeltaThreshold)
-                ? this._bugFastIncrement : this._bugIncrement;
-            this._bugValue = this._bugValue + delta * increment;
-            this._bugValue = ((this._bugValue % 360) + 360) % 360;
-            this.bugText.text = String(Math.round(this._bugValue)).padStart(3, '0') + '°';
-            this._updateBugPosition();
-        } else if (this.changeableFirstPass) {
-            this._lastEncoderValue = value;
-            this.changeableFirstPass = false;
-        }
-    }
-
-    // -----------------------------------------------------------------------
     // Course deviation property — positions the CDI bar
     // -----------------------------------------------------------------------
     set courseDeviation(nm) {
@@ -983,6 +898,7 @@ export class HSI {
             container.visible = show;
             container.alpha = alpha;
         }
+        this._applyBugCourseVisibility();      // the bug only when set, the course needle only with a DTK
         this.trackContainer.alpha = alpha;
         this.headingBox.alpha = alpha;
         if (!show) {

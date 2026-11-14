@@ -51,7 +51,7 @@ import { FAILURE_LOOK } from './failureLook.mjs';
 
 // ----------------------------------------------------------------------------
 
-const VERSION = "0.8.19";
+const VERSION = "0.8.20";
 
 // Viewer mode: a page that is not the Pi's own display only watches. It sends
 // nothing to the server, ignores the encoder, and shows the QNH and brightness
@@ -796,7 +796,6 @@ function setup() {
     userInput.registerCallback(headingIndicator);
     userInput.registerCallback(altitudeDisplay);
     userInput.registerCallback(selectedAltitudeDisplay);  // the altitude bug (was the tape and its pop-up box)
-    userInput.registerCallback(hsi);
 
     app.ticker.add(delta => DisplayUpdateLoop(delta));
 }
@@ -859,6 +858,7 @@ function DisplayUpdateLoop(delta) {
         headingIndicator.value = dataObject.yaw;
         hsi.heading = dataObject.yaw;
     }
+    hsi.headingBug = headingIndicator.bugValue;     // one heading bug on both instruments, set on the PFD's box
     // What the HSI shows from the GPS (ground speed and track, cross track, TO/FROM, the waypoint readout)
     // is only shown while the GPS position can be trusted; otherwise it is hidden or shows ---
     hsi.gpsValid = valid.gps;
@@ -892,7 +892,6 @@ function DisplayUpdateLoop(delta) {
         hsi.courseDeviation = dataObject.xtrack;
     }
     hsi.toFrom = (valid.gps && dataObject.to_from !== undefined) ? dataObject.to_from : null;
-    hsi.bearing = dataObject.bearing;       // for the CRS sync (long press on the knob)
     if (dataObject.dtk !== undefined && dataObject.dtk !== null) {
         hsi.desiredTrack = dataObject.dtk;
     } else {
