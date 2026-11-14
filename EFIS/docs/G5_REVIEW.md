@@ -190,7 +190,9 @@ Of 31 G5 features: PiEFIS has 10, has 10 in part, lacks 8; 3 do not apply. Secti
   `aircraft_settings.json` (server sends them; Menu editing page next). Low-speed cue is a thin red line below Vso
   on the white arc's side (David's choice) rather than the G5's band; digits amber (caution colour, not yellow)
   when the trend reaches Vne.
-- Left in this list: deferred 10 (HSI corners). Next: the Menu's Airspeed Limits page, then feature 6 onward.
+- Night 2026-11-14: Menu > Airspeed Limits page (keypad or USB keyboard, knots, ground only, old -> new confirm,
+  saved by the server). Controller only.
+- Left in this list: deferred 10 (HSI corners). Next: feature 6 (V-speed tags) onward.
 
 1. **Colour code; red only for warnings.** Red now means selected (box borders, tape line, HSI ring), bugs, and
    failures.

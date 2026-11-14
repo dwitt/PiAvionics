@@ -2,6 +2,24 @@
 
 Tell Claude: "Read RESUME.md and carry on."
 
+## Update 2026-11-14 (night): Menu > Airspeed Limits page (page 0.8.24, server 1.7.7, all on the Pi)
+- **Done** (tried on the Mac with screenshots, then deployed; the service was restarted):
+  - `support/airspeedLimitsPanel.mjs` (new, 1.0.0), a "Airspeed Limits" row in the Menu (controller only, as
+    Orientation; David chose not to show it on remote displays, even read-only). The five speeds on the left, an
+    on-screen keypad on the right (0-9, Del, Next); a USB keyboard works too (digits, Backspace, Tab / arrows,
+    Enter to the next speed and on Vne to the confirm, Escape). Same checks as the server shown in amber; Save
+    only when valid and changed; confirm lists old -> new; then "saved" or the server's reason.
+  - Ground only: airspeed and GS both 30 kt or less (as the orientation change); in the air the values are greyed
+    and the keypad ignored. The server checks again (`AircraftSettings.change_airspeed`, aircraft_settings.py
+    1.0.2, tested), saves in a thread, logs each change ("vfe 87 -> 85") and answers in `aircraft_save`.
+  - On the Pi there is still no `aircraft_settings.json` (defaults) until the first save from the page. The page
+    needed a ctrl-shift-R after the deploy (could not send it over SSH: no Wayland socket for wtype).
+- **Next:** feature 6, V-speed tags (Vr 52, Vx 70, Vy 74, Vg 61 kt from the manual), kept with the limits and
+  edited on the same page or one beside it. To decide: which tags (also approach / short field?) and an on/off.
+  Then feature 7, wind on the HSI.
+- **Testing on the Mac:** the scratch fake feed now saves `airspeed_limits` through the real `AircraftSettings`
+  (temp file) and has `gs=`; `states.py` has `key:NAME` steps (CDP key events).
+
 ## Update 2026-11-14 (late): feature 5, airspeed limits kept on the Pi (page 0.8.23, server 1.7.6, all on the Pi)
 - **Done** (tried on the Mac with screenshots, then deployed; the service was restarted):
   - Airspeed limits from David's Sonex flight manual (`Documents/_A-Aviation/Sonex/01 Flight Manual & POH/Flight
