@@ -1,7 +1,7 @@
 """ Asynchronous I/O based webserver to handle page and websocket"""
 # pyright: reportMissingImports=false
 
-VERSION = "1.7.3"
+VERSION = "1.7.4"
 
 import asyncio
 import ipaddress
@@ -636,6 +636,13 @@ async def create_servers(websocket_handler):
     # Notes: using web as that is how aiohttp was imported
     # Create an application instance
     server = web.Application()
+
+    # Ask browsers to check every page file with the server before using a cached copy (the ETag
+    # answer is a short 304 when nothing changed). Without it a browser can keep an old module,
+    # e.g. a new efis-display.js running with an old menuOverlay.mjs after a copy to the Pi.
+    async def no_cache(request, response):
+        response.headers['Cache-Control'] = 'no-cache'
+    server.on_response_prepare.append(no_cache)
 
     # --- Add the routes used to respond to various requests
     # --- For the index file at '/' use the get_index response function
