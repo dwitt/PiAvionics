@@ -39,6 +39,7 @@ import { TurnRateIndicator } from './turnRateIndicator.mjs';
 import { SoftButtons } from './softButtons.mjs';
 import { MenuOverlay } from './menuOverlay.mjs';
 import { HSI } from './hsi.mjs';
+import { WindEstimate } from './windEstimate.mjs';
 import { RouteOverlay } from './routeOverlay.mjs';
 import { OrientationPanel } from './orientationPanel.mjs';
 import { AirspeedLimitsPanel, AIRSPEED_LIMITS, V_SPEEDS } from './airspeedLimitsPanel.mjs';
@@ -52,7 +53,7 @@ import { FAILURE_LOOK } from './failureLook.mjs';
 
 // ----------------------------------------------------------------------------
 
-const VERSION = "0.8.32";
+const VERSION = "0.8.33";
 
 // Viewer mode: a page that is not the Pi's own display only watches. It sends
 // nothing to the server, ignores the encoder, and shows the QNH and brightness
@@ -288,6 +289,7 @@ const TRACK_MIN_SPEED_KT = 10;
 let hsiDiameter = Math.min(Math.min(app2.screen.width, app2.screen.height) * 0.75,
                            app2.screen.height - HSI_TEXT_ROOM);
 hsi = new HSI(app2, app2.screen.width / 2, app2.screen.height / 2, hsiDiameter);
+const windEstimate = new WindEstimate();      // the wind for the HSI's wind box (feature 7)
 const hsiFlag = new FailureFlag(app2, app2.screen.width / 2 - hsiDiameter / 2,
                                 app2.screen.height / 2 - hsiDiameter / 2, hsiDiameter, hsiDiameter, 'HDG');
 
@@ -923,6 +925,17 @@ function DisplayUpdateLoop(delta) {
         hsi.groundTrack = dataObject.mag_track;
     }
     hsi.groundSpeed = (valid.gps && dataObject.gps_speed !== undefined) ? dataObject.gps_speed : null;
+    // The wind: ground vector (GS, magnetic track) - air vector (TAS, magnetic heading), averaged; none without a
+    // trusted magnetic heading (not gyro only), TAS and GPS (see windEstimate.mjs)
+    hsi.wind = windEstimate.update({
+        groundSpeed: dataObject.gps_speed,
+        track: dataObject.mag_track,
+        tas: tasDisplay.trueAirSpeedValue,
+        heading: dataObject.yaw,
+        inputsValid: valid.gps && valid.trueAirspeed && valid.heading && !instrumentStatus.heading.flag,
+        turnRate: valid.turnRate ? dataObject.turn_rate : null,
+        dt: delta.deltaMS / 1000.0,
+    });
 
     // The GPS receiver's own status box (fix type, satellites, HDOP, VDOP) follows the module and its NMEA data
     if (valid.gpsStatus && dataObject.gps_fix_quality !== undefined) {

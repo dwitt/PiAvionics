@@ -1,6 +1,6 @@
 'use strict';
 
-export const VERSION = '1.0.12';
+export const VERSION = '1.0.13';
 
 import { Container, Graphics, TextStyle, Text } from './pixi.mjs';
 
@@ -59,6 +59,7 @@ export class HSI {
         this._createGroundSpeedReadout();
         this._createNavReadout();
         this._createGpsStatusBox();
+        this._createWindBox();
         this._applyBugCourseVisibility();
         this.hsiContainer.addChild(this.fixedContainer);
 
@@ -609,6 +610,175 @@ export class HSI {
             this.bugContainer.rotation = offset;
         }
         this._updateCoursePointerRotation();
+    }
+
+    // -----------------------------------------------------------------------
+    // Wind Box — upper-left corner of HSI display, as the G5. It is a touch button like the GPS box:
+    // contracted (the normal state) it shows an arrow the way the wind blows, relative to the aircraft
+    // (heading up, as the rose), and the direction it comes from (magnetic) and its speed;
+    // a touch expands it downward to add the headwind (or tailwind) and crosswind, another contracts it.
+    // Without a wind (see windEstimate.mjs) it shows dashes.
+    // -----------------------------------------------------------------------
+    _createWindBox() {
+        const screenX = this.app.screen.width / 2;
+        const screenY = this.app.screen.height / 2;
+        const margin = 10;
+        const boxWidth = 130;       // as the GPS box
+        const pad = 8;
+
+        this._windBoxWidth = boxWidth;
+        this._windExpanded = false;
+        this._wind = null;
+
+        const windBox = new Container();
+        // the origin is the top left corner so the box grows downward when it expands
+        windBox.position.set(-screenX + margin, -screenY + margin);
+
+        this._windBoxBackground = new Graphics();
+        windBox.addChild(this._windBoxBackground);
+
+        // the arrow, at the left across the first two rows, drawn pointing up and turned with the wind
+        this._windArrow = new Graphics();
+        this._windArrow.moveTo(0, 13);
+        this._windArrow.lineTo(0, -6);
+        this._windArrow.stroke({ color: 0xffffff, width: 3 });
+        this._windArrow.poly([-7, -4, 7, -4, 0, -14]);
+        this._windArrow.fill({ color: 0xffffff });
+        this._windArrow.position.set(pad + 15, (this._gpsRowY(0) + this._gpsRowY(1)) / 2);
+        windBox.addChild(this._windArrow);
+
+        // Row 0: the direction it comes from, Row 1: its speed (right, before the expand arrow)
+        const valueRight = boxWidth - pad - 14;
+        const valueStyle = () => new TextStyle({ fontFamily: 'Tahoma', fontSize: 16, fill: 0xffffff, fontWeight: 'bold' });
+        this._windDirText = new Text({ text: '---°', style: valueStyle() });
+        this._windDirText.anchor.set(1, 0.5);
+        this._windDirText.position.set(valueRight, this._gpsRowY(0));
+        windBox.addChild(this._windDirText);
+        this._windSpeedText = new Text({ text: '-- kt', style: valueStyle() });
+        this._windSpeedText.anchor.set(1, 0.5);
+        this._windSpeedText.position.set(valueRight, this._gpsRowY(1));
+        windBox.addChild(this._windSpeedText);
+
+        this._windExpandArrow = new Graphics();
+        windBox.addChild(this._windExpandArrow);
+
+        // Rows 2 and 3, only while expanded: HEAD (or TAIL) and XWIND, each with a small triangle the way
+        // that part of the wind pushes the aircraft (down: head, up: tail, left or right: across)
+        this._windHeadText = this._createWindRow(windBox, 'HEAD', 2);
+        this._windCrossText = this._createWindRow(windBox, 'XWIND', 3);
+        this._windHeadMark = new Graphics();
+        this._windCrossMark = new Graphics();
+        windBox.addChild(this._windHeadMark, this._windCrossMark);
+        this._windExpandedItems = [this._windHeadText, this._windHeadText.windLabel, this._windHeadMark,
+                                   this._windCrossText, this._windCrossText.windLabel, this._windCrossMark];
+
+        // A touch toggles the box
+        windBox.eventMode = 'static';
+        windBox.cursor = 'pointer';
+        windBox.on('pointerdown', (e) => {
+            e.stopPropagation();
+            this._windExpanded = !this._windExpanded;
+            this._drawWindBox();
+        });
+
+        this._drawWindBox();
+        this._updateWind();
+        this.fixedContainer.addChild(windBox);
+    }
+
+    // A label on the left and a value on the right, rows as the GPS box; returns the value's Text (label: .windLabel)
+    _createWindRow(windBox, label, row) {
+        const labelText = new Text({ text: label, style: new TextStyle({
+            fontFamily: 'Tahoma', fontSize: 13, fill: 0x888888,
+        })});
+        labelText.anchor.set(0, 0.5);
+        labelText.position.set(this._gpsPad, this._gpsRowY(row));
+        windBox.addChild(labelText);
+
+        const valueText = new Text({ text: '-- kt', style: new TextStyle({
+            fontFamily: 'Tahoma', fontSize: 14, fill: 0xffffff,
+        })});
+        valueText.anchor.set(1, 0.5);
+        valueText.position.set(this._windBoxWidth - this._gpsPad, this._gpsRowY(row));
+        windBox.addChild(valueText);
+        valueText.windLabel = labelText;
+        return valueText;
+    }
+
+    // Redraw the box background and expand arrow for the contracted or expanded state
+    _drawWindBox() {
+        const rows = this._windExpanded ? 4 : 2;
+        const height = this._gpsRowY(rows - 1) + 13;
+
+        this._windBoxBackground.clear();
+        this._windBoxBackground.fillStyle = { color: 0x222222, alpha: 0.85 };
+        this._windBoxBackground.strokeStyle = { color: 0x666666, width: 1, alpha: 0.8 };
+        this._windBoxBackground.roundRect(0, 0, this._windBoxWidth, height, 6);
+        this._windBoxBackground.fill();
+        this._windBoxBackground.stroke();
+
+        for (const item of this._windExpandedItems) {
+            item.visible = this._windExpanded;
+        }
+
+        // a small triangle at the right of the first row: down to expand, up to contract (as the GPS box was)
+        const x = this._windBoxWidth - this._gpsPad - 3;
+        const y = this._gpsRowY(0);
+        this._windExpandArrow.clear();
+        if (this._windExpanded) {
+            this._windExpandArrow.poly([x - 4, y + 2, x + 4, y + 2, x, y - 3]);
+        } else {
+            this._windExpandArrow.poly([x - 4, y - 2, x + 4, y - 2, x, y + 3]);
+        }
+        this._windExpandArrow.fill({ color: 0x888888 });
+    }
+
+    /**
+     * The wind from windEstimate.mjs ({from, speed, headwind, crosswind}) or null for none.
+     * Set it after the heading: the arrow is drawn relative to the heading.
+     */
+    set wind(value) {
+        this._wind = value || null;
+        this._updateWind();
+    }
+
+    _updateWind() {
+        const w = this._wind;
+        const speed = w ? Math.round(w.speed) : null;
+        // no arrow or direction for no wind, or a calm one (its direction means nothing)
+        this._windArrow.visible = speed !== null && speed >= 1;
+        if (this._windArrow.visible) {
+            this._windArrow.rotation = (w.from + 180 - this._heading) * Math.PI / 180;
+            let dir = Math.round(w.from) % 360;
+            if (dir === 0) dir = 360;
+            this._windDirText.text = String(dir).padStart(3, '0') + '°';
+        } else {
+            this._windDirText.text = '---°';
+        }
+        this._windSpeedText.text = speed !== null ? speed + ' kt' : '-- kt';
+
+        const head = w ? Math.round(w.headwind) : null;
+        const cross = w ? Math.round(w.crosswind) : null;
+        this._windHeadText.windLabel.text = head !== null && head < 0 ? 'TAIL' : 'HEAD';
+        this._windHeadText.text = head !== null ? Math.abs(head) + ' kt' : '-- kt';
+        this._windCrossText.text = cross !== null ? Math.abs(cross) + ' kt' : '-- kt';
+
+        // the triangles sit after the labels: HEAD down, TAIL up; XWIND from the right points left
+        const markX = this._gpsPad + 58;
+        let y = this._gpsRowY(2);
+        this._windHeadMark.clear();
+        if (head !== null && head !== 0) {
+            if (head > 0) this._windHeadMark.poly([markX - 5, y - 3, markX + 5, y - 3, markX, y + 4]);
+            else this._windHeadMark.poly([markX - 5, y + 3, markX + 5, y + 3, markX, y - 4]);
+            this._windHeadMark.fill({ color: 0xffffff });
+        }
+        y = this._gpsRowY(3);
+        this._windCrossMark.clear();
+        if (cross !== null && cross !== 0) {
+            if (cross > 0) this._windCrossMark.poly([markX + 4, y - 5, markX + 4, y + 5, markX - 3, y]);
+            else this._windCrossMark.poly([markX - 3, y - 5, markX - 3, y + 5, markX + 4, y]);
+            this._windCrossMark.fill({ color: 0xffffff });
+        }
     }
 
     // -----------------------------------------------------------------------
