@@ -51,7 +51,7 @@ import { FAILURE_LOOK } from './failureLook.mjs';
 
 // ----------------------------------------------------------------------------
 
-const VERSION = "0.8.16";
+const VERSION = "0.8.17";
 
 // Viewer mode: a page that is not the Pi's own display only watches. It sends
 // nothing to the server, ignores the encoder, and shows the QNH and brightness
@@ -585,6 +585,11 @@ function setup() {
 
     userInput = new UserInput(app);
     userInput.report = (text) => sendCommand({ log: text });     // knob jumps go to the Pi's log
+    // Knob held 3 s, from anywhere: full brightness, left in edit mode so it can be turned down
+    userInput.onLongHold = () => {
+        brightness.value = 100;
+        return brightness;
+    };
 
     // Frame rate readout, bottom left of the HSI canvas (above the VIEW ONLY tag on a viewer), shown by the
     // Maintenance page "Frame Rate" row (kept in this browser's storage, so it survives a reload). Both canvases are drawn

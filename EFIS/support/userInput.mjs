@@ -1,6 +1,6 @@
 'use strict';
 
-export const VERSION = '1.0.4';
+export const VERSION = '1.0.5';
 import { Container, Graphics, TextStyle, Text, CanvasTextMetrics } from './pixi.mjs';
 
 // The encoder debug numbers (selected item and encoder position, bottom left of the PFD) are always
@@ -9,14 +9,18 @@ const DEBUG = false;
 
 // Home position: after HOME_TIMEOUT_MS with no turn or press, the knob goes back to the first item (QNH) in edit
 // mode, as at start-up, so a quick turn always sets baro. Long press: holding the knob LONG_PRESS_MS while
-// editing calls the item's sync() if it has one (altitude bug to current altitude, heading bug to heading, CRS to
-// the bearing to the waypoint, as the G5's push-and-hold); the release after a sync does not leave edit mode.
+// editing, and letting go before LONG_HOLD_MS, calls the item's sync() if it has one (altitude bug to current
+// altitude, heading bug to heading, CRS to the bearing to the waypoint, QNH from GPS on the ground, as the G5's
+// push-and-hold); the release after a sync does not leave edit mode. Long hold: holding LONG_HOLD_MS from anywhere
+// calls onLongHold (the page sets full brightness) and edits the item it returns (brightness), so a screen left
+// dark on the bench can be found again; it goes home to QNH HOME_TIMEOUT_MS after the knob is let go.
 const HOME_TIMEOUT_MS = 10000;
 // A change of more than this many clicks in one update (the page gets about 20 a second) cannot be a hand on the
 // knob: it is a bad encoder read (the server re-baselines after 5 far-off reads). It is taken as a new starting
 // point, so the item being edited does not jump (a jump once took the QNH to its 28.00 limit, 2026-11-14).
 const MAX_CLICKS_PER_UPDATE = 20;
 const LONG_PRESS_MS = 1000;
+const LONG_HOLD_MS = 3000;
 
 export class UserInput {
 
@@ -47,11 +51,12 @@ export class UserInput {
         this.firstPass = true;
         this.rebaseNext = false;    // see rebaseEncoder()
         this.report = null;         // optional function(text): sends a line to the server's log (set by the page)
+        this.onLongHold = null;     // optional function(): run on a long hold, returns the item to edit (set by the page)
 
         this.lastActivity = performance.now();  // time of the last turn or press (home position)
         this.pressStart = 0;                    // when the button went down
-        this.pressChecked = true;               // the long press has been checked for this press
-        this.ignoreRelease = false;             // this press synced the item: its release does not change mode
+        this.pressChecked = true;               // the long hold has been checked for this press
+        this.ignoreRelease = false;             // this press was a long hold: its release does not change mode
 
         // storage for call back and virtual encoder
         this.numberOfCallbacksRegistered = 0;
@@ -187,8 +192,10 @@ export class UserInput {
                     this.pressChecked = false;
                     this.ignoreRelease = false;
                 } else if (this.ignoreRelease) {
-                    // released after a long press synced the item: stay in edit mode
+                    // released after a long hold: stay on the item it went to, in edit mode
                     this.ignoreRelease = false;
+                } else if (now - this.pressStart >= LONG_PRESS_MS && this.syncItem()) {
+                    // released after a long press that synced the item: stay in edit mode
                 } else {
                     // The button was just released therefore the item selection
                     // mode just changed.
@@ -245,11 +252,14 @@ export class UserInput {
                 }
             }
 
-            // Long press while editing: sync the item once, when the hold reaches LONG_PRESS_MS
-            if (button && !this.pressChecked && now - this.pressStart >= LONG_PRESS_MS) {
+            // Long hold: once, when the hold reaches LONG_HOLD_MS, go to the item onLongHold returns, in edit mode
+            if (button && !this.pressChecked && now - this.pressStart >= LONG_HOLD_MS) {
                 this.pressChecked = true;
-                const item = this.callbackFunction[this.currentSelection];
-                if (!this.itemSelectionMode && typeof item.sync === 'function' && item.sync()) {
+                if (this.onLongHold) {
+                    const index = this.callbackFunction.indexOf(this.onLongHold());
+                    if (index >= 0) {
+                        this.goTo(index, position);
+                    }
                     this.ignoreRelease = true;
                 }
             }
@@ -346,17 +356,35 @@ export class UserInput {
      * @param {number} position The encoders position
      */
     goHome(position) {
+        this.goTo(0, position);
+    }
+
+    /**
+     * Go to an item in edit mode (goHome, and the long hold). An item left while being edited keeps its virtual
+     * encoder value, so it carries on from there when it is edited again.
+     * @param {number} index The item, in the order registered
+     * @param {number} position The encoders position
+     */
+    goTo(index, position) {
         if (!this.itemSelectionMode) {
             this.virtualEncoderValue[this.currentSelection] = (position +
                 this.virtualEncoderValue[this.currentSelection] - this.encoderAdjustment);
         }
         this.callbackFunction[this.currentSelection].callback(false, false, 0);
 
-        this.currentSelection = 0;
+        this.currentSelection = index;
         this.itemSelectionMode = false;
-        this.virtualEncoderForSelection = 0;    // the next press selects QNH, and turning moves on from it
+        this.virtualEncoderForSelection = index;    // the next press selects this item, and turning moves on from it
         this.encoderAdjustment = position;
-        this.callbackFunction[0].callback(true, true, this.virtualEncoderValue[0]);
+        this.callbackFunction[index].callback(true, true, this.virtualEncoderValue[index]);
+    }
+
+    /**
+     * Long press while editing: sync the item being edited, if it has a sync(). Returns true when it synced.
+     */
+    syncItem() {
+        const item = this.callbackFunction[this.currentSelection];
+        return !this.itemSelectionMode && typeof item.sync === 'function' && item.sync();
     }
 
     /**
