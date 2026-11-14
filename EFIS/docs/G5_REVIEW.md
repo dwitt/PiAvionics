@@ -186,7 +186,11 @@ Of 31 G5 features: PiEFIS has 10, has 10 in part, lacks 8; 3 do not apply. Secti
   start-up are now QNH selected, not edited (a stray turn cannot change the QNH). OAT and UTC both shown at the
   foot of the speed tape (UTC only, no local time); OAT/time off the knob: QNH, brightness, heading bug, altitude
   source, selected altitude.
-- Left in this list: deferred 10 (HSI corners). Next: feature 5 (needs the real V-speeds), then 6 onward.
+- Later 2026-11-14: feature 5 done. Limits from the flight manual (Vfe fixed to 87 kt) kept on the Pi in
+  `aircraft_settings.json` (server sends them; Menu editing page next). Low-speed cue is a thin red line below Vso
+  on the white arc's side (David's choice) rather than the G5's band; digits amber (caution colour, not yellow)
+  when the trend reaches Vne.
+- Left in this list: deferred 10 (HSI corners). Next: the Menu's Airspeed Limits page, then feature 6 onward.
 
 1. **Colour code; red only for warnings.** Red now means selected (box borders, tape line, HSI ring), bugs, and
    failures.

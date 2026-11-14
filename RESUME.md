@@ -2,6 +2,29 @@
 
 Tell Claude: "Read RESUME.md and carry on."
 
+## Update 2026-11-14 (late): feature 5, airspeed limits kept on the Pi (page 0.8.23, server 1.7.6, all on the Pi)
+- **Done** (tried on the Mac with screenshots, then deployed; the service was restarted):
+  - Airspeed limits from David's Sonex flight manual (`Documents/_A-Aviation/Sonex/01 Flight Manual & POH/Flight
+    Manual Conversion/Sonex Flight Manual - searchable.pdf`; mph CAS, converted to knots): Vso 35, Vs1 40,
+    **Vfe 87** (was 99), Vno 108, Vne 171; also Va 109, Vy 74, glide 61, rotate 52 kt (for feature 6 tags). The
+    IAS-to-CAS and stall tables on page 32 are blank (to be filled from flight test), so IAS is taken as CAS.
+    David is converting the manual to knots; limits are entered in knots.
+  - `aircraft_settings.py` (new, 1.0.1, tests in `tests/test_aircraft_settings.py`): the limits in
+    `~/EFIS/aircraft_settings.json` on the Pi (not copied by `copytopiefis.sh`; no file yet, so the defaults
+    above are used and the log says so). Checked (numbers, in range, vso <= vs1 < vno < vne, vso < vfe <= vne;
+    a bad file is ignored as a whole), saved atomically with a `.bak`. Server 1.7.6 sends them in every message
+    (`aircraft`) and reloads within 2 s of a change, so for now they are changed over SSH.
+  - Feature 5 (`airspeedRibbon.mjs` 1.0.3, `airSpeedWheel.mjs` 1.0.3): green Vs1-Vno, yellow Vno-Vne, red line at
+    Vne, red/white barber pole above Vne, white arc Vso-Vfe on the right half, and below Vso a thin red line on the
+    same side (David's choice, not the G5's full-width red band). Readout box red at or above Vne; digits amber
+    (caution colour) when the trend vector reaches Vne.
+- **Next:** step 2, Menu > Aircraft > Airspeed Limits: on-screen numeric keypad (first use of the keypad in
+  `EFIS/docs/MENU_SYSTEM_PLAN.md`), a USB keyboard accepted too, knots, editing only on the ground (IAS < 35 kt
+  and GPS GS < about 20 kt; values shown greyed in the air), the same checks, an old -> new confirm, saved by the
+  server. Then features 6 onward (V-speed tags next).
+- **PixiJS v8 gotcha found:** `Graphics.setTransform` is the drawing transform and `clear()` resets it; set it
+  again after a clear (the colour strips draw in knots through it).
+
 ## Update 2026-11-14 (evening): feature 4, knob home, OAT and UTC (EFIS page 0.8.22, all on the Pi)
 - **Done** (tried on the Mac with screenshots, then deployed):
   - Feature 4, airspeed trend vector (`airspeedRibbon.mjs` 1.0.1): light magenta line right of the colour strip
@@ -15,9 +38,7 @@ Tell Claude: "Read RESUME.md and carry on."
     over the bottom of the tape, UTC box (rounded bottom corners) below it. UTC only, no local time and no switch
     (David: ATC uses UTC, local is on his watch). `--:--` until the GPS gives a time. Brightness stays bottom
     left. OAT/time is off the knob: QNH, brightness, heading bug, altitude source, selected altitude.
-- **Next:** feature 5, speed bands and overspeed cues (`EFIS/docs/G5_REVIEW.md`). Needs David's real Sonex
-  V-speeds first (code has Vso 35, Vs1 40, Vfe 99, Vno 108, Vne 171; the review says "fix Vfe (99)"). Then
-  features 6 onward.
+- **Next:** feature 5 (done, see above).
 - **Testing on the Mac:** the scratch fake feed now also has `rate=` (kt/s ramp), `noise=` (kt) and sends GPS UTC;
   still not in `EFIS/tests/fake_feed.py`.
 
