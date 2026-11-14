@@ -1,6 +1,6 @@
 'use strict';
 
-export const VERSION = '1.0.5';
+export const VERSION = '1.0.6';
 
 import { Container, Graphics, Text, TextStyle, Matrix } from './pixi.mjs'
 
@@ -412,6 +412,20 @@ export class Ribbon {
         if (!this.bugGraphic.visible) return;
         this._bugValue = value;
         this.positionBugOnRibbon(this._value);
+    }
+
+    /**
+     * Show or hide the cyan line up the side of the tape, the cue that its bug is the item on the knob
+     * (used by selectedAltitudeDisplay.mjs while its box is selected or being edited).
+     * @param {boolean} shown
+     */
+    showBugSelected(shown) {
+        if (!this.hasBug) return;
+        if (shown && !this.selectedGraphics.parent) {
+            this.ribbon_container.addChild(this.selectedGraphics);
+        } else if (!shown && this.selectedGraphics.parent) {
+            this.ribbon_container.removeChild(this.selectedGraphics);
+        }
     }
 
     /** The value the tape is showing, or null before the first value or while it is undefined. */

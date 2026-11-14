@@ -1,6 +1,6 @@
 'use strict';
 
-export const VERSION = '1.0.0';
+export const VERSION = '1.0.1';
 
 import { Graphics } from './pixi.mjs';
 import { DisplayRectangle } from './displayRectangle.mjs';
@@ -17,6 +17,8 @@ const MAX_VALUE = 12500;
  * the top of the altitude tape, drawn over the top of the tape. A small bug symbol right of "ft" says it is the
  * bug setting (the G5 shows one beside its selected altitude). Shows dashes until a target is set; the first turn
  * starts from the current altitude rounded to 100 ft. It is the knob item for the bug: the tape only draws it.
+ *
+ * While the box is selected or being edited, the tape also shows its cyan line up the side.
  *
  * The box sits 2 px up so its top outline lies on the GPS box's bottom outline (one separator line). The box
  * that is selected or being edited is drawn above the other, so its whole outline shows.
@@ -124,6 +126,8 @@ export class SelectedAltitudeDisplay extends DisplayRectangle {
         } else {
             this.drawBelowBoxAbove();
         }
+        // the cyan line up the side of the tape: a cue to what the knob is adjusting
+        this.ribbon.showBugSelected(selected || changable);
 
         // Turning while editing: the value follows the change in encoder position (as the QNH box)
         if (selected && changable) {
