@@ -195,9 +195,17 @@ Of 31 G5 features: PiEFIS has 10, has 10 in part, lacks 8; 3 do not apply. Secti
 - Late night 2026-11-14: feature 6 done. Cyan R/X/Y/G tags right of the tape, listed at the foot of the tape when
   airspeed fails; V-Speed Tags on/off and a V-Speeds page in the Menu; kept on the Pi with the limits.
   "kt" and "ft" moved to the foot of their tapes (inner side, level, over the tape) so the tags never meet them.
-- Feature 7: wind goes on the HSI only (David). Other units: G5 / G3X upper left of the HSI, G1000 / G500 left of
-  it, GI 275 on the attitude display. Placement on PiEFIS (GPS box is top left) and content still to choose.
-- Left in this list: deferred 10 (HSI corners). Next: feature 7 (wind on the HSI) onward.
+- Feature 7 done 2026-11-14: wind box on the HSI top left (David: HSI only, as the G5 / G3X). Closed: arrow (the
+  way it blows, heading up) with direction (magnetic) and speed; a touch opens HEAD/TAIL and XWIND rows below.
+  `windEstimate.mjs`: GPS ground vector - TAS along the magnetic heading, averaged ~10 s, 5 s warm-up; dashes below
+  30 kt GS/TAS, without GPS/TAS, or with a gyro-only heading; held while turning > 2 deg/s. Not yet flight tested.
+- GPS box moved to the lower right above the Route button: fix at the bottom, VAR above, SAT/HDOP/VDOP above those
+  when opened (it grows upward). The side towards the rose is scalloped to the HSI circle (8 px gap, rounded where
+  it meets the top and the side); labels move in where it cuts.
+- Corners: 8 px for every stand-alone box (readouts, panels, DTK, wind, GPS, the tape's bug edit box); 4 px for
+  rows and buttons inside panels; the HSI heading box stays square.
+- Left in this list: deferred 10 (HSI corners; wind top left and GPS bottom right done). Next: feature 8 (bearing
+  pointer) onward.
 
 1. **Colour code; red only for warnings.** Red now means selected (box borders, tape line, HSI ring), bugs, and
    failures.

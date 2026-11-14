@@ -2,7 +2,20 @@
 
 Tell Claude: "Read RESUME.md and carry on."
 
-## Update 2026-11-14 (end of day): kt / ft labels, wind research (page 0.8.32, server 1.7.8, all on the Pi)
+## Update 2026-11-14 (late): wind box and GPS box on the HSI (page 0.8.33, hsi 1.0.17, all on the Pi)
+- **State:** GitHub, the Mac and the Pi match (server unchanged, 1.7.8). After a page deploy David presses
+  ctrl-shift-R.
+- **Feature 7, wind, done** (G5_REVIEW.md has the details): box at the HSI top left. Closed: arrow, direction from
+  (magnetic), speed; a touch opens HEAD/TAIL and XWIND (David's choice: option 1 opening to both). Worked out on
+  the page in `windEstimate.mjs` 1.0.0 (fed from `efis-display.js`); dashes on the bench (below 30 kt). Checked
+  with the fake feed against a hand calculation (297 deg / 50 kt). Not flight tested: expect error from IAS taken as
+  CAS and heading error.
+- **GPS box** now lower right above the Route button, fix row at the bottom, grows upward, scalloped to the HSI
+  circle with an 8 px gap and rounded corners (David asked for each of these).
+- **Corner standard** (David agreed): 8 px stand-alone boxes, 4 px rows / buttons inside panels.
+- **Next:** G5_REVIEW.md feature 8 (bearing pointer) onward, or flight-test the wind.
+
+## Update 2026-11-14 (end of day): kt / ft labels, wind research (wind since built, see above) (page 0.8.32, server 1.7.8, all on the Pi)
 - **State:** GitHub, the Mac and the Pi match. No `aircraft_settings.json` on the Pi yet (defaults from the manual
   until the first save from Menu > Airspeed Limits or V-Speeds). After a page deploy David presses ctrl-shift-R.
 - **kt / ft labels (settled with David after several tries):** both inside the foot of their tape, on the side
