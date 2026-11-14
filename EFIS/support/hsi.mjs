@@ -1,6 +1,6 @@
 'use strict';
 
-export const VERSION = '1.0.15';
+export const VERSION = '1.0.16';
 
 import { Container, Graphics, TextStyle, Text } from './pixi.mjs';
 
@@ -805,6 +805,7 @@ export class HSI {
         this._gpsBoxWidth = boxWidth;
         this._gpsPad = pad;
         this._gpsLineHeight = 18;
+        this._gpsCornerRadius = 6;
         this._gpsExpanded = false;
         this._gpsFixQuality = null;     // 0 no fix, 1 GPS, 2 differential (WAAS)
         this._gpsFixType = null;        // 1 no fix, 2 2D, 3 3D
@@ -869,19 +870,50 @@ export class HSI {
         return -(this._gpsPad + 5 + row * this._gpsLineHeight);
     }
 
-    // x of the box's left edge at height y: the scallop (the HSI circle) or the straight side, whichever is
-    // further in
-    _gpsEdgeX(y) {
+    // x of the box's left edge at height y, for a box `height` tall: the straight side with rounded corners, or
+    // where the HSI circle cuts in, the scallop with a rounded corner (a fillet of the same radius) where it
+    // meets the top and where it meets the straight side
+    _gpsEdgeX(y, height) {
+        const r = this._gpsCornerRadius;
         const c = this._gpsScallop;
-        const dy = y - c.y;
-        if (Math.abs(dy) >= c.r) return 0;
-        return Math.max(0, c.x + Math.sqrt(c.r * c.r - dy * dy));
+        const scallop = (yy) => {
+            const dy = yy - c.y;
+            return Math.abs(dy) >= c.r ? 0 : Math.max(0, c.x + Math.sqrt(c.r * c.r - dy * dy));
+        };
+        const arc = (dy) => Math.sqrt(Math.max(0, r * r - dy * dy));
+        // the plain rounded corners, top left and bottom left
+        let corner = 0;
+        if (y < -height + r) corner = r - arc(y + height - r);
+        else if (y > -r) corner = r - arc(y + r);
+        if (scallop(-height) <= 0) {
+            return Math.max(corner, scallop(y));    // the circle does not reach the top: no fillets
+        }
+        // a fillet circle touches the scallop when its centre is r + the scallop's radius from the HSI's centre;
+        // the point where they touch is on the line between the two centres
+        const touch = c.r / (c.r + r);
+        // top fillet: centre r below the top edge
+        const y1 = -height + r;
+        const x1 = c.x + Math.sqrt((c.r + r) ** 2 - (y1 - c.y) ** 2);
+        const p1y = c.y + (y1 - c.y) * touch;
+        if (y <= p1y) return x1 - arc(y - y1);
+        // lower fillet: centre r in from the straight side
+        const d = (c.r + r) ** 2 - (r - c.x) ** 2;
+        if (d > 0) {
+            const y2 = c.y + Math.sqrt(d);
+            const p2y = c.y + (y2 - c.y) * touch;
+            if (y2 < -r) {
+                if (y >= p2y && y <= y2) return r - arc(y - y2);
+                if (y > y2) return corner;
+            }
+        }
+        return Math.max(corner, scallop(y));
     }
 
     // x of a row's label: the padding in from the edge, taken over the height of the text
     _gpsLabelX(row) {
         const y = this._gpsRowY(row);
-        return Math.max(this._gpsEdgeX(y - 8), this._gpsEdgeX(y + 8)) + this._gpsPad;
+        const open = 5 * this._gpsLineHeight + 10;      // the labels are placed for the open box
+        return Math.max(this._gpsEdgeX(y - 8, open), this._gpsEdgeX(y + 8, open)) + this._gpsPad;
     }
 
     // A label on the left and a value on the right; returns the value's Text (the label is its .gpsLabel)
@@ -908,7 +940,7 @@ export class HSI {
         const rows = this._gpsExpanded ? 5 : 2;
         const height = rows * this._gpsLineHeight + 10;
         const width = this._gpsBoxWidth;
-        const r = 6;    // corner radius
+        const r = this._gpsCornerRadius;
 
         // the outline: the right side with rounded corners, then up the left side, which follows the larger of
         // a rounded corner and the scallop
@@ -921,11 +953,8 @@ export class HSI {
             const t = a * Math.PI / 8;
             points.push(width - r + r * Math.cos(t), -height + r - r * Math.sin(t));
         }
-        for (let y = -height; y <= 0; y += 2) { // the left side, top to bottom
-            let corner = 0;
-            if (y < -height + r) corner = r - Math.sqrt(r * r - (y + height - r) ** 2);
-            else if (y > -r) corner = r - Math.sqrt(r * r - (y + r) ** 2);
-            points.push(Math.max(corner, this._gpsEdgeX(y)), y);
+        for (let y = -height; y <= 0; y += 0.5) {   // the left side, top to bottom
+            points.push(this._gpsEdgeX(y, height), y);
         }
 
         this._gpsBoxBackground.clear();
