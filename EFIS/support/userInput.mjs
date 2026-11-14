@@ -1,6 +1,6 @@
 'use strict';
 
-export const VERSION = '1.0.6';
+export const VERSION = '1.0.7';
 import { Container, Graphics, TextStyle, Text, CanvasTextMetrics } from './pixi.mjs';
 
 // The encoder debug numbers (selected item and encoder position, bottom left of the PFD) are always
@@ -139,6 +139,12 @@ export class UserInput {
             // TODO: Saving the encoder position does not appear to be working.
             // TODO:     This needs debugging.
             this.encoderAdjustment = position;
+            // This position is the starting point, so it is the last position seen and the rebase asked for on
+            // the first message (rebaseEncoder) is done. Without this the rebase measured from 0 and added the
+            // encoder's count a second time; it came out as a QNH jump on going back to QNH after a reload
+            // (2026-11-14, about 40 clicks).
+            this.lastPosition = position;
+            this.rebaseNext = false;
             if (DEBUG) {
                 //console.log("First Pass processing encoder");
                 //console.log(this.encoderAdjustment);
