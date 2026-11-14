@@ -50,7 +50,7 @@ import { FAILURE_LOOK } from './failureLook.mjs';
 
 // ----------------------------------------------------------------------------
 
-const VERSION = "0.8.13";
+const VERSION = "0.8.14";
 
 // Viewer mode: a page that is not the Pi's own display only watches. It sends
 // nothing to the server, ignores the encoder, and shows the QNH and brightness
@@ -985,6 +985,10 @@ function DisplayUpdateLoop(delta) {
         return;
     }
 
+    // QNH sync (long press on the knob while editing QNH): only on the ground, where GPS altitude stands in for
+    // field elevation; in the air the temperature error makes a GPS-matched setting differ from the area's QNH.
+    qnhDisplay.syncTarget = groundQnhFromGps(valid);
+
     // // Process any change in the user input encoder
     userInput.processState(dataObject.position, dataObject.pressed)
 
@@ -1057,6 +1061,40 @@ function DisplayUpdateLoop(delta) {
             myWebSocket.send("json" + json);}
     }
 
+}
+
+// ----------------------------------------------------------------------------
+// --- QNH from GPS altitude, on the ground only                             ---
+// ----------------------------------------------------------------------------
+
+const QNH_SYNC_MAX_AIRSPEED_KT = 35;    // on the ground: airspeed below this (or, without airspeed, GS below the next)
+const QNH_SYNC_MAX_GS_KT = 30;
+const QNH_SYNC_MAX_VDOP = 2.5;          // GPS vertical quality needed
+const QNH_SYNC_MIN = 2800;              // inHg x 100, the QNH range; a result outside it means bad data
+const QNH_SYNC_MAX = 3100;
+
+/**
+ * The QNH (inHg x 100) that makes the altitude read the GPS altitude, or null when a sync is not allowed: in the
+ * air, without a 3D fix with VDOP up to QNH_SYNC_MAX_VDOP, or without static pressure. Same formula as the AIR
+ * module (AIR_Module.ino): h = 145442.16 * ((QNH / 2992)^0.190263 - (P / 1013.25)^0.190263), solved for QNH.
+ */
+function groundQnhFromGps(valid) {
+    let onGround;
+    if (valid.airspeed && typeof dataObject.airspeed === 'number') {
+        onGround = dataObject.airspeed < QNH_SYNC_MAX_AIRSPEED_KT;
+    } else {
+        onGround = valid.gps && typeof dataObject.gps_speed === 'number' && dataObject.gps_speed < QNH_SYNC_MAX_GS_KT;
+    }
+    if (!onGround) return null;
+    if (!valid.gps || !valid.staticPressure || dataObject.gps_fix_3d !== 3) return null;
+    if (typeof dataObject.gps_vdop !== 'number' || dataObject.gps_vdop > QNH_SYNC_MAX_VDOP) return null;
+    if (typeof dataObject.gps_altitude !== 'number' || typeof dataObject.static_pressure !== 'number') return null;
+
+    const pressureHpa = dataObject.static_pressure / 10;       // sent as hPa x 10
+    const k = 0.190263;
+    const qnh = 2992 * Math.pow(dataObject.gps_altitude / 145442.16 + Math.pow(pressureHpa / 1013.25, k), 1 / k);
+    const rounded = Math.round(qnh);
+    return (rounded >= QNH_SYNC_MIN && rounded <= QNH_SYNC_MAX) ? rounded : null;
 }
 
 // ----------------------------------------------------------------------------
