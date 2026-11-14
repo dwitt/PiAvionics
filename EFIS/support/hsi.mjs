@@ -1,6 +1,6 @@
 'use strict';
 
-export const VERSION = '1.0.14';
+export const VERSION = '1.0.15';
 
 import { Container, Graphics, TextStyle, Text } from './pixi.mjs';
 
@@ -813,9 +813,9 @@ export class HSI {
         const gpsBox = new Container();
         // the origin is the bottom left corner (rows go up from it); the Route button takes the bottom 40 px
         gpsBox.position.set(screenX - margin - boxWidth, screenY - 40 - 6);
-        // the scallop: the HSI circle (its centre is the HSI's, the origin of fixedContainer) plus a small gap,
+        // the scallop: the HSI circle (its centre is the HSI's, the origin of fixedContainer) plus an 8 px gap,
         // in the box's coordinates
-        this._gpsScallop = { x: -gpsBox.x, y: -gpsBox.y, r: this.radius + 4 };
+        this._gpsScallop = { x: -gpsBox.x, y: -gpsBox.y, r: this.radius + 8 };
 
         this._gpsBoxBackground = new Graphics();
         gpsBox.addChild(this._gpsBoxBackground);
