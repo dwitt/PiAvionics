@@ -175,7 +175,9 @@ Of 31 G5 features: PiEFIS has 10, has 10 in part, lacks 8; 3 do not apply. Secti
   the Maintenance page). 5: both cues kept, choice in the Menu's "Slip Cue" row (Both / Ball / Trapezoid, stored
   per browser). 6: "kts" is now "kt"; "NM" kept. 7: units kept as they are (David likes the one- and two-line
   units). Server sends Cache-Control no-cache so a reload picks up every changed file.
-- Left in this list: deferred 8 (B612) and 10 (HSI corners). Next per "Suggested order": feature 1 (knob home
+- 8: B612 and B612 Mono tried in screenshots; staying with Tahoma (David prefers it; B612 Mono overflowed the
+  QNH box and spaced out decimals). Tahoma is loaded by the page from `support/Tahoma*.ttf`.
+- Left in this list: deferred 10 (HSI corners). Next per "Suggested order": feature 1 (knob home
   position and long-press sync).
 
 1. **Colour code; red only for warnings.** Red now means selected (box borders, tape line, HSI ring), bugs, and
