@@ -1,20 +1,20 @@
 'use strict';
 
-export const VERSION = '1.0.2';
+export const VERSION = '1.0.3';
 import { Graphics } from './pixi.mjs';
 import { Ribbon, Colour_Bar } from './ribbon.mjs';
 
 // Airspeed limits in knots until the server sends the ones kept on the Pi (aircraft_settings.py, the same
 // defaults: David's Sonex flight manual, 40 / 46 / 100 / 125 / 197 mph CAS)
 const DEFAULT_LIMITS = {
-    vso: 35,    // Stall speed, landing configuration (bottom of white arc)
-    vs1: 40,    // Stall speed, clean configuration (bottom of green arc, top of the low-speed red band)
+    vso: 35,    // Stall speed, landing configuration (bottom of white arc, top of the low-speed red line)
+    vs1: 40,    // Stall speed, clean configuration (bottom of green arc)
     vfe: 87,    // Maximum flap extended speed (top of white arc); was 99, from 114 mph
     vno: 108,   // Maximum structural cruising speed (green→yellow transition)
     vne: 171,   // Never exceed speed (yellow→red line, barber pole above)
 };
 const STRIP_TOP = 300;              // knots: the colour strips end here
-const LOW_SPEED_COLOUR = 0xff0000;  // red band below Vs1
+const LOW_SPEED_COLOUR = 0xff0000;  // red line below Vso, where the white arc would be (David, 2026-11-14)
 const GREEN = 0x00ff00;
 const YELLOW = 0xffff00;
 const RED = 0xff0000;
@@ -38,7 +38,8 @@ export class AirspeedRibbon extends Ribbon {
         let scale = (height / majorIntervals) / majorIntervalSize;
 
         // The colour strips are drawn by setLimits (they change with the settings): the speeds strip (left
-        // edge, 10 px: low-speed red, green, yellow, barber pole) and the white flap arc over its right half.
+        // edge, 10 px: green, yellow, barber pole) and over its right half the white flap arc with the low-speed
+        // red line below it.
         // Their graphics are in knots up the tape (the Colour_Bar transform flips and scales y).
         let speeds_bar = new Colour_Bar([], 0, 10, STRIP_TOP, scale, false);
         let flaps_bar = new Colour_Bar([], 5, 5, STRIP_TOP, scale, false);
@@ -88,7 +89,6 @@ export class AirspeedRibbon extends Ribbon {
             speeds.poly([0, y, 10, y + slant, 10, y + slant + BARBER_STRIPE * k, 0, y + BARBER_STRIPE * k])
                   .fill({ color: RED });
         }
-        speeds.rect(0, 0, 10, vs1).fill({ color: LOW_SPEED_COLOUR });
         speeds.rect(0, vs1, 10, vno - vs1).fill({ color: GREEN });
         speeds.rect(0, vno, 10, vne - vno).fill({ color: YELLOW });
         // red line at Vne, 2 px, across the strip and the tick marks
@@ -97,6 +97,7 @@ export class AirspeedRibbon extends Ribbon {
         const flaps = this.colour_bar2.graphics;
         flaps.clear();
         flaps.setTransform(this.colour_bar2.matrix);
+        flaps.rect(0, 0, 5, vso).fill({ color: LOW_SPEED_COLOUR });
         flaps.rect(0, vso, 5, vfe - vso).fill({ color: WHITE });
     }
 

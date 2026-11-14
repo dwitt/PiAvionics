@@ -12,13 +12,13 @@ why) and the defaults are used, so the tape is never drawn from half a set of sp
 import json
 import os
 
-VERSION = "1.0.0"
+VERSION = "1.0.1"
 
 SAVE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "aircraft_settings.json")
 
 DEFAULT_AIRSPEED = {
-    "vso": 35,      # stall, landing configuration: bottom of the white arc (40 mph)
-    "vs1": 40,      # stall, clean: bottom of the green arc, top of the low-speed red band (46 mph)
+    "vso": 35,      # stall, landing configuration: bottom of the white arc, top of the low-speed red line (40 mph)
+    "vs1": 40,      # stall, clean: bottom of the green arc (46 mph)
     "vfe": 87,      # maximum flap extended: top of the white arc (100 mph)
     "vno": 108,     # maximum structural cruising: green to yellow (125 mph)
     "vne": 171,     # never exceed: red line and the barber pole above it (197 mph)
