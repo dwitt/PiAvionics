@@ -1,6 +1,6 @@
 'use strict';
 
-export const VERSION = '1.0.6';
+export const VERSION = '1.0.7';
 
 import { Container, Graphics, Text, TextStyle, Matrix } from './pixi.mjs'
 
@@ -504,7 +504,7 @@ export class Ribbon {
         var boxHorizontalOffset = 10;
         var boxHeight = 25;
         var boxVerticalOffset = 5;
-        var boxCornerRadius = 7;
+        var boxCornerRadius = 8;         // 8 px for stand-alone boxes, as the PFD readouts and the panels
 
         var alignment;
 

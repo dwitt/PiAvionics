@@ -1,6 +1,6 @@
 'use strict';
 
-export const VERSION = '1.0.16';
+export const VERSION = '1.0.17';
 
 import { Container, Graphics, TextStyle, Text } from './pixi.mjs';
 
@@ -465,7 +465,7 @@ export class HSI {
         const boxBg = new Graphics();
         boxBg.fillStyle = { color: 0x000000 };
         boxBg.strokeStyle = { color: 0x666666, width: 2 };     // grey: it is not set on the knob
-        boxBg.roundRect(-boxWidth / 2, -boxHeight / 2, boxWidth, boxHeight, 4);
+        boxBg.roundRect(-boxWidth / 2, -boxHeight / 2, boxWidth, boxHeight, 8);   // 8 px, the stand-alone box standard
         boxBg.fill();
         boxBg.stroke();
         this.dtkBox.addChild(boxBg);
@@ -719,7 +719,7 @@ export class HSI {
         this._windBoxBackground.clear();
         this._windBoxBackground.fillStyle = { color: 0x222222, alpha: 0.85 };
         this._windBoxBackground.strokeStyle = { color: 0x666666, width: 1, alpha: 0.8 };
-        this._windBoxBackground.roundRect(0, 0, this._windBoxWidth, height, 6);
+        this._windBoxBackground.roundRect(0, 0, this._windBoxWidth, height, 8);
         this._windBoxBackground.fill();
         this._windBoxBackground.stroke();
 
@@ -805,7 +805,7 @@ export class HSI {
         this._gpsBoxWidth = boxWidth;
         this._gpsPad = pad;
         this._gpsLineHeight = 18;
-        this._gpsCornerRadius = 6;
+        this._gpsCornerRadius = 8;      // the stand-alone box standard (rows and buttons inside panels: 4)
         this._gpsExpanded = false;
         this._gpsFixQuality = null;     // 0 no fix, 1 GPS, 2 differential (WAAS)
         this._gpsFixType = null;        // 1 no fix, 2 2D, 3 3D
