@@ -1,26 +1,11 @@
 // 1-June-2025 - Updated for PixiJS 8.6.6
 'use strict';
 
-export const VERSION = '1.0.9';
+export const VERSION = '1.0.10';
 
 import { NumericWheelDisplay } from "./numericWheelDisplay.mjs";
 import { Graphics, TextStyle, Text} from './pixi.mjs';
 import { FAILURE_LOOK } from './failureLook.mjs';
-
-/**
- * A black patch just behind a units label (on the stage under it), so the tape under the label does not show
- * through. Also used for "ft" (altitudeWheel.mjs).
- * @param {Text} label The label, already placed on the stage
- * @returns {Graphics}
- */
-export function unitsBackground(label) {
-    const b = label.getBounds();
-    const patch = new Graphics();
-    patch.rect(b.x - 1, b.y + 2, b.width + 2, b.height - 3);
-    patch.fill({ color: 0x000000 });
-    label.parent.addChildAt(patch, label.parent.getChildIndex(label));
-    return patch;
-}
 
 /**     
  * Class representing an Airspeed Wheel Display.
@@ -135,7 +120,6 @@ export class AirspeedWheel  {
         this.outline.visible = isVisible && this._alert !== 'warning';
         this.warningOutline.visible = isVisible && this._alert === 'warning';
         this.IASunits.visible = isVisible;
-        if (this.IASunitsBackground) this.IASunitsBackground.visible = isVisible;
         this.airspeedOnesWheel.digitContainer.visible = isVisible;
         this.airspeedTensWheel.digitContainer.visible = isVisible;
         this.airspeedHundredsWheel.digitContainer.visible = isVisible;
@@ -149,8 +133,6 @@ export class AirspeedWheel  {
     placeUnits(right, bottom) {
         this.IASunits.anchor.set(1, 1);
         this.IASunits.position.set(right, bottom);
-        // a black patch behind it, over the tape: a tape number passing goes under the label
-        this.IASunitsBackground = unitsBackground(this.IASunits);
     }
 
     set value(newValue){
