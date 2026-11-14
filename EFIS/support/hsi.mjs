@@ -1,6 +1,6 @@
 'use strict';
 
-export const VERSION = '1.0.7';
+export const VERSION = '1.0.8';
 
 import { Container, Graphics, TextStyle, Text } from './pixi.mjs';
 
@@ -510,7 +510,7 @@ export class HSI {
             fontSize: 20,
             fill: 0xff6aff,    // light magenta, GPS data (as the waypoint text and the PFD's GS box); was grey 0xbbbbbb
         });
-        this.gsText = new Text({ text: 'GS: --- kts', style: gsStyle });
+        this.gsText = new Text({ text: 'GS: --- kt', style: gsStyle });
         this.gsText.anchor.set(0.5, 0);
         this.gsText.position.set(0, r + 12);
 
@@ -523,9 +523,9 @@ export class HSI {
     set groundSpeed(value) {
         this._groundSpeed = value;
         if (value === null || value === undefined) {
-            this.gsText.text = 'GS: --- kts';
+            this.gsText.text = 'GS: --- kt';
         } else {
-            this.gsText.text = `GS: ${Math.round(value)} kts`;
+            this.gsText.text = `GS: ${Math.round(value)} kt`;
         }
     }
 

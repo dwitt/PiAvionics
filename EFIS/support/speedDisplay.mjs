@@ -1,6 +1,6 @@
 'use strict';
 
-export const VERSION = '1.0.2';
+export const VERSION = '1.0.3';
 
 // GPS readouts: magenta lightened so the small digits are easy to read (pure magenta 0xFF00FF was too dark;
 // the HSI waypoint text uses the same shade)
@@ -55,7 +55,7 @@ export class SpeedDisplay extends DisplayRectangle {
 
         // Set initial text values
         this.valueText.text = "0";
-        this.unitText.text = "kts";
+        this.unitText.text = "kt";
         this.legendText.text = "GS";
 
         this.applySourceColour();

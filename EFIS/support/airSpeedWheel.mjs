@@ -1,7 +1,7 @@
 // 1-June-2025 - Updated for PixiJS 8.6.6
 'use strict';
 
-export const VERSION = '1.0.1';
+export const VERSION = '1.0.2';
 
 import { NumericWheelDisplay } from "./numericWheelDisplay.mjs";
 import { Graphics, TextStyle, Text} from './pixi.mjs';
@@ -27,7 +27,7 @@ export class AirspeedWheel  {
 
         this.airspeedWheelOutline(app, x ,y , airspeedWidth, 15);
 
-        // Add text for kts
+        // Add text for kt
         // Create a style to be used for the units characters
         this.style = new TextStyle({
             fontFamily: 'Tahoma',
@@ -42,7 +42,7 @@ export class AirspeedWheel  {
         );
 
         this.IASunits = new Text({
-            text: "kts",
+            text: "kt",
             style: this.style
             });
         this.IASunits.anchor.set(0,.2);
