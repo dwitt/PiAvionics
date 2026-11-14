@@ -1,14 +1,15 @@
 'use strict';
 
-export const VERSION = '1.0.7';
+export const VERSION = '1.0.8';
 import { Container, Graphics, TextStyle, Text, CanvasTextMetrics } from './pixi.mjs';
 
 // The encoder debug numbers (selected item and encoder position, bottom left of the PFD) are always
 // created; DEBUG only says whether they show at start. The Menu's "Encoder Debug" row shows and hides them.
 const DEBUG = false;
 
-// Home position: after HOME_TIMEOUT_MS with no turn or press, the knob goes back to the first item (QNH) in edit
-// mode, as at start-up, so a quick turn always sets baro. Long press: when the knob has been held LONG_PRESS_MS
+// Home position: after HOME_TIMEOUT_MS with no turn or press, the knob goes back to the first item (QNH) selected,
+// not being edited: a push and a turn sets baro, and a turn by mistake only moves the selection, so the QNH cannot
+// be changed by someone who forgot it was being edited (David, 2026-11-14; it was edit mode before). Long press: when the knob has been held LONG_PRESS_MS
 // while editing an item that can sync (canSync(), or a sync() if it has no canSync()), its value flashes: the cue
 // to let go. Let go before LONG_HOLD_MS, the item's sync() runs (altitude bug to current altitude, heading bug to
 // heading, CRS to the bearing to the waypoint, QNH from GPS on the ground, as the G5's push-and-hold) and it stays
@@ -370,8 +371,8 @@ export class UserInput {
                 this.syncItem.syncFlashTarget.visible = Math.floor(now / (SYNC_FLASH_PERIOD_MS / 2)) % 2 === 0;
             }
 
-            // Home position: left alone anywhere but QNH editing, go back there
-            const atHome = !this.itemSelectionMode && this.currentSelection == 0;
+            // Home position: left alone anywhere but QNH selected, go back there
+            const atHome = this.itemSelectionMode && this.currentSelection == 0;
             if (!atHome && !button && now - this.lastActivity >= HOME_TIMEOUT_MS) {
                 this.goHome(position);
             }
@@ -382,21 +383,22 @@ export class UserInput {
     }
 
     /**
-     * Go back to the first item (QNH) in edit mode, as at start-up. An item left while being edited keeps its
-     * virtual encoder value, so it carries on from there when it is edited again.
+     * Go back to the first item (QNH) selected, not being edited, so a turn by mistake cannot change it. An item
+     * left while being edited keeps its virtual encoder value, so it carries on from there when it is edited again.
      * @param {number} position The encoders position
      */
     goHome(position) {
-        this.goTo(0, position);
+        this.goTo(0, position, false);
     }
 
     /**
-     * Go to an item in edit mode (goHome, and the long hold). An item left while being edited keeps its virtual
-     * encoder value, so it carries on from there when it is edited again.
+     * Go to an item, in edit mode (the long hold) or only selected (goHome). An item left while being edited keeps
+     * its virtual encoder value, so it carries on from there when it is edited again.
      * @param {number} index The item, in the order registered
      * @param {number} position The encoders position
+     * @param {boolean} edit True to edit the item, false to leave it selected
      */
-    goTo(index, position) {
+    goTo(index, position, edit = true) {
         if (!this.itemSelectionMode) {
             this.virtualEncoderValue[this.currentSelection] = (position +
                 this.virtualEncoderValue[this.currentSelection] - this.encoderAdjustment);
@@ -404,10 +406,10 @@ export class UserInput {
         this.callbackFunction[this.currentSelection].callback(false, false, 0);
 
         this.currentSelection = index;
-        this.itemSelectionMode = false;
+        this.itemSelectionMode = !edit;
         this.virtualEncoderForSelection = index;    // the next press selects this item, and turning moves on from it
         this.encoderAdjustment = position;
-        this.callbackFunction[index].callback(true, true, this.virtualEncoderValue[index]);
+        this.callbackFunction[index].callback(true, edit, edit ? this.virtualEncoderValue[index] : 0);
     }
 
     /**
