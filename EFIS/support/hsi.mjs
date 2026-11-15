@@ -1,6 +1,6 @@
 'use strict';
 
-export const VERSION = '1.0.18';
+export const VERSION = '1.0.19';
 
 import { Container, Graphics, TextStyle, Text } from './pixi.mjs';
 
@@ -50,6 +50,7 @@ export class HSI {
 
         // --- Fixed elements (don't rotate) ---
         this.fixedContainer = new Container();
+        this._needle = this._needleGeometry();  // shared by the course needle and the bearing pointer
         this._createHeadingBug();    // behind lubber line
         this._createBearingPointer(); // under the course needle
         this._createCoursePointer(); // Phase 2: needle, CDI, TO/FROM
@@ -325,102 +326,94 @@ export class HSI {
     }
 
     // -----------------------------------------------------------------------
-    // Course pointer — magenta needle through centre with CDI and TO/FROM
-    // The entire assembly rotates with (CRS - heading)
+    // Course pointer — magenta needle with the CDI and TO/FROM, laid out as the G5's: the head and the tail lie
+    // outside a ring around the CDI (drawn with the bearing pointer), the needle's middle inside it is the
+    // deviation bar. The entire assembly rotates with (CRS - heading)
     // -----------------------------------------------------------------------
     _createCoursePointer() {
-        const r = this.radius;
-        const innerLimit = 40;   // gap around centre for aircraft symbol / CDI
-        const outerLimit = r - 52; // stop before compass labels
-        const needleWidth = 3;
-        const arrowHalfWidth = 10;
-        const arrowHeight = 14;
-        const tailBarHalfWidth = 8;
-        const tailBarHeight = 4;
+        const g = this._needle;
+        const magenta = 0xff00ff;
 
         // Container rotates with CRS relative to heading
         this.courseContainer = new Container();
 
-        // --- Needle: top half (arrow with shaft) ---
-        const topNeedle = new Graphics();
-        topNeedle.fillStyle = { color: 0xff00ff };  // magenta
+        // --- Needle head: outside the ring, from the ring out to the tip ---
+        const head = new Graphics();
+        head.moveTo(0, -g.tip);
+        head.lineTo(-g.headHalf, -g.tip + g.headLen);
+        head.lineTo(-g.shaftHalf, -g.tip + g.headLen);
+        head.lineTo(-g.shaftHalf, -g.start);
+        head.lineTo(g.shaftHalf, -g.start);
+        head.lineTo(g.shaftHalf, -g.tip + g.headLen);
+        head.lineTo(g.headHalf, -g.tip + g.headLen);
+        head.closePath();
+        head.fill({ color: magenta });
+        this.courseContainer.addChild(head);
 
-        // Arrow head
-        topNeedle.moveTo(0, -outerLimit);                              // tip
-        topNeedle.lineTo(-arrowHalfWidth, -outerLimit + arrowHeight);  // left wing
-        topNeedle.lineTo(-needleWidth / 2, -outerLimit + arrowHeight); // left shaft
-        topNeedle.lineTo(-needleWidth / 2, -innerLimit);               // shaft bottom-left
-        topNeedle.lineTo(needleWidth / 2, -innerLimit);                // shaft bottom-right
-        topNeedle.lineTo(needleWidth / 2, -outerLimit + arrowHeight);  // right shaft
-        topNeedle.lineTo(arrowHalfWidth, -outerLimit + arrowHeight);   // right wing
-        topNeedle.closePath();
-        topNeedle.fill();
-        this.courseContainer.addChild(topNeedle);
+        // --- Needle tail: a plain bar outside the ring ---
+        const tail = new Graphics();
+        tail.rect(-g.shaftHalf, g.start, 2 * g.shaftHalf, g.tip - g.start);
+        tail.fill({ color: magenta });
+        this.courseContainer.addChild(tail);
 
-        // --- Needle: bottom half (shaft with tail bar) ---
-        const bottomNeedle = new Graphics();
-        bottomNeedle.fillStyle = { color: 0xff00ff };
-
-        // Shaft
-        bottomNeedle.moveTo(-needleWidth / 2, innerLimit);
-        bottomNeedle.lineTo(-needleWidth / 2, outerLimit - tailBarHeight);
-        // Tail bar (T-shape)
-        bottomNeedle.lineTo(-tailBarHalfWidth, outerLimit - tailBarHeight);
-        bottomNeedle.lineTo(-tailBarHalfWidth, outerLimit);
-        bottomNeedle.lineTo(tailBarHalfWidth, outerLimit);
-        bottomNeedle.lineTo(tailBarHalfWidth, outerLimit - tailBarHeight);
-        bottomNeedle.lineTo(needleWidth / 2, outerLimit - tailBarHeight);
-        bottomNeedle.lineTo(needleWidth / 2, innerLimit);
-        bottomNeedle.closePath();
-        bottomNeedle.fill();
-        this.courseContainer.addChild(bottomNeedle);
-
-        // --- CDI dots (5 dots: centre + 2 each side) ---
-        const dotRadius = 3;
-        const dotSpacing = 20;  // pixels between dot centres
+        // --- CDI dots (2 each side; the centre is the aircraft), inside the ring ---
+        const dotRadius = 4;
         const cdiDots = new Graphics();
-        cdiDots.fillStyle = { color: 0x666666 };
-        for (let i = -2; i <= 2; i++) {
-            cdiDots.circle(i * dotSpacing, 0, dotRadius);
-            cdiDots.fill();
+        for (const i of [-2, -1, 1, 2]) {
+            cdiDots.circle(i * g.dotSpacing, 0, dotRadius);
+            cdiDots.stroke({ color: 0xbbbbbb, width: 2 });
         }
         this.courseContainer.addChild(cdiDots);
 
-        // --- CDI bar (slides left/right across dots) ---
+        // --- CDI bar: the needle's middle, inside the ring, slides across the dots ---
         this.cdiBar = new Graphics();
         this._drawCdiBar(0);
         this.courseContainer.addChild(this.cdiBar);
 
-        // --- TO/FROM triangles ---
+        // --- TO/FROM triangles, on the needle's axis just ahead of / behind the aircraft ---
         const toFromSize = 8;
-        const toFromOffset = 26;  // distance from centre along needle axis
+        const toFromOffset = 44;  // distance from centre along the needle axis
 
         this.toIndicator = new Graphics();
-        this.toIndicator.fillStyle = { color: 0xff00ff };
-        this.toIndicator.moveTo(0, -toFromOffset);                         // top point
-        this.toIndicator.lineTo(-toFromSize, -toFromOffset + toFromSize);   // bottom-left
-        this.toIndicator.lineTo(toFromSize, -toFromOffset + toFromSize);    // bottom-right
+        this.toIndicator.moveTo(0, -toFromOffset - toFromSize);
+        this.toIndicator.lineTo(-toFromSize, -toFromOffset + toFromSize);
+        this.toIndicator.lineTo(toFromSize, -toFromOffset + toFromSize);
         this.toIndicator.closePath();
-        this.toIndicator.fill();
+        this.toIndicator.fill({ color: magenta });
         this.toIndicator.visible = false;
         this.courseContainer.addChild(this.toIndicator);
 
         this.fromIndicator = new Graphics();
-        this.fromIndicator.fillStyle = { color: 0xff00ff };
-        this.fromIndicator.moveTo(0, toFromOffset);                         // bottom point
-        this.fromIndicator.lineTo(-toFromSize, toFromOffset - toFromSize);  // top-left
-        this.fromIndicator.lineTo(toFromSize, toFromOffset - toFromSize);   // top-right
+        this.fromIndicator.moveTo(0, toFromOffset + toFromSize);
+        this.fromIndicator.lineTo(-toFromSize, toFromOffset - toFromSize);
+        this.fromIndicator.lineTo(toFromSize, toFromOffset - toFromSize);
         this.fromIndicator.closePath();
-        this.fromIndicator.fill();
+        this.fromIndicator.fill({ color: magenta });
         this.fromIndicator.visible = false;
         this.courseContainer.addChild(this.fromIndicator);
 
         this.fixedContainer.addChild(this.courseContainer);
     }
 
+    /** The course needle's layout and shape; the bearing pointer is drawn from the same numbers so it fits it. */
+    _needleGeometry() {
+        const r = this.radius;
+        const ring = Math.round(r * 0.45);
+        return {
+            ring: ring,               // the ring's radius (around the CDI)
+            start: ring + 6,          // where the heads and tails start, just outside the ring
+            tip: r - 50,              // the course needle's tip and tail end (inside the heading numbers)
+            barHalf: ring - 10,       // the deviation bar's half length
+            dotSpacing: Math.round(ring * 0.4),  // CDI dots: two dots = full scale
+            shaftHalf: 2,             // the needle (and deviation bar) is 4 px wide
+            headHalf: 10,             // the arrowhead: 20 px wide, 14 px long
+            headLen: 14,
+        };
+    }
+
     _drawCdiBar(offsetPx) {
-        const barHalfHeight = 34;  // vertical bar spans most of the centre gap
-        const barThickness = 4;
+        const barHalfHeight = this._needle.barHalf;
+        const barThickness = 2 * this._needle.shaftHalf;
         this.cdiBar.clear();
         this.cdiBar.fillStyle = { color: 0xff00ff };
         this.cdiBar.rect(offsetPx - barThickness / 2, -barHalfHeight,
@@ -449,34 +442,53 @@ export class HSI {
     }
 
     // -----------------------------------------------------------------------
-    // Bearing pointer — a thin cyan needle that points straight at the active waypoint (G5 2.2.1.1); the course
-    // needle shows the planned track, this where the waypoint is from here. It lies in the band between the rose
-    // ticks and the course needle's ends, so the two never hide each other: the head (arrow and a ring on its
-    // shaft) towards the waypoint, a plain tail opposite. Hidden without a bearing (no flight plan), without a
-    // trusted GPS position, or without the heading.
+    // Bearing pointer — a cyan pointer straight at the active waypoint (G5 2.2.1.1); the course needle shows the
+    // planned track, this where the waypoint is from here. As the G5's, it lies outside a ring around the CDI, so it
+    // never covers the deviation bar: two thin lines into an open arrowhead, and two lines closed at the tail. It is
+    // drawn just outside the course needle's edges, under it, so when the two line up (on course) it reads as the
+    // magenta needle outlined in cyan; apart, as a G5-style double-line pointer. Hidden, with the ring, without a
+    // bearing (no flight plan), without a trusted GPS position, or without the heading.
     // -----------------------------------------------------------------------
     _createBearingPointer() {
-        const r = this.radius;
-        const tip = r - 8;          // just inside the rose's ticks
-        const inner = r - 58;       // a little inside the course needle's ends (r - 52)
-        const colour = 0x00ffff;    // cyan
+        const g = this._needle;
+        const { shaftHalf, headHalf, headLen } = g;
+        const cyan = 0x00ffff;
         const width = 2;
+        const o = width / 2;         // the cyan centre line runs this far outside the magenta edge, so the two touch
 
         this.bearingContainer = new Container();
+
+        // the ring around the CDI, shown with the bearing pointer (G5 2.2.1.1)
+        const ring = new Graphics();
+        ring.circle(0, 0, g.ring);
+        ring.stroke({ color: 0xbbbbbb, width: 2 });
+        this.bearingContainer.addChild(ring);
+
+        // the magenta head's sides and back, moved out by o
+        const side = Math.hypot(headHalf, headLen);
+        const nx = headLen / side, ny = headHalf / side;     // outward normal of the head's right side (x, -y)
+        const tipY = -g.tip - o * ny - o * nx * headLen / headHalf;  // where the two moved sides meet on the axis
+        const backY = -g.tip + headLen + o;                  // the back of the wings, moved back by o
+        const wingX = (backY - tipY) * headHalf / headLen;   // the moved side at the moved back
+        const shaftX = shaftHalf + o;
+
         const pointer = new Graphics();
-        // head: the shaft, an open arrowhead and a ring on the shaft
-        pointer.moveTo(0, -inner);
-        pointer.lineTo(0, -tip);
-        pointer.moveTo(-8, -tip + 12);
-        pointer.lineTo(0, -tip);
-        pointer.lineTo(8, -tip + 12);
-        pointer.stroke({ color: colour, width: width, cap: 'round', join: 'round' });
-        pointer.circle(0, -inner - 9, 5);
-        pointer.stroke({ color: colour, width: width });
-        // tail
-        pointer.moveTo(0, inner);
-        pointer.lineTo(0, tip);
-        pointer.stroke({ color: colour, width: width, cap: 'round' });
+        // head: an open arrowhead (the outline's two sides, no base) and the two lines running up to its sides
+        const joinY = tipY + shaftX * headLen / headHalf;     // where the lines meet the head's sides
+        pointer.moveTo(-wingX, backY);
+        pointer.lineTo(0, tipY);
+        pointer.lineTo(wingX, backY);
+        for (const x of [-shaftX, shaftX]) {
+            pointer.moveTo(x, -g.start);
+            pointer.lineTo(x, joinY);
+        }
+        // tail: the two lines closed just past the magenta tail's end
+        const tailEnd = g.tip + o;
+        pointer.moveTo(-shaftX, g.start);
+        pointer.lineTo(-shaftX, tailEnd);
+        pointer.lineTo(shaftX, tailEnd);
+        pointer.lineTo(shaftX, g.start);
+        pointer.stroke({ color: cyan, width: width, cap: 'butt', join: 'miter' });
         this.bearingContainer.addChild(pointer);
         this.bearingContainer.visible = false;
         this.fixedContainer.addChild(this.bearingContainer);
@@ -1119,8 +1131,8 @@ export class HSI {
     set courseDeviation(nm) {
         this._courseDeviation = nm;
         // Convert NM to pixels: full-scale (±cdiFullScaleNM) maps to ±2 dots (40px)
-        const dotSpacing = 20;
-        const maxOffsetPx = 2 * dotSpacing;  // 40px = full scale
+        const dotSpacing = this._needle.dotSpacing;
+        const maxOffsetPx = 2 * dotSpacing;  // two dots = full scale
         let offsetPx = (nm / this._cdiFullScaleNM) * maxOffsetPx;
         // Clamp to full-scale deflection
         offsetPx = Math.max(-maxOffsetPx, Math.min(maxOffsetPx, offsetPx));
