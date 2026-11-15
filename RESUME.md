@@ -23,6 +23,11 @@ Tell Claude: "Read RESUME.md and carry on."
   across a Pi restart (a file, last day or last 100); (3) [!] next to the Menu button or in the left corner as on
   the G5; (4) record short blips under 1 s too (recommended yes).
 - Wind, the track marker and the ALIGNING settle time still need a flight.
+- **Mockup tools are now in the repo** (they were only in a session scratchpad): `EFIS/tests/fake_feed_knob.py`
+  (fake server with knob, plan, CDI scale, heading / track controls, `imu_starting` scenario, `EFIS_DIR=<copy>`)
+  and `EFIS/tests/states.py` (headless Chrome steps and screenshots). Run with a venv that has aiohttp:
+  `venv/bin/python EFIS/tests/fake_feed_knob.py --port 8097 &` then
+  `venv/bin/python EFIS/tests/states.py OUT yaw=90 mag_track=102 shot:a scen:imu_starting shot:b`.
 
 ## Update 2026-11-15 (evening): track marker, bench simulator (page 0.8.37, headingIndicator 1.0.10, server 1.7.11, all on the Pi)
 - **State:** the Mac, the Pi and GitHub match. After a page deploy David presses ctrl-shift-R.
