@@ -18,12 +18,14 @@ Tell Claude: "Read RESUME.md and carry on."
   bits shifted right (55 -> 27, 59 -> 29, 67 -> 1), the Pi 4's known I2C clock-stretching bug with the knob's
   ATtiny817 seesaw (Adafruit's firmware has nothing that would do it). The bus runs at the default 100 kHz (the
   400 kHz in `aio_server.py` has no effect on the Pi). Proposed, not done: `dtparam=i2c_arm_baudrate=50000` in
-  `/boot/firmware/config.txt` and a reboot (Adafruit's advice); then 10 kHz if the jumps go on. Also noticed: the
-  seesaw library sleeps 8 ms per read on the server's main loop (about 16 ms of every 36 ms poll); could move the
-  knob reads to a thread.
+  `/boot/firmware/config.txt` and a reboot (Adafruit's advice). **Done 2026-11-15 11:46** (David agreed; bus 1 has
+  only the knob, the display's touch and backlight are on bus 10, CAN is SPI); backup
+  `/boot/firmware/config.txt.bak-20261115`. Watch the "knob jump ignored" lines: if they go on, try 10 kHz. Also
+  noticed: the seesaw library sleeps 8 ms per read on the server's main loop (about 16 ms of every 36 ms poll);
+  could move the knob reads to a thread.
 - **Test feed** (scratchpad `knob/fake_feed_knob.py`) now also takes `dtk=` and `xtrack=`; `EFIS_DIR=<copy>` serves a
   scratch copy of the page for mockups.
-- **Next:** David's view of the new HSI on the Pi; the I2C bus speed if he wants it; then G5_REVIEW.md feature 9
+- **Next:** (David has seen the new HSI on the Pi: good) G5_REVIEW.md G5_REVIEW.md feature 9
   (CDI scale 5.00 / 1.25 / 0.25 NM; note the dots are now about 34 px apart), 10, 11, 12. Wind still needs a flight.
 
 ## Update 2026-11-14: bearing pointer (page 0.8.34, hsi 1.0.18, server 1.7.8, all on the Pi)
