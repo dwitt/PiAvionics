@@ -467,3 +467,82 @@ test('a value that is missing altogether (an older server) is not treated as nul
     const s = evaluate(goodFacts());               // no values at all in the data
     assert.ok(Object.values(s.valid).every((x) => x === true));
 });
+
+// ---- ALIGNING (G5 review feature 11)
+
+// The facts while the IMU starts: heartbeat STARTING, no attitude yet (lost after the server's grace)
+function imuStarting(uptime = 2) {
+    const f = goodFacts();
+    f.modules.imu = { ...f.modules.imu, state: 0, uptime: uptime, sensors: null };
+    f.valid.attitude = f.valid.heading = f.valid.turn_rate = f.valid.acceleration = false;
+    f.data_lost.attitude = f.data_lost.acceleration = true;
+    f.heading_status = { valid: false, suspect: false, gyro_seconds: null };
+    return f;
+}
+function imuRunning(uptime) {
+    const f = goodFacts();
+    f.modules.imu = { ...f.modules.imu, uptime: uptime };
+    return f;
+}
+function step(status, facts, now) {
+    status.messageReceived(now);
+    status.update(facts, now);
+    return status;
+}
+
+test('aligning: an IMU that is starting shows ALIGNING, not NO IMU or a red X', () => {
+    const s = step(new InstrumentStatus(), imuStarting(), 1000);
+    assert.equal(s.aligning, true);
+    assert.ok(!texts(s).includes('NO IMU'));
+    assert.equal(s.valid.attitude, false);
+    assert.deepEqual(s.heading, { show: false, dim: false, flag: false });
+});
+
+test('aligning: lasts 3 s after the attitude arrives, then the attitude shows', () => {
+    const s = new InstrumentStatus();
+    step(s, imuStarting(2), 1000);
+    step(s, imuStarting(3), 2000);
+    step(s, imuRunning(4), 3000);           // the attitude arrives
+    assert.equal(s.aligning, true);
+    assert.equal(s.valid.attitude, false);  // the first frames are not shown
+    step(s, imuRunning(6), 5900);
+    assert.equal(s.aligning, true);
+    step(s, imuRunning(7), 6000);
+    assert.equal(s.aligning, false);
+    assert.equal(s.valid.attitude, true);
+    assert.deepEqual(s.annunciations, []);
+});
+
+test('aligning: an IMU already running when the page starts is not aligning', () => {
+    const s = step(new InstrumentStatus(), imuRunning(3600), 1000);
+    assert.equal(s.aligning, false);
+    assert.equal(s.valid.attitude, true);
+});
+
+test('aligning: a missing IMU is NO IMU, and a start that never sends attitude gives up after 15 s', () => {
+    const missing = goodFacts();
+    missing.modules.imu = { present: false, missing: true, state: null, restarted_age: null, sensors: null };
+    missing.valid.attitude = false;
+    missing.data_lost.attitude = true;
+    const m = step(new InstrumentStatus(), missing, 1000);
+    assert.equal(m.aligning, false);
+    assert.ok(texts(m).includes('NO IMU'));
+
+    const s = new InstrumentStatus();
+    step(s, imuStarting(1), 1000);
+    step(s, imuStarting(10), 15900);
+    assert.equal(s.aligning, true);
+    step(s, imuStarting(11), 16000);
+    assert.equal(s.aligning, false);
+    assert.ok(texts(s).includes('NO IMU'));
+    step(s, imuStarting(12), 17000);        // still stuck starting: does not go back to ALIGNING
+    assert.equal(s.aligning, false);
+});
+
+test('aligning: an IMU restart in flight (STARTING again) aligns again', () => {
+    const s = new InstrumentStatus();
+    step(s, imuRunning(3600), 1000);
+    step(s, imuStarting(1), 2000);
+    assert.equal(s.aligning, true);
+    assert.ok(!texts(s).includes('NO IMU'));
+});

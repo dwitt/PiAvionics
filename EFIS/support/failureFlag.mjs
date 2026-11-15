@@ -2,7 +2,7 @@
 import { Container, Graphics, TextStyle, Text } from './pixi.mjs';
 import { FAILURE_LOOK } from './failureLook.mjs';
 
-export const VERSION = '1.0.0';
+export const VERSION = '1.1.0';
 
 /*****************************************************************************
  * A red X drawn over an instrument that cannot be trusted, with an optional
@@ -18,8 +18,13 @@ export class FailureFlag {
      * @param {number} width - width of the area
      * @param {number} height - height of the area
      * @param {string} label - short name shown in the middle ('' for none)
+     * @param {object} options - {cross: false} for the label alone (no X), {colour} for the label and its
+     *     box edge (default the failure red); used for the amber ALIGNING
      *************************************************************************/
-    constructor(app, x, y, width, height, label = '') {
+    constructor(app, x, y, width, height, label = '', options = {}) {
+        const cross = options.cross !== false;
+        const labelColour = options.colour !== undefined ? options.colour : FAILURE_LOOK.labelColour;
+        const edgeColour = options.colour !== undefined ? options.colour : FAILURE_LOOK.xColour;
         this.container = new Container();
         this.container.visible = false;
 
@@ -37,17 +42,17 @@ export class FailureFlag {
         xGraphics.moveTo(x + width - inset, y + inset);
         xGraphics.lineTo(x + inset, y + height - inset);
         xGraphics.stroke();
-        this.container.addChild(xGraphics);
+        if (cross) this.container.addChild(xGraphics);
 
         // ---- the name in the middle
-        if (label !== '' && FAILURE_LOOK.labelShow) {
+        if (label !== '' && (FAILURE_LOOK.labelShow || !cross)) {
             const labelText = new Text({
                 text: label,
                 style: new TextStyle({
                     fontFamily: 'Tahoma',
                     fontSize: FAILURE_LOOK.labelFontSize,
                     fontWeight: 'bold',
-                    fill: FAILURE_LOOK.labelColour,
+                    fill: labelColour,
                 }),
             });
             labelText.anchor.set(0.5, 0.5);
@@ -59,7 +64,7 @@ export class FailureFlag {
             boxGraphics.roundRect(x + width / 2 - boxWidth / 2, y + height / 2 - boxHeight / 2,
                                   boxWidth, boxHeight, 4);
             boxGraphics.fill({ color: 0x000000, alpha: FAILURE_LOOK.labelBackAlpha });
-            boxGraphics.stroke({ color: FAILURE_LOOK.xColour, width: 2 });
+            boxGraphics.stroke({ color: edgeColour, width: 2 });
             this.container.addChild(boxGraphics);
             this.container.addChild(labelText);
         }

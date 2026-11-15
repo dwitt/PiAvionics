@@ -1,6 +1,6 @@
 'use strict';
 
-export const VERSION = '1.4.1';
+export const VERSION = '1.5.0';
 
 /*****************************************************************************
  * The server tracks the facts (module heartbeats, which values can be trusted,
@@ -16,6 +16,12 @@ export const VERSION = '1.4.1';
 const GYRO_HEADING_BLANK_SECONDS = 300;     // heading number blanked after this long without the magnetometer
 const RESTART_CAUTION_SECONDS = 8;          // MODULE RESTARTED stays up this long after an uptime reset
 const LINK_TIMEOUT_MS = 1000;               // no message from the server for this long = no data link
+// ALIGNING (G5 1.3, 1.4.2): while the IMU starts (heartbeat STARTING, or its uptime this short), and this long after
+// its attitude first arrives, so the filter can settle and the IMU's first frame (sent before its filter has run:
+// level, heading north) is never shown. 3 s chosen 2026-11-15 from a bench restart; review after a flight.
+const ALIGN_UPTIME_SECONDS = 5;
+const ALIGN_SETTLE_MS = 3000;
+const ALIGN_GIVE_UP_MS = 15000;             // a start with no attitude for this long is a failure, not aligning
 
 export const WARNING = 'warning';           // red
 export const CAUTION = 'caution';           // amber
@@ -48,6 +54,13 @@ export class InstrumentStatus {
 
         // false when the data link to the server is down (or no data has arrived yet)
         this.linkOk = false;
+
+        // true while the IMU is starting and settling: attitude, heading, turn rate and acceleration are not
+        // shown, without red X or NO IMU; the page shows ALIGNING over the attitude instead
+        this.aligning = false;
+        this._alignStart = null;            // time (ms) an IMU start was seen, null when not aligning
+        this._alignSettleEnd = null;        // time (ms) the settle ends, once the attitude has arrived
+        this._alignGaveUp = false;          // gave up on this start: no ALIGNING again until the IMU stops starting
     }
 
     /**
@@ -107,6 +120,18 @@ export class InstrumentStatus {
         this.heading.dim = gyroOnly && !blanked;
         this.heading.flag = !this.valid.heading || gyroOnly;
 
+        // ---- ALIGNING: an IMU that is starting (or just started) is not a failure
+        this._updateAligning(imu, now);
+        if (this.aligning) {
+            this.valid.attitude = false;
+            this.valid.turnRate = false;
+            this.valid.acceleration = false;
+            this.valid.heading = false;
+            this.heading.show = false;
+            this.heading.dim = false;
+            this.heading.flag = false;
+        }
+
         // ---- annunciations
         const warnings = [];
         const cautions = [];
@@ -128,7 +153,9 @@ export class InstrumentStatus {
             if (airSensors.aoa === false) cautions.push('AOA');
         }
 
-        if (imu.missing === true || lost.attitude === true) {
+        if (this.aligning) {
+            // nothing to announce: ALIGNING is shown over the attitude
+        } else if (imu.missing === true || lost.attitude === true) {
             warnings.push('NO IMU');
         } else {
             if (imuSensors.gyro_accel === false) warnings.push('ATT FAIL');
@@ -157,6 +184,38 @@ export class InstrumentStatus {
     // ------------------------------------------------------------------------
     // --- Helpers                                                          ---
     // ------------------------------------------------------------------------
+    /**
+     * Work out this.aligning. A start is seen when the IMU is present and says STARTING or has only just started
+     * (uptime); aligning then lasts until ALIGN_SETTLE_MS after its attitude arrives (or ALIGN_GIVE_UP_MS without
+     * attitude, when the usual failure flags take over).
+     */
+    _updateAligning(imu, now) {
+        const present = imu.present === true && imu.missing !== true;
+        const starting = present && (imu.state === 0 ||
+                         (typeof imu.uptime === 'number' && imu.uptime <= ALIGN_UPTIME_SECONDS));
+        if (!starting) this._alignGaveUp = false;
+        if (!present) {
+            this._alignStart = null;
+            this._alignSettleEnd = null;
+        } else if (starting && !this._alignGaveUp) {
+            if (this._alignStart === null) this._alignStart = now;
+            if (imu.state === 0) this._alignSettleEnd = null;       // still starting: the settle has not begun
+        }
+        if (this._alignStart !== null && this._alignSettleEnd === null && imu.state !== 0 && this.valid.attitude) {
+            this._alignSettleEnd = now + ALIGN_SETTLE_MS;            // the attitude has arrived: settle
+        }
+        if (this._alignStart !== null) {
+            const settled = this._alignSettleEnd !== null && now >= this._alignSettleEnd;
+            const gaveUp = this._alignSettleEnd === null && now - this._alignStart >= ALIGN_GIVE_UP_MS;
+            if ((settled && !starting) || gaveUp) {
+                if (gaveUp) this._alignGaveUp = true;
+                this._alignStart = null;
+                this._alignSettleEnd = null;
+            }
+        }
+        this.aligning = this._alignStart !== null;
+    }
+
     _setAllInvalid(annunciations) {
         for (const name of INSTRUMENTS) {
             this.valid[name] = false;
@@ -164,6 +223,7 @@ export class InstrumentStatus {
         this.heading.show = false;
         this.heading.dim = false;
         this.heading.flag = true;
+        this.aligning = false;
         this.annunciations = annunciations;
     }
 }

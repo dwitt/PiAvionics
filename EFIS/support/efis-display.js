@@ -53,7 +53,7 @@ import { FAILURE_LOOK } from './failureLook.mjs';
 
 // ----------------------------------------------------------------------------
 
-const VERSION = "0.8.37";
+const VERSION = "0.8.38";
 
 // Viewer mode: a page that is not the Pi's own display only watches. It sends
 // nothing to the server, ignores the encoder, and shows the QNH and brightness
@@ -413,6 +413,7 @@ var attitudeIndicator,
     altFlag,
     vsiFlag,
     attFlag,
+    alignFlag,
     hdgFlag,
     turnFlag,
     asiCover,
@@ -836,6 +837,8 @@ function setup() {
     altFlag = new FailureFlag(app, x - 125, tapeTop, 90, tapeHeight, 'ALT');
     vsiFlag = new FailureFlag(app, x - 35, 40, 35, y - 80, '');
     attFlag = new FailureFlag(app, 90, tapeTop, x - 90 - 125, tapeHeight, 'ATT');
+    alignFlag = new FailureFlag(app, 90, tapeTop, x - 90 - 125, tapeHeight, 'ALIGNING',
+                                { cross: false, colour: FAILURE_LOOK.cautionColour });
     hdgFlag = new FailureFlag(app, x / 2 - 60, 0, 120, 40, 'HDG');
     turnFlag = new FailureFlag(app, x / 2 - 108, y - 19 - 8, 216, 16, '');
 
@@ -1241,7 +1244,8 @@ function updateFailureDisplay(status) {
 
     attitudeIndicator.failed = !valid.attitude;
     attitudeIndicator.slipSkidGraphics.visible = valid.attitude && slipCue !== 'ball';
-    attFlag.shown = !valid.attitude;
+    attFlag.shown = !valid.attitude && !status.aligning;
+    alignFlag.shown = status.aligning;      // the IMU is starting: not a failure (G5 1.3)
 
     asiCover.visible = !valid.airspeed;
     airspeedWheel.visible = valid.airspeed;
@@ -1255,7 +1259,7 @@ function updateFailureDisplay(status) {
     vsiFlag.shown = !valid.vsi;
 
     turnRateIndicator.container.visible = valid.turnRate;
-    turnFlag.shown = !valid.turnRate;
+    turnFlag.shown = !valid.turnRate && !status.aligning;
 
     slipBallIndicator.container.visible = valid.acceleration && slipCue !== 'trapezoid';
 
