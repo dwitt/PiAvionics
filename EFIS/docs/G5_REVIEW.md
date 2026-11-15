@@ -153,6 +153,10 @@ Of 31 G5 features: PiEFIS has 10, has 10 in part, lacks 8; 3 do not apply. Secti
    `controller_state['cdi_scale']` (survives a page reload, not a server restart). The DTK and scale boxes are
    116 px wide. Note: en route at 5.00 NM the bar is far less sensitive than the old fixed 2 NM.
 10. **Track marker on the PFD heading tape** (magenta triangle, 2.1.5).
+    **Done 2026-11-15** (headingIndicator 1.0.10, page 0.8.37, on the Pi): a 16 x 10 magenta triangle with a thin
+    black edge on the tape's bottom edge, pointing up, at the GPS magnetic track; same rules as the HSI's track
+    diamond (valid GPS, 10 kt or more); hidden off the edge of the tape (about +/-35 deg). David chose the bottom
+    edge, hiding, and style B from Mac mockups. Seen on the Pi with the bench simulator (RESUME.md).
 11. **ALIGNING state.** `instrumentStatus.mjs` knows module state 0 = STARTING. Show "ALIGNING" over the attitude
     instead of a red X while the IMU starts (1.4.2).
 12. **Message history.** A Messages row in the Menu listing what happened and when, with a flashing [!] until

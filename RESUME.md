@@ -2,7 +2,23 @@
 
 Tell Claude: "Read RESUME.md and carry on."
 
-## Update 2026-11-15 (latest): CDI scale, knob I2C fixed properly (page 0.8.36, hsi 1.0.20, server 1.7.11, all on the Pi)
+## Update 2026-11-15 (evening, latest): track marker, bench simulator (page 0.8.37, headingIndicator 1.0.10, server 1.7.11, all on the Pi)
+- **State:** the Mac, the Pi and GitHub match. After a page deploy David presses ctrl-shift-R.
+- **Feature 10, track marker on the PFD heading tape, done** (details in G5_REVIEW.md).
+- **Bench simulator** (`Sensors/Utilities/Bench_Sim/bench_sim.py`, a copy at `~/bench_sim.py` on the Pi): stands in
+  for the AIR and GPS modules on CAN so the GPS and air-data features show on the bench. Unplug the real AIR and
+  GPS modules first: it refuses to start if it hears them and stops if one appears. Heartbeats say version 9.9.9.
+  Flies on the real IMU's heading (turn the IMU to steer) with a set wind (default 270/20), 100 KIAS, 3500 ft,
+  starting 7 NM north of CYFD; altitude follows the QNH. Commands on stdin: `ias 90`, `alt 4500`, `vs 500`,
+  `wind 300/25`, `hdg 45`, `hdg imu`, `q`. To drive it from the Mac, run it on the Pi behind a fifo:
+  `mkfifo ~/bench_cmd; nohup sh -c "tail -f ~/bench_cmd | ~/EFIS/venv/bin/python -u ~/bench_sim.py" > ~/bench_sim.log 2>&1 &`,
+  then `echo "ias 90" > ~/bench_cmd`. Do not `pkill -f` a pattern that is also in the ssh command line (it kills
+  the ssh session). First run 2026-11-15: everything valid on the EFIS; the Pi's flight plan had CYQA active, so
+  pick the CYFD -> VCALT leg in Route to see the CDI move.
+- **Next:** G5_REVIEW.md feature 11 (ALIGNING while the IMU starts), then 12 (message history). Wind and the
+  track marker still need a flight.
+
+## Update 2026-11-15: CDI scale, knob I2C fixed properly (page 0.8.36, hsi 1.0.20, server 1.7.11, all on the Pi)
 - **State:** the Mac, the Pi and GitHub match (pushed 2026-11-15 with David's go-ahead). After a page deploy David
   presses ctrl-shift-R.
 - **Feature 9, CDI scale, done** (details in G5_REVIEW.md): automatic 1.25 NM within 30 NM of a route airport,
@@ -26,8 +42,7 @@ Tell Claude: "Read RESUME.md and carry on."
     watching those lines.
 - **GPS on the bench at 15:50:** status message said no fix, 0 satellites (no position or speed sent). The module,
   not the Pi; check the antenna if it keeps happening where it used to get a fix.
-- **Next:** G5_REVIEW.md feature 10 (track marker on the PFD heading tape), 11 (ALIGNING), 12 (message history).
-  Wind still needs a flight.
+- **Next:** feature 10 (done since, see above), 11, 12. Wind still needs a flight.
 
 ## Update 2026-11-15: G5-style needle and bearing pointer, brightness logging (page 0.8.35, hsi 1.0.19, server 1.7.9, all on the Pi)
 - **State:** the Mac and the Pi matched (all pushed since, see above). After a page deploy David presses ctrl-shift-R.
