@@ -13,8 +13,16 @@ Tell Claude: "Read RESUME.md and carry on."
 - **IMU restart on the bench without reflashing** (for start-up tests): on the Pi, `stty -F <IMU tty> 1200; sleep 4;
   sudo picotool reboot`, then `stty -F <tty> hupcl`; record with `candump -t a can0,701:7FF,048:7FF,049:7FF`.
   A flash with flash_remote.sh compiles first (about 90 s), so start any recording after it.
-- **Next:** G5_REVIEW.md feature 12 (message history). Wind, the track marker and the ALIGNING settle time still need
-  a flight.
+- **Next: G5_REVIEW.md feature 12 (message history), proposed to David, waiting for his answers.** The G5 (guide 1.7):
+  a [!] that flashes while a message is unseen; Messages in the Menu opens the list. Proposal: a Messages row in the
+  Menu (value like "2 new") opening a list, newest first, of UTC time, text in its colour, and how long it lasted
+  ("now" if current); a [!] that flashes while unseen, steady while a problem is current; entries for every
+  annunciation start and clear, plus knob not answering, GPS fix lost / regained, and WMM2025 expiry (warn from six
+  months before the end of 2029). Open questions for David: (1) keep the list on the server (survives a page
+  reload, shared with viewers, logged to /var/log/piefis.log; recommended) or only in the page; (2) also keep it
+  across a Pi restart (a file, last day or last 100); (3) [!] next to the Menu button or in the left corner as on
+  the G5; (4) record short blips under 1 s too (recommended yes).
+- Wind, the track marker and the ALIGNING settle time still need a flight.
 
 ## Update 2026-11-15 (evening): track marker, bench simulator (page 0.8.37, headingIndicator 1.0.10, server 1.7.11, all on the Pi)
 - **State:** the Mac, the Pi and GitHub match. After a page deploy David presses ctrl-shift-R.
