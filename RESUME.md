@@ -2,7 +2,21 @@
 
 Tell Claude: "Read RESUME.md and carry on."
 
-## Update 2026-11-15 (evening, latest): track marker, bench simulator (page 0.8.37, headingIndicator 1.0.10, server 1.7.11, all on the Pi)
+## Update 2026-11-15 (late evening, latest): ALIGNING, IMU 1.0.19, backup display GPS icon (page 0.8.38, server 1.7.11, IMU_AHRS 1.0.19, Backup_Display 1.7.43, all on the Pi / boards)
+- **State:** the Mac, the Pi, the boards and GitHub match. After a page deploy David presses ctrl-shift-R.
+- **Feature 11, ALIGNING, done** (details in G5_REVIEW.md): amber ALIGNING over the attitude while the IMU starts and
+  for 3 s after its attitude arrives; IMU_AHRS 1.0.19 sends the invalid marker and STARTING until its filter has run
+  (its first frame used to be level / north / 0 G). Seen right on the Pi and the backup display with the IMU tilted.
+- **Backup_Display 1.7.43:** the GPS page's satellite icon lost cells (the G and parts of the satellite) after
+  coming from the Flight page: the horizon and slip ball kept their custom-character slots. Every handed-out slot is
+  now freed on a page change. David confirmed it works.
+- **IMU restart on the bench without reflashing** (for start-up tests): on the Pi, `stty -F <IMU tty> 1200; sleep 4;
+  sudo picotool reboot`, then `stty -F <tty> hupcl`; record with `candump -t a can0,701:7FF,048:7FF,049:7FF`.
+  A flash with flash_remote.sh compiles first (about 90 s), so start any recording after it.
+- **Next:** G5_REVIEW.md feature 12 (message history). Wind, the track marker and the ALIGNING settle time still need
+  a flight.
+
+## Update 2026-11-15 (evening): track marker, bench simulator (page 0.8.37, headingIndicator 1.0.10, server 1.7.11, all on the Pi)
 - **State:** the Mac, the Pi and GitHub match. After a page deploy David presses ctrl-shift-R.
 - **Feature 10, track marker on the PFD heading tape, done** (details in G5_REVIEW.md).
 - **Bench simulator** (`Sensors/Utilities/Bench_Sim/bench_sim.py`, a copy at `~/bench_sim.py` on the Pi): stands in
@@ -15,8 +29,7 @@ Tell Claude: "Read RESUME.md and carry on."
   then `echo "ias 90" > ~/bench_cmd`. Do not `pkill -f` a pattern that is also in the ssh command line (it kills
   the ssh session). First run 2026-11-15: everything valid on the EFIS; the Pi's flight plan had CYQA active, so
   pick the CYFD -> VCALT leg in Route to see the CDI move.
-- **Next:** G5_REVIEW.md feature 11 (ALIGNING while the IMU starts), then 12 (message history). Wind and the
-  track marker still need a flight.
+- **Next:** feature 11 (done since, see above), then 12.
 
 ## Update 2026-11-15: CDI scale, knob I2C fixed properly (page 0.8.36, hsi 1.0.20, server 1.7.11, all on the Pi)
 - **State:** the Mac, the Pi and GitHub match (pushed 2026-11-15 with David's go-ahead). After a page deploy David

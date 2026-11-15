@@ -159,6 +159,18 @@ Of 31 G5 features: PiEFIS has 10, has 10 in part, lacks 8; 3 do not apply. Secti
     edge, hiding, and style B from Mac mockups. Seen on the Pi with the bench simulator (RESUME.md).
 11. **ALIGNING state.** `instrumentStatus.mjs` knows module state 0 = STARTING. Show "ALIGNING" over the attitude
     instead of a red X while the IMU starts (1.4.2).
+    **Done 2026-11-15** (instrumentStatus 1.5.0, failureFlag 1.1.0, page 0.8.38, IMU_AHRS 1.0.19; seen on the Pi).
+    A bench restart showed the IMU silent about 5 s (bootloader), STARTING about 4 s, then correct attitude within
+    0.1 s (the NXP filter starts from gravity and the field), but its first frame was level / north / 0 G, sent
+    before the filter had run. Now:
+    - page: an IMU that is present and STARTING (or uptime 5 s or less) shows an amber ALIGNING box over a blank
+      attitude, with no red X and no NO IMU; attitude, heading, turn rate and the slip ball stay hidden until 3 s
+      (David's choice) after the attitude arrives; a start with no attitude for 15 s falls back to the usual flags;
+    - IMU_AHRS 1.0.19: until the filter has run 10 updates (0.1 s), after a start or a filter restart, the attitude
+      and acceleration frames carry the invalid marker and the heartbeat says STARTING.
+    Checked on the Pi with the IMU held at 20 deg bank, 10 deg nose up: marker, then the tilt at once; no level flash
+    on the EFIS or the backup display. Not known: how long the attitude takes to settle after a restart while
+    turning or accelerating (it starts from gravity); review the 3 s after a flight.
 12. **Message history.** A Messages row in the Menu listing what happened and when, with a flashing [!] until
     viewed (1.7). Include a warning when WMM2025 expires (end of 2029).
 
