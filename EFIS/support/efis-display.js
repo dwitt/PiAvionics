@@ -53,7 +53,7 @@ import { FAILURE_LOOK } from './failureLook.mjs';
 
 // ----------------------------------------------------------------------------
 
-const VERSION = "0.8.35";
+const VERSION = "0.8.36";
 
 // Viewer mode: a page that is not the Pi's own display only watches. It sends
 // nothing to the server, ignores the encoder, and shows the QNH and brightness
@@ -302,6 +302,8 @@ function sendCommand(cmd) {
     }
 }
 let routeOverlay = new RouteOverlay(app2, sendCommand);
+// the pilot's CDI scale choice (the HSI's scale box) goes to the server, which keeps it for reloads and viewers
+hsi.onCdiScaleSelect = (choice) => sendCommand({cdi_scale: choice});
 
 // "Route" button — lower right corner of HSI canvas, matching Menu button style
 let routeBtnWidth = 90;
@@ -958,6 +960,9 @@ function DisplayUpdateLoop(delta) {
         hsi.gpsVdop = null;
         hsi.gpsDeclination = null;
     }
+    // the CDI's full scale: the server's automatic one, or the pilot's choice it keeps (before the deviation)
+    hsi.cdiAutoScale = valid.gps ? dataObject.cdi_auto_nm : null;
+    hsi.cdiScaleSetting = dataObject.controller_state ? dataObject.controller_state.cdi_scale : undefined;
     if (valid.gps && dataObject.xtrack !== undefined && dataObject.xtrack !== null) {
         hsi.courseDeviation = dataObject.xtrack;
     }

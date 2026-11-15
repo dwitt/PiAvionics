@@ -4,6 +4,8 @@ import math
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
+VERSION = "1.0.1"
+
 # Earth radius in nautical miles (WGS84 mean radius)
 EARTH_RADIUS_NM = 3440.065
 
@@ -15,6 +17,13 @@ SEQUENCE_DISTANCE_NM = 2.0
 
 # GPS lat/lon from CAN bus are integers scaled by 10^6
 GPS_SCALE = 1_000_000
+
+# Automatic VFR CDI scale (full-scale deflection, NM), as the G3X Touch with its internal GPS (Pilot's Guide
+# 190-02472-00 Rev. B, CDI Scale Selection): 1.25 within 30 NM of any airport in the route, otherwise 5.00. Its
+# 0.25 (approach legs) is left to the pilot: David's choice, our routes have no approaches.
+CDI_SCALE_ENROUTE_NM = 5.0
+CDI_SCALE_TERMINAL_NM = 1.25
+CDI_TERMINAL_RANGE_NM = 30.0
 
 
 # =============================================================================
@@ -240,7 +249,7 @@ def compute_navigation(lat_raw, lon_raw, flight_plan):
         flight_plan: FlightPlan instance with loaded route
 
     Returns:
-        dict with dtk, bearing, xtrack, dist, to_from, wpt_id, route_name
+        dict with dtk, bearing, xtrack, dist, to_from, wpt_id, route_name, cdi_auto_nm
         or None if computation not possible
     """
     wpt = flight_plan.active_waypoint
@@ -284,7 +293,17 @@ def compute_navigation(lat_raw, lon_raw, flight_plan):
         'to_from': to_from,
         'wpt_id': flight_plan.active_waypoint_id,
         'route_name': flight_plan.route_name,
+        'cdi_auto_nm': auto_cdi_scale(lat, lon, flight_plan),
     }
+
+
+def auto_cdi_scale(lat, lon, flight_plan):
+    """The automatic CDI full scale (NM) at this position: terminal within CDI_TERMINAL_RANGE_NM of any airport in
+    the route, otherwise en route."""
+    for w in flight_plan.waypoints:
+        if w['type'] == 'AIRPORT' and haversine_distance(lat, lon, w['lat'], w['lon']) <= CDI_TERMINAL_RANGE_NM:
+            return CDI_SCALE_TERMINAL_NM
+    return CDI_SCALE_ENROUTE_NM
 
 
 # =============================================================================

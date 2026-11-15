@@ -1,7 +1,7 @@
 """ Asynchronous I/O based webserver to handle page and websocket"""
 # pyright: reportMissingImports=false
 
-VERSION = "1.7.9"
+VERSION = "1.7.10"
 
 import asyncio
 import ipaddress
@@ -121,6 +121,7 @@ ENCODER_BUTTON_PIN = 24  # GPIO pin for encoder button
 KNOB_PRESS_LOG_S = 1.0  # presses at least this long are logged with their length
 KNOB_HOLD_LOG_S = 3.0  # a press still held this long is logged at once (the page's full-brightness hold)
 BRIGHTNESS_LOG_SETTLE_S = 2.0  # a brightness change is logged once it has not changed for this long
+CDI_SCALE_CHOICES_NM = (5.0, 1.25, 0.25)  # the fixed CDI scales the page may set (G5 / G3X VFR scales); else "auto"
 SEESAW_EXPECTED_PRODUCT_ID = 4991  # Expected product ID for seesaw encoder
 
 # =============================================================================
@@ -279,6 +280,7 @@ class AvionicsData:
         self.dtk = None         # desired track (degrees)
         self.bearing = None     # bearing to active waypoint (degrees)
         self.xtrack = None      # cross-track error (NM, +right/-left)
+        self.cdi_auto_nm = None  # automatic CDI full scale here (NM, 5.0 or 1.25; flightplan.auto_cdi_scale)
         self.dist = None        # distance to active waypoint (NM)
         self.to_from = None     # 'TO' or 'FROM'
         self.wpt_id = None      # active waypoint identifier
@@ -510,6 +512,14 @@ class MyWebSocketResponse:
                 if isinstance(page_log, str):
                     print(f"Page: {page_log[:200]}", flush=True)
                 
+                # The pilot's CDI scale ("auto", or a fixed full scale in NM), kept for reloads and viewer pages
+                cdi_scale = dict_object.get('cdi_scale', None)
+                if cdi_scale is not None and self.data is not None:
+                    if cdi_scale == 'auto' or cdi_scale in CDI_SCALE_CHOICES_NM:
+                        previous = self.data.controller_state.get('cdi_scale', 'auto')
+                        self.data.controller_state['cdi_scale'] = cdi_scale
+                        print(f"CDI scale {previous} -> {cdi_scale} from the page", flush=True)
+
                 # Process brightness if provided
                 brightness = dict_object.get('brightness', None)
                 if brightness is not None:
@@ -1002,6 +1012,7 @@ async def process_gps1_message(msg, data, last_received_times):
                 data._dtk_true = nav['dtk']          # true degrees; update_status() converts to magnetic
                 data._bearing_true = nav['bearing']
                 data.xtrack = nav['xtrack']
+                data.cdi_auto_nm = nav['cdi_auto_nm']
                 data.dist = nav['dist']
                 data.to_from = nav['to_from']
                 data.wpt_id = nav['wpt_id']
@@ -1015,7 +1026,7 @@ async def process_gps1_message(msg, data, last_received_times):
                           f"DST={nav['dist']} {nav['to_from']}")
             else:
                 data._dtk_true = data._bearing_true = None
-                data.dtk = data.bearing = data.xtrack = None
+                data.dtk = data.bearing = data.xtrack = data.cdi_auto_nm = None
                 data.dist = data.to_from = data.wpt_id = data.route_name = None
 
         return True
@@ -1346,6 +1357,7 @@ def update_status(data, last_received_times, now):
             data.mag_track = None
             # the navigation worked out from the position
             data.xtrack = None
+            data.cdi_auto_nm = None
             data.dist = None
             data.bearing = None
             data.to_from = None

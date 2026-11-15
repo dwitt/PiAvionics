@@ -1,6 +1,6 @@
 'use strict';
 
-export const VERSION = '1.0.19';
+export const VERSION = '1.0.20';
 
 import { Container, Graphics, TextStyle, Text } from './pixi.mjs';
 
@@ -24,7 +24,10 @@ export class HSI {
         this._headingShown = true;   // false when the heading cannot be trusted (see setHeadingDisplay)
         this._gpsValid = true;       // false when the GPS data cannot be trusted (see gpsValid)
         this._trackUsable = true;    // false when the ground track means nothing, for example at low speed (see trackUsable)
-        this._cdiFullScaleNM = 2;    // full-scale CDI deflection in NM
+        this._cdiAutoNM = null;      // the server's automatic CDI full scale here (NM); null: not known (5.00 used)
+        this._cdiSetting = 'auto';   // the pilot's choice: 'auto' or a fixed full scale in NM (kept by the server)
+        this._cdiPending = null;     // {value, until}: a choice just made, held until the server reports it
+        this.onCdiScaleSelect = null; // set by the page: called with the pilot's choice, to send to the server
         this._desiredTrack = null;   // DTK from the flight plan: the course needle and the DTK box show only with one
         this._waypointDistance = null;
         this._waypointId = null;
@@ -51,6 +54,7 @@ export class HSI {
         // --- Fixed elements (don't rotate) ---
         this.fixedContainer = new Container();
         this._needle = this._needleGeometry();  // shared by the course needle and the bearing pointer
+        this._rightBoxWidth = 116;   // the DTK and CDI scale boxes, upper right
         this._createHeadingBug();    // behind lubber line
         this._createBearingPointer(); // under the course needle
         this._createCoursePointer(); // Phase 2: needle, CDI, TO/FROM
@@ -59,10 +63,12 @@ export class HSI {
         this._createHeadingBox();
         this._createTrackIndicator();
         this._createDtkReadout();
+        this._createCdiScaleBox();
         this._createGroundSpeedReadout();
         this._createNavReadout();
         this._createGpsStatusBox();
         this._createWindBox();
+        this._createCdiScalePopup();  // last: over everything else on the HSI
         this._applyBugCourseVisibility();
         this.hsiContainer.addChild(this.fixedContainer);
 
@@ -439,6 +445,10 @@ export class HSI {
         this.bugContainer.visible = this._headingShown && this._bugValue !== null;
         this.courseContainer.visible = this._headingShown && haveCourse;
         this.dtkBox.visible = haveCourse;
+        this.cdiScaleBox.visible = haveCourse;
+        if (!haveCourse) {
+            this._showCdiScalePopup(false);
+        }
     }
 
     // -----------------------------------------------------------------------
@@ -515,7 +525,7 @@ export class HSI {
         const screenX = this.app.screen.width / 2;
         const screenY = this.app.screen.height / 2;
         const margin = 10;
-        const boxWidth = 100;
+        const boxWidth = this._rightBoxWidth;
         const boxHeight = 26;
         const pad = 6;
 
@@ -553,6 +563,197 @@ export class HSI {
         this.dtkBox.addChild(this.dtkText);
 
         this.fixedContainer.addChild(this.dtkBox);
+    }
+
+    // -----------------------------------------------------------------------
+    // CDI scale box — under the DTK box: the CDI's full scale (two dots), automatic (the server's, from the route's
+    // airports) or the pilot's. A touch opens a list to choose Auto, 5.00, 1.25 or 0.25 NM; a fixed choice stays
+    // until Auto is chosen. Shown with the DTK box (a flight plan).
+    // -----------------------------------------------------------------------
+    _createCdiScaleBox() {
+        const boxWidth = this._rightBoxWidth;
+        const boxHeight = 26;
+        const pad = 6;
+        const gap = 6;               // below the DTK box
+
+        this.cdiScaleBox = new Container();
+        this.cdiScaleBox.position.set(this.dtkBox.x, this.dtkBox.y + boxHeight + gap);
+
+        const boxBg = new Graphics();
+        boxBg.roundRect(-boxWidth / 2, -boxHeight / 2, boxWidth, boxHeight, 8);
+        boxBg.fill({ color: 0x000000 });
+        boxBg.stroke({ color: 0x666666, width: 2 });
+        this.cdiScaleBox.addChild(boxBg);
+
+        // AUTO (grey) or MAN (white): whether the scale follows the route or is the pilot's
+        this._cdiModeText = new Text({ text: 'AUTO', style: new TextStyle({
+            fontFamily: 'Tahoma', fontSize: 13, fill: 0x888888,
+        })});
+        this._cdiModeText.anchor.set(0, 0.5);
+        this._cdiModeText.position.set(-boxWidth / 2 + pad, 0);
+        this.cdiScaleBox.addChild(this._cdiModeText);
+
+        this._cdiScaleText = new Text({ text: '5.00nm', style: new TextStyle({
+            fontFamily: 'Tahoma', fontSize: 18, fill: 0xff6aff,
+        })});
+        this._cdiScaleText.anchor.set(1, 0.5);
+        this._cdiScaleText.position.set(boxWidth / 2 - pad, 0);
+        this.cdiScaleBox.addChild(this._cdiScaleText);
+
+        this.cdiScaleBox.eventMode = 'static';
+        this.cdiScaleBox.cursor = 'pointer';
+        this.cdiScaleBox.on('pointerdown', (e) => {
+            e.stopPropagation();
+            this._showCdiScalePopup(!this._cdiPopup.visible);
+        });
+
+        this.fixedContainer.addChild(this.cdiScaleBox);
+    }
+
+    // The list the CDI scale box opens: Auto and the three fixed scales, the current choice highlighted. A touch on
+    // a row chooses it; a touch anywhere else closes the list without a change.
+    _createCdiScalePopup() {
+        const screenX = this.app.screen.width / 2;
+        const screenY = this.app.screen.height / 2;
+        const width = 130;
+        const rowHeight = 34;
+        const pad = 6;
+        const headerHeight = 24;
+        this._cdiChoices = ['auto', 5.0, 1.25, 0.25];
+
+        // catches a touch outside the list (the whole HSI canvas), to close it
+        this._cdiPopupCatcher = new Graphics();
+        this._cdiPopupCatcher.rect(-screenX, -screenY, 2 * screenX, 2 * screenY);
+        this._cdiPopupCatcher.fill({ color: 0x000000, alpha: 0.001 });
+        this._cdiPopupCatcher.eventMode = 'static';
+        this._cdiPopupCatcher.on('pointerdown', (e) => {
+            e.stopPropagation();
+            this._showCdiScalePopup(false);
+        });
+        this._cdiPopupCatcher.visible = false;
+        this.fixedContainer.addChild(this._cdiPopupCatcher);
+
+        const popup = new Container();
+        const height = headerHeight + this._cdiChoices.length * rowHeight + pad;
+        const box = this.cdiScaleBox;
+        popup.position.set(box.x + this._rightBoxWidth / 2 - width, box.y + 13 + 4);  // under the box, right edges lined up
+        const bg = new Graphics();
+        bg.roundRect(0, 0, width, height, 8);
+        bg.fill({ color: 0x000000 });
+        bg.stroke({ color: 0x999999, width: 2 });
+        popup.addChild(bg);
+
+        const header = new Text({ text: 'CDI SCALE', style: new TextStyle({
+            fontFamily: 'Tahoma', fontSize: 13, fill: 0x888888,
+        })});
+        header.anchor.set(0.5, 0.5);
+        header.position.set(width / 2, headerHeight / 2 + 2);
+        popup.addChild(header);
+
+        this._cdiRows = [];
+        this._cdiChoices.forEach((choice, i) => {
+            const row = new Container();
+            row.position.set(pad, headerHeight + i * rowHeight);
+            const rowBg = new Graphics();
+            row.addChild(rowBg);
+            const text = new Text({ text: '', style: new TextStyle({
+                fontFamily: 'Tahoma', fontSize: 18, fill: 0xffffff,
+            })});
+            text.anchor.set(0, 0.5);
+            text.position.set(8, rowHeight / 2);
+            row.addChild(text);
+            row.eventMode = 'static';
+            row.cursor = 'pointer';
+            row.on('pointerdown', (e) => {
+                e.stopPropagation();
+                this._chooseCdiScale(choice);
+            });
+            row.rowBg = rowBg;
+            row.rowText = text;
+            row.rowWidth = width - 2 * pad;
+            row.rowHeight = rowHeight - 4;
+            popup.addChild(row);
+            this._cdiRows.push(row);
+        });
+
+        popup.visible = false;
+        this._cdiPopup = popup;
+        this.fixedContainer.addChild(popup);
+        this._updateCdiScale();
+    }
+
+    _showCdiScalePopup(show) {
+        if (!this._cdiPopup) {
+            return;
+        }
+        this._cdiPopup.visible = show;
+        this._cdiPopupCatcher.visible = show;
+        if (show) {
+            this._updateCdiScale();
+        }
+    }
+
+    _chooseCdiScale(choice) {
+        this._cdiSetting = choice;
+        this._cdiPending = { value: choice, until: Date.now() + 3000 };
+        this._showCdiScalePopup(false);
+        this._updateCdiScale();
+        if (this.onCdiScaleSelect) {
+            this.onCdiScaleSelect(choice);
+        }
+    }
+
+    /** The automatic CDI full scale (NM) the server works out from the route; null when not known. */
+    set cdiAutoScale(nm) {
+        const value = (typeof nm === 'number') ? nm : null;
+        if (value !== this._cdiAutoNM) {
+            this._cdiAutoNM = value;
+            this._updateCdiScale();
+        }
+    }
+
+    /** The pilot's choice as the server keeps it: 'auto' or a fixed full scale in NM (undefined/null: auto). A
+     *  choice just made on this page is kept until the server reports it (or 3 s), so it does not flick back. */
+    set cdiScaleSetting(value) {
+        const setting = (value === 'auto' || typeof value === 'number') ? value : 'auto';
+        if (this._cdiPending) {
+            if (setting !== this._cdiPending.value && Date.now() < this._cdiPending.until) {
+                return;
+            }
+            this._cdiPending = null;
+        }
+        if (setting !== this._cdiSetting) {
+            this._cdiSetting = setting;
+            this._updateCdiScale();
+        }
+    }
+
+    /** The CDI full scale in use (NM): the pilot's fixed choice, or the automatic one (5.00 until it is known). */
+    get cdiFullScaleNM() {
+        if (this._cdiSetting !== 'auto') {
+            return this._cdiSetting;
+        }
+        return this._cdiAutoNM !== null ? this._cdiAutoNM : 5.0;
+    }
+
+    _updateCdiScale() {
+        const manual = this._cdiSetting !== 'auto';
+        this._cdiModeText.text = manual ? 'MAN' : 'AUTO';
+        this._cdiModeText.style.fill = manual ? 0xffffff : 0x888888;
+        this._cdiScaleText.text = this.cdiFullScaleNM.toFixed(2) + 'nm';
+        if (this._cdiRows) {
+            const autoNow = this._cdiAutoNM !== null ? this._cdiAutoNM : 5.0;
+            this._cdiRows.forEach((row, i) => {
+                const choice = this._cdiChoices[i];
+                row.rowText.text = choice === 'auto' ? `Auto (${autoNow.toFixed(2)})` : `${choice.toFixed(2)} nm`;
+                row.rowBg.clear();
+                if (choice === this._cdiSetting) {
+                    row.rowBg.roundRect(0, 2, row.rowWidth, row.rowHeight, 4);
+                    row.rowBg.fill({ color: 0x444444 });
+                }
+            });
+        }
+        this.courseDeviation = this._courseDeviation;   // the bar moves with the scale
     }
 
     // -----------------------------------------------------------------------
@@ -1130,10 +1331,10 @@ export class HSI {
     // -----------------------------------------------------------------------
     set courseDeviation(nm) {
         this._courseDeviation = nm;
-        // Convert NM to pixels: full-scale (±cdiFullScaleNM) maps to ±2 dots (40px)
+        // Convert NM to pixels: full scale (±cdiFullScaleNM) maps to ±2 dots
         const dotSpacing = this._needle.dotSpacing;
         const maxOffsetPx = 2 * dotSpacing;  // two dots = full scale
-        let offsetPx = (nm / this._cdiFullScaleNM) * maxOffsetPx;
+        let offsetPx = (nm / this.cdiFullScaleNM) * maxOffsetPx;
         // Clamp to full-scale deflection
         offsetPx = Math.max(-maxOffsetPx, Math.min(maxOffsetPx, offsetPx));
         this._drawCdiBar(Math.round(offsetPx));
