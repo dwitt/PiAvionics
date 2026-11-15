@@ -54,7 +54,7 @@
 /*****************************************************************************
  * Firmware version - increment the patch number on every change
  *****************************************************************************/
-#define VERSION "1.0.18"
+#define VERSION "1.0.19"
 
 ModuleInfo moduleInfo("IMU_AHRS", VERSION, __DATE__, __TIME__);
 
@@ -144,6 +144,12 @@ static SensorHealth magHealth(SENSOR_FAIL_COUNT, SENSOR_GOOD_COUNT, SENSOR_STUCK
 static bool calibrationLoaded = false;
 static uint8_t moduleState = MODULE_STATE_STARTING;	// as sent in the heartbeat, also drives the LED
 static uint32_t ismOutageMs = 0;	// length of the last accel/gyro outage
+// Until the fusion filter has run this many updates (0.1 s at 100 Hz) the attitude and accelerations are sent as the
+// invalid marker and the heartbeat says STARTING (1.0.19). Before, the first frames went out before the filter had
+// run once: level, heading 000, 0 G (seen on a bench restart 2026-11-15). Reset when the filter is restarted.
+#define FILTER_READY_UPDATES 10
+static uint16_t filterUpdates = 0;
+static bool filterReady() { return filterUpdates >= FILTER_READY_UPDATES; }
 static float magSynthErr = 0;		// average difference real - predicted field, uT (shown in '?')
 
 // Publish the sensor health in the heartbeat.
@@ -154,6 +160,7 @@ static void publishHealth() {
 	if (calibrationLoaded) mask |= HB_CALIBRATION;
 	uint8_t state = MODULE_STATE_OK;
 	if (!ismHealth.valid()) state = MODULE_STATE_FAILED;
+	else if (!filterReady()) state = MODULE_STATE_STARTING;	// the filter has not settled its first updates yet
 	else if (mask != HB_ALL) state = MODULE_STATE_DEGRADED;
 	hbSensors = mask;
 	moduleState = state;
@@ -667,7 +674,7 @@ void loop() {
 		// Accelerometer/gyro lost: no attitude, heading or turn rate (they used to be held at the last
 		// values). A lost magnetometer is different: the gyro-only heading is still sent as a number
 		// and the heartbeat says the magnetometer is lost.
-		bool motionOk = ismHealth.valid();
+		bool motionOk = ismHealth.valid() && filterReady();	// no attitude before the filter has run
 		canData.integers[0] = motionOk ? yaw : (int16_t)CAN_MARKER_INT16;
 		canData.integers[1] = motionOk ? pitch : (int16_t)CAN_MARKER_INT16;
 		canData.integers[2] = motionOk ? roll : (int16_t)CAN_MARKER_INT16;
@@ -682,7 +689,7 @@ void loop() {
 	// -- Send accelerations. Fill out the buffer with 0
 	// ------------------------------------------------------------------------
 	if (canAccTimer.due()) {
-		bool accelOk = ismHealth.valid();	// accelerometer lost: no accelerations (they used to be held)
+		bool accelOk = ismHealth.valid() && filterReady();	// accelerometer lost or just started: no accelerations
 		canData.integers[0] = accelOk ? accelX : (int16_t)CAN_MARKER_INT16;
 		canData.integers[1] = accelOk ? accelY : (int16_t)CAN_MARKER_INT16;
 		canData.integers[2] = accelOk ? accelZ : (int16_t)CAN_MARKER_INT16;
@@ -758,6 +765,7 @@ void loop() {
 		ismOutageMs = ismHealth.outageMs();
 		if (ismOutageMs > LONG_OUTAGE_MS) {
 			filter.begin(FILTER_UPDATE_RATE_HZ);	// the old attitude is not to be trusted
+			filterUpdates = 0;						// markers and STARTING until it has run again
 			resyncTurnRate = true;
 		}
 	}
@@ -841,6 +849,7 @@ void loop() {
 	filter.update(gx, gy, gz, 
 				  accel.acceleration.x, accel.acceleration.y, accel.acceleration.z, 
 				  magField[0], magField[1], magField[2]);
+	if (!filterReady() && ++filterUpdates == FILTER_READY_UPDATES) publishHealth();	// now OK (or DEGRADED)
 
 	#if defined(AHRS_DEBUG_OUTPUT)
 	if (Serial) Serial.print("Update took "); Serial.print(millis()-timestamp); Serial.println(" ms");
