@@ -53,7 +53,7 @@ import { FAILURE_LOOK } from './failureLook.mjs';
 
 // ----------------------------------------------------------------------------
 
-const VERSION = "0.8.36";
+const VERSION = "0.8.37";
 
 // Viewer mode: a page that is not the Pi's own display only watches. It sends
 // nothing to the server, ignores the encoder, and shows the QNH and brightness
@@ -931,6 +931,8 @@ function DisplayUpdateLoop(delta) {
     if (trackWorthDrawing && dataObject.mag_track !== undefined && dataObject.mag_track !== null) {
         hsi.groundTrack = dataObject.mag_track;
     }
+    // the same track on the PFD's heading tape (G5 2.1.5), under the same rules as the HSI's diamond
+    headingIndicator.track = (trackWorthDrawing && dataObject.mag_track !== undefined) ? dataObject.mag_track : null;
     hsi.groundSpeed = (valid.gps && dataObject.gps_speed !== undefined) ? dataObject.gps_speed : null;
     // The wind: ground vector (GS, magnetic track) - air vector (TAS, magnetic heading), averaged; none without a
     // trusted magnetic heading (not gyro only), TAS and GPS (see windEstimate.mjs)

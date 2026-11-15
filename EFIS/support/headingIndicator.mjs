@@ -1,6 +1,6 @@
 'use strict';
 
-export const VERSION = '1.0.9';
+export const VERSION = '1.0.10';
 
 import { Container, Graphics, TextStyle, Text, CanvasTextMetrics } from './pixi.mjs';
 
@@ -35,6 +35,7 @@ export class HeadingIndicator {
         this._bugFastDeltaThreshold = 6;    // delta >= this uses fast increment
         this._bugSpeedSensitive = true;     // set to false to disable speed sensitivity
         this._lastEncoderValue = 0;         // holds the last encoder value to calculate deltas
+        this._track = null;                 // GPS ground track (magnetic) in degrees, null when not usable
 
         /*********************************************************************
          * Create the graphics required for the horizontal ribbon
@@ -63,6 +64,7 @@ export class HeadingIndicator {
         this.selectableGraphics = this.createSelectableGraphic(height);
         
         this.bugBox = this.createBugBox(height);
+        this.trackMarker = this.createTrackMarker(height);
 
         /*********************************************************************
          * add the graphics to the container
@@ -76,6 +78,7 @@ export class HeadingIndicator {
         this.headingContainer.addChild(this.headingRibbon);
         this.headingContainer.addChild(this.headingBugContainer);
         this.headingContainer.addChild(magnifierContainer);
+        this.headingContainer.addChild(this.trackMarker);     // over the magnifier: it sits under its pointer on track
         this.headingContainer.addChild(this.bugBox);
 
         this.showBug();
@@ -108,6 +111,7 @@ export class HeadingIndicator {
         this.headingRibbon.x = - this._value * this.pixelsPerDegree;
         
         this.positionHeadingBugOnRibbon();
+        this.positionTrackMarker();
 
     }
     /*************************************************************************
@@ -465,6 +469,53 @@ export class HeadingIndicator {
         }
 
         this.headingBugContainer.x =  (bugValue - this._value) * this.pixelsPerDegree;
+    }
+
+    /*************************************************************************
+     * Create the GPS ground track marker (G5 2.1.5): a magenta triangle on the
+     *     bottom edge of the tape, pointing up. Drawn with its default position
+     *     at 0 (the tape's centre); positionTrackMarker moves it.
+     * @param {number} height The height of the heading indicator ribbon in pixels.
+     * @returns A PixiJS Graphics object
+     *************************************************************************/
+    createTrackMarker(height) {
+        const markerWidth = 16;
+        const markerHeight = 10;
+        this._trackMarkerHalfWidth = markerWidth / 2;
+
+        const marker = new Graphics();
+        marker.moveTo(0, height - markerHeight);
+        marker.lineTo(markerWidth / 2, height);
+        marker.lineTo(-markerWidth / 2, height);
+        marker.closePath();
+        marker.fill({ color: 0xff00ff });                  // magenta, as the HSI's track diamond
+        marker.stroke({ color: 0x000000, width: 1, alignment: 1 });   // thin black edge (inside) over the bug and ticks
+        marker.visible = false;
+        return marker;
+    }
+
+    /*************************************************************************
+     * The GPS ground track in degrees magnetic, or null to hide the marker
+     *     (no trusted GPS, or too slow for the track to mean anything).
+     *************************************************************************/
+    set track(degrees) {
+        this._track = (degrees === null || degrees === undefined) ? null : degrees;
+        this.positionTrackMarker();
+    }
+
+    /*************************************************************************
+     * Place the track marker against the current heading; hidden when there
+     *     is no track or it is off the edge of the tape.
+     *************************************************************************/
+    positionTrackMarker() {
+        if (this._track === null) {
+            this.trackMarker.visible = false;
+            return;
+        }
+        const offset = ((this._track - this._value) % 360 + 540) % 360 - 180;    // -180 .. 180, the short way round
+        const x = offset * this.pixelsPerDegree;
+        this.trackMarker.x = x;
+        this.trackMarker.visible = Math.abs(x) <= this.displayWidth / 2 - this._trackMarkerHalfWidth;
     }
 
     /*************************************************************************
