@@ -25,7 +25,7 @@ Tell Claude: "Read RESUME.md and carry on."
   could move the knob reads to a thread.
 - **Test feed** (scratchpad `knob/fake_feed_knob.py`) now also takes `dtk=` and `xtrack=`; `EFIS_DIR=<copy>` serves a
   scratch copy of the page for mockups.
-- **Next:** (David has seen the new HSI on the Pi: good) G5_REVIEW.md G5_REVIEW.md feature 9
+- **Next:** (David has seen the new HSI on the Pi: good) G5_REVIEW.md feature 9
   (CDI scale 5.00 / 1.25 / 0.25 NM; note the dots are now about 34 px apart), 10, 11, 12. Wind still needs a flight.
 
 ## Update 2026-11-14: bearing pointer (page 0.8.34, hsi 1.0.18, server 1.7.8, all on the Pi)
