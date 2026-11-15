@@ -1,8 +1,32 @@
-# Resume here (last saved 2026-11-14)
+# Resume here (last saved 2026-11-15)
 
 Tell Claude: "Read RESUME.md and carry on."
 
-## Update 2026-11-14 (latest): bearing pointer (page 0.8.34, hsi 1.0.18, server 1.7.8, all on the Pi)
+## Update 2026-11-15 (latest): G5-style needle and bearing pointer, brightness logging (page 0.8.35, hsi 1.0.19, server 1.7.9, all on the Pi)
+- **State:** the Mac and the Pi match. **Not on GitHub yet:** c15e9c3 (brightness logging), 527ef37 (HSI restyle)
+  and this notes commit; David will say when to push. After a page deploy David presses ctrl-shift-R.
+- **HSI restyled to the G5's Figure 2-19** (details in G5_REVIEW.md, feature 8): ring around the CDI, magenta
+  head and tail outside it, deviation bar inside, cyan double-line bearing pointer that outlines the magenta
+  needle when the two line up. David chose each step from Mac mockups. He has not yet seen it on the Pi with a
+  flight plan and GPS fix.
+- **Brightness jump (0 to full overnight, 2026-11-13/14):** server 1.7.9 logs settled brightness changes ("Brightness
+  X -> Y from the page"), knob presses of 1 s or more and the 3 s hold; page 0.8.35 logs its 3 s full-brightness
+  hold with the age of the last message. The night of 2026-11-14 was clean (every change was David's). Leave the
+  logging on; if it happens again read `/var/log/piefis.log` (Brightness / Knob / Page lines) and
+  `/sys/class/backlight/10-0045/brightness`.
+- **Knob I2C glitches** ("knob jump ignored" a few times a day): the bad readings are the real position with its
+  bits shifted right (55 -> 27, 59 -> 29, 67 -> 1), the Pi 4's known I2C clock-stretching bug with the knob's
+  ATtiny817 seesaw (Adafruit's firmware has nothing that would do it). The bus runs at the default 100 kHz (the
+  400 kHz in `aio_server.py` has no effect on the Pi). Proposed, not done: `dtparam=i2c_arm_baudrate=50000` in
+  `/boot/firmware/config.txt` and a reboot (Adafruit's advice); then 10 kHz if the jumps go on. Also noticed: the
+  seesaw library sleeps 8 ms per read on the server's main loop (about 16 ms of every 36 ms poll); could move the
+  knob reads to a thread.
+- **Test feed** (scratchpad `knob/fake_feed_knob.py`) now also takes `dtk=` and `xtrack=`; `EFIS_DIR=<copy>` serves a
+  scratch copy of the page for mockups.
+- **Next:** David's view of the new HSI on the Pi; the I2C bus speed if he wants it; then G5_REVIEW.md feature 9
+  (CDI scale 5.00 / 1.25 / 0.25 NM; note the dots are now about 34 px apart), 10, 11, 12. Wind still needs a flight.
+
+## Update 2026-11-14: bearing pointer (page 0.8.34, hsi 1.0.18, server 1.7.8, all on the Pi)
 - **State:** GitHub, the Mac and the Pi match. After a page deploy David presses ctrl-shift-R.
 - **Feature 8, bearing pointer, done:** cyan pointer to the active waypoint in the outer band of the rose (details
   in G5_REVIEW.md). Open question from David ("why this style?"): the colour and ring follow the Garmin convention,

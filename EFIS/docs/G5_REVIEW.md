@@ -205,11 +205,21 @@ Of 31 G5 features: PiEFIS has 10, has 10 in part, lacks 8; 3 do not apply. Secti
 - Corners: 8 px for every stand-alone box (readouts, panels, DTK, wind, GPS, the tape's bug edit box); 4 px for
   rows and buttons inside panels; the HSI heading box stays square.
 - Feature 8 done 2026-11-14 (hsi 1.0.18, page 0.8.34): cyan bearing pointer to the active waypoint from the
-  server's `bearing` (magnetic). Thin 2 px line, open arrowhead, ring on the head's shaft, plain tail. Drawn only in
-  the band between the rose ticks and the course needle's ends (Claude's choice, so it never hides under the course
-  needle); Garmin's run across the whole rose under the CDI. Hidden without a bearing, a trusted GPS position or a
-  heading. Style taken from these notes / the Garmin convention, not yet checked against the G5 guide's figure;
-  David may want it matched (full length) after seeing it on the Pi.
+  server's `bearing` (magnetic). Hidden without a bearing, a trusted GPS position or a heading.
+- Restyled 2026-11-15 to the G5 figure (hsi 1.0.19, Figure 2-19 on guide page 23, pdf page 37), worked out with
+  David. The G5 pointer is not full length (the 1.0.18 note above said so wrongly): it is short, outside a ring
+  around the CDI. Now:
+  - a grey ring (0.45 of the rose radius) around the CDI, shown with the bearing pointer;
+  - the magenta needle's head and tail outside the ring, 4 px wide (was 3), the tail a plain bar (the T-bar went);
+    the deviation bar is the needle's middle inside the ring, across hollow dots spaced to the ring (about 34 px,
+    was 20; full scale two dots) with no centre dot; the TO/FROM triangle on the axis 44 px ahead of / behind the
+    centre;
+  - the cyan pointer: two 2 px lines into an open arrowhead, the two lines closed at the tail (no stub), no ring on
+    the shaft. It is drawn under the needle, just outside its edges, so on course (bearing = DTK, the usual case)
+    it reads as the magenta needle outlined in cyan; apart, as the G5's double-line pointer (David's reading of
+    the G5 design: the double line and open head are there to frame the magenta needle when the two line up).
+  - Both take their sizes from `_needleGeometry()` in `hsi.mjs`, so the outline follows any needle change.
+  - At full-scale deflection the deviation bar's ends run a little past the ring, as in the G5 figure.
 - Left in this list: deferred 10 (HSI corners; wind top left and GPS bottom right done). Next: feature 9 (CDI
   scale) onward.
 
