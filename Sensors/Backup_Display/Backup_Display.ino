@@ -78,7 +78,7 @@
 #include <Adafruit_seesaw.h>
 #include "src/Adafruit_MCP2515/src/Adafruit_MCP2515.h"   // patched copy, see Sensors/Libraries/README.md
 
-#define VERSION "1.7.42"
+#define VERSION "1.7.43"
 
 const uint8_t LCD_COLS = 20;
 const uint8_t LCD_ROWS = 4;
@@ -1211,7 +1211,9 @@ void loop1() {
     drawnPage = page;
     horizonState = HZ_UNKNOWN;
     slipForget();
-    for (int i = 0; i < 5; i++) slotRelease(OWNER_GPS_ICON + i);
+    // free every slot that was handed out (horizon, slip ball, GPS icon): the GPS icon needs five of the six, and the
+    // horizon and ball kept theirs when leaving the Flight page, so the icon came out with blank cells (1.7.43)
+    for (int slot = 0; slot < 8; slot++) if (slotOwner[slot] != RESERVED) slotOwner[slot] = NO_OWNER;
     markerCreate();                            // the GPS page borrows the two edge line slots; put the lines back and forget what was there
     memset(slotData[BAR_LEFT_SLOT], 0xFF, 8);
     memset(slotData[BAR_RIGHT_SLOT], 0xFF, 8);
