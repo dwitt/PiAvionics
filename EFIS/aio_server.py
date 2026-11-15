@@ -1,7 +1,7 @@
 """ Asynchronous I/O based webserver to handle page and websocket"""
 # pyright: reportMissingImports=false
 
-VERSION = "1.7.10"
+VERSION = "1.7.11"
 
 import asyncio
 import ipaddress
@@ -11,6 +11,7 @@ import sys
 import time
 import datetime
 import signal
+import threading
 
 
 class _StampedStream:
@@ -120,6 +121,9 @@ ENCODER_POLL_INTERVAL = 0.02  # Encoder poll period in seconds (50 Hz)
 ENCODER_BUTTON_PIN = 24  # GPIO pin for encoder button
 KNOB_PRESS_LOG_S = 1.0  # presses at least this long are logged with their length
 KNOB_HOLD_LOG_S = 3.0  # a press still held this long is logged at once (the page's full-brightness hold)
+KNOB_SLOW_READ_S = 0.2  # a knob read (position and button) taking longer than this counts as a failure
+KNOB_FAILS_TO_REPORT = 3  # this many failed or slow reads in a row are logged as "knob not answering"
+KNOB_RETRY_INTERVAL = 0.25  # seconds between tries while the knob is failing
 BRIGHTNESS_LOG_SETTLE_S = 2.0  # a brightness change is logged once it has not changed for this long
 CDI_SCALE_CHOICES_NM = (5.0, 1.25, 0.25)  # the fixed CDI scales the page may set (G5 / G3X VFR scales); else "auto"
 SEESAW_EXPECTED_PRODUCT_ID = 4991  # Expected product ID for seesaw encoder
@@ -1563,12 +1567,16 @@ async def monitor_flight_plan(data):
         await asyncio.sleep(FLIGHTPLAN_POLL_INTERVAL)
 
 
-async def read_input(encoder, button, data):
+def read_input(encoder, button, data):
     """
     Read the rotary encoder position and button status and store them in the
     data object.
 
-    Should be called by run or gather
+    Runs forever in its own thread (start_knob_thread), not on the asyncio loop: the knob's I2C
+    reads block, and when the knob stops answering each read can hang for about a second. On the
+    loop that froze CAN, the status checks and the page (2026-11-15); here it only stops the knob.
+    The two values it stores (data.position, data.pressed) are single attribute writes, which the
+    loop reads when it builds the next message.
 
     Keyword arguments:
     encoder -- an adafruit rotaryio object
@@ -1580,7 +1588,10 @@ async def read_input(encoder, button, data):
     error_count = 0
     press_started = None        # monotonic time the button was pressed, None while released
     hold_logged = False         # "still held" logged for this press
+    failures = 0                # failed or slow reads in a row
+    reported = False            # "knob not answering" logged for this run of failures
     while True:
+        read_started = time.monotonic()
         try:
             new_encoder_position = -encoder.position
             if abs(new_encoder_position) >= ENCODER_MAX_PLAUSIBLE:
@@ -1604,6 +1615,16 @@ async def read_input(encoder, button, data):
                     consecutive_rejects = 0
             data.pressed = not button.value
             error_count = 0  # Reset error count on successful read
+            read_time = time.monotonic() - read_started
+            if read_time > KNOB_SLOW_READ_S:
+                failures += 1
+                if failures >= KNOB_FAILS_TO_REPORT and not reported:
+                    print(f"Knob not answering: {failures} slow reads in a row (last {read_time:.2f} s)", flush=True)
+                    reported = True
+            else:
+                if reported:
+                    print(f"Knob answering again after {failures} failed or slow reads", flush=True)
+                failures, reported = 0, False
             # Log long presses (to find what turns the brightness to full when nobody is at the knob: a 3 s hold
             # on the page does that). Short presses are not logged.
             now = time.monotonic()
@@ -1619,12 +1640,24 @@ async def read_input(encoder, button, data):
                 press_started = None
         except Exception as e:
             error_count += 1
+            failures += 1
             if DEBUG and error_count % 100 == 0:  # Only print every 100 errors to avoid spam
                 print(f"Error reading encoder: {e}")
+            if failures >= KNOB_FAILS_TO_REPORT and not reported:
+                print(f"Knob not answering: {failures} failed reads in a row, last: {e}", flush=True)
+                reported = True
             # Keep the last known good values
-            await asyncio.sleep(0.1)  # Add a small delay when errors occur
+            time.sleep(KNOB_RETRY_INTERVAL)
             continue
-        await asyncio.sleep(ENCODER_POLL_INTERVAL)
+        time.sleep(KNOB_RETRY_INTERVAL if failures else ENCODER_POLL_INTERVAL)
+
+
+def start_knob_thread(encoder, button, data):
+    """Start read_input in a daemon thread (it ends with the process)."""
+    thread = threading.Thread(target=read_input, args=(encoder, button, data), name="knob", daemon=True)
+    thread.start()
+    return thread
+
 
 def connect_to_rotary_encoder(addr=ENCODER_I2C_ADDRESS):
     """
@@ -1753,7 +1786,7 @@ async def main():
     # - process_can_messages() to update data from CAN bus
     # - monitor_status() to check module heartbeats and stale data
     # - send_json() to send data to websocket clients
-    # - read_input() to store encoder/button input
+    # - read_input() to store encoder/button input (in its own thread)
     # - web_socket_response.data to make data accessible to websocket handler
     avionics_data = AvionicsData()
 
@@ -1833,7 +1866,8 @@ async def main():
     
     if encoder is not None and button is not None:
         # handle the case here we were not able to connect to the encoder
-        coroutines.append(read_input(encoder, button, avionics_data))
+        # (its own thread, not a coroutine: a stuck knob must not hold up the loop)
+        start_knob_thread(encoder, button, avionics_data)
    
     # Create Task objects from coroutines so they can be cancelled
     tasks = [asyncio.create_task(coro) for coro in coroutines]
