@@ -143,6 +143,15 @@ Of 31 G5 features: PiEFIS has 10, has 10 in part, lacks 8; 3 do not apply. Secti
 8. **Bearing pointer.** Draw the server's `bearing` as a thin cyan needle with a ring (2.2.1.1).
 9. **CDI scale.** Replace fixed `_cdiFullScaleNM` (2 NM) with the G5 VFR scales 5.00 / 1.25 / 0.25 NM (Table 2-2);
    show the scale beside the CDI.
+   **Done 2026-11-15** (hsi 1.0.20, page 0.8.36, server 1.7.10, flightplan 1.0.1; seen working on the Pi). The G5
+   guide does not say how the VFR scale is chosen; the automatic rule follows the G3X Touch guide (190-02472-00
+   Rev. B, CDI section): 1.25 NM within 30 NM of any airport in the route, otherwise 5.00 NM. David chose:
+   automatic with a manual override that stays until he picks Auto; 0.25 NM is manual only (the G3X uses it on an
+   approach leg or near the FAF/MAP, which a VFR plan from the GPS does not tell us). A box under DTK shows AUTO
+   (grey) or MAN (white) and the scale; a tap opens CDI SCALE: Auto (current automatic value), 5.00, 1.25, 0.25 nm.
+   The server works out `cdi_auto_nm` (`auto_cdi_scale` in `flightplan.py`) and keeps the choice in
+   `controller_state['cdi_scale']` (survives a page reload, not a server restart). The DTK and scale boxes are
+   116 px wide. Note: en route at 5.00 NM the bar is far less sensitive than the old fixed 2 NM.
 10. **Track marker on the PFD heading tape** (magenta triangle, 2.1.5).
 11. **ALIGNING state.** `instrumentStatus.mjs` knows module state 0 = STARTING. Show "ALIGNING" over the attitude
     instead of a red X while the IMU starts (1.4.2).
@@ -220,8 +229,8 @@ Of 31 G5 features: PiEFIS has 10, has 10 in part, lacks 8; 3 do not apply. Secti
     the G5 design: the double line and open head are there to frame the magenta needle when the two line up).
   - Both take their sizes from `_needleGeometry()` in `hsi.mjs`, so the outline follows any needle change.
   - At full-scale deflection the deviation bar's ends run a little past the ring, as in the G5 figure.
-- Left in this list: deferred 10 (HSI corners; wind top left and GPS bottom right done). Next: feature 9 (CDI
-  scale) onward.
+- Left in this list: deferred 10 (HSI corners; wind top left and GPS bottom right done). Feature 9 (CDI scale)
+  done 2026-11-15 (see the feature list). Next: feature 10 onward.
 
 1. **Colour code; red only for warnings.** Red now means selected (box borders, tape line, HSI ring), bugs, and
    failures.

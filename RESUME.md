@@ -2,9 +2,35 @@
 
 Tell Claude: "Read RESUME.md and carry on."
 
-## Update 2026-11-15 (latest): G5-style needle and bearing pointer, brightness logging (page 0.8.35, hsi 1.0.19, server 1.7.9, all on the Pi)
-- **State:** the Mac and the Pi match. **Not on GitHub yet:** c15e9c3 (brightness logging), 527ef37 (HSI restyle)
-  and this notes commit; David will say when to push. After a page deploy David presses ctrl-shift-R.
+## Update 2026-11-15 (latest): CDI scale, knob I2C fixed properly (page 0.8.36, hsi 1.0.20, server 1.7.11, all on the Pi)
+- **State:** the Mac, the Pi and GitHub match (pushed 2026-11-15 with David's go-ahead). After a page deploy David
+  presses ctrl-shift-R.
+- **Feature 9, CDI scale, done** (details in G5_REVIEW.md): automatic 1.25 NM within 30 NM of a route airport,
+  else 5.00 NM; tap the box under DTK to pick 5.00 / 1.25 / 0.25 or Auto; a manual pick stays until Auto. David
+  tried it on the Pi; the log shows each choice ("CDI scale X -> Y from the page").
+- **The 50 kHz I2C change broke the EFIS:** after the 15:32 reboot the EFIS kept flagging no air data, no IMU and
+  GPS dropouts while the backup display was fine. CAN on the wire was perfect (10 Hz, no gap over 0.18 s). Cause:
+  the knob's I2C stopped answering (ETIMEDOUT on bus 1) and each read hung about 1 s on the server's asyncio loop,
+  so CAN, the status checks and the page all stalled (py-spy: half the samples in the knob's I2C write; CAN socket
+  dropped messages). Air data and attitude time out at 0.5 s, GPS at 3.5 s. Turning the knob woke it. The read
+  errors were not logged (only with DEBUG).
+- **Fixes (David agreed to both):**
+  - Server 1.7.11: `read_input` runs in its own daemon thread (`start_knob_thread`); logs "Knob not answering"
+    after 3 failed or slow (> 0.2 s) reads in a row and "Knob answering again"; retries every 0.25 s meanwhile.
+    Tested on the Mac with a fake knob hanging 1 s per read: asyncio loop lag under 3 ms.
+  - Bus 1 is now software I2C on the same pins (GPIO 2 SDA, 3 SCL, about 100 kHz), which handles the knob's clock
+    stretching: `dtparam=i2c_arm=off` and `dtoverlay=i2c-gpio,bus=1,i2c_gpio_sda=2,i2c_gpio_scl=3,i2c_gpio_delay_us=2`
+    in `/boot/firmware/config.txt`. Backups on the Pi: `config.txt.bak-hwi2c-20261115` (hardware I2C, 100 kHz, undo
+    = restore it and reboot), `config.txt.50k-20261115` (the failed 50 kHz), `config.txt.bak-20261115` (original).
+  - First half hour after: 34 QNH changes, no "not answering", no "knob jump ignored", no re-baselines. Keep
+    watching those lines.
+- **GPS on the bench at 15:50:** status message said no fix, 0 satellites (no position or speed sent). The module,
+  not the Pi; check the antenna if it keeps happening where it used to get a fix.
+- **Next:** G5_REVIEW.md feature 10 (track marker on the PFD heading tape), 11 (ALIGNING), 12 (message history).
+  Wind still needs a flight.
+
+## Update 2026-11-15: G5-style needle and bearing pointer, brightness logging (page 0.8.35, hsi 1.0.19, server 1.7.9, all on the Pi)
+- **State:** the Mac and the Pi matched (all pushed since, see above). After a page deploy David presses ctrl-shift-R.
 - **HSI restyled to the G5's Figure 2-19** (details in G5_REVIEW.md, feature 8): ring around the CDI, magenta
   head and tail outside it, deviation bar inside, cyan double-line bearing pointer that outlines the magenta
   needle when the two line up. David chose each step from Mac mockups. He has not yet seen it on the Pi with a
