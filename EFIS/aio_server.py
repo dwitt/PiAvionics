@@ -1,7 +1,7 @@
 """ Asynchronous I/O based webserver to handle page and websocket"""
 # pyright: reportMissingImports=false
 
-VERSION = "1.7.8"
+VERSION = "1.7.9"
 
 import asyncio
 import ipaddress
@@ -118,6 +118,9 @@ ENCODER_MAX_PLAUSIBLE = 2**30  # Reads near +/-2^31 are corrupted I2C transfers 
 ENCODER_REBASELINE_COUNT = 5  # Consecutive rejected reads before accepting a new baseline
 ENCODER_POLL_INTERVAL = 0.02  # Encoder poll period in seconds (50 Hz)
 ENCODER_BUTTON_PIN = 24  # GPIO pin for encoder button
+KNOB_PRESS_LOG_S = 1.0  # presses at least this long are logged with their length
+KNOB_HOLD_LOG_S = 3.0  # a press still held this long is logged at once (the page's full-brightness hold)
+BRIGHTNESS_LOG_SETTLE_S = 2.0  # a brightness change is logged once it has not changed for this long
 SEESAW_EXPECTED_PRODUCT_ID = 4991  # Expected product ID for seesaw encoder
 
 # =============================================================================
@@ -325,6 +328,10 @@ class MyWebSocketResponse:
         # Initialize backlight with error handling
         self.backlight = None
         self.last_brightness = None
+        # brightness log: a change is logged once it has settled (BRIGHTNESS_LOG_SETTLE_S), not every step of a turn
+        self._brightness_logged = None
+        self._brightness_pending = None
+        self._brightness_changed_at = 0.0
         try:
             # Check if the backlight path exists
             if not os.path.exists(BACKLIGHT_PATH):
@@ -447,6 +454,23 @@ class MyWebSocketResponse:
         # Return the websocket response object - required by aiohttp's API
         return web_socket
 
+    def log_brightness(self, brightness):
+        """Log a brightness change from the controlling page once it has settled (the page sends its brightness
+        about once a second and on every step of a turn): "Brightness 0 -> 100"."""
+        try:
+            brightness = max(0, min(100, int(brightness)))
+        except (ValueError, TypeError):
+            return
+        now = time.monotonic()
+        if brightness != self._brightness_pending:
+            self._brightness_pending = brightness
+            self._brightness_changed_at = now
+        if (self._brightness_pending != self._brightness_logged and
+                now - self._brightness_changed_at >= BRIGHTNESS_LOG_SETTLE_S):
+            before = "start" if self._brightness_logged is None else self._brightness_logged
+            print(f"Brightness {before} -> {self._brightness_pending} from the page", flush=True)
+            self._brightness_logged = self._brightness_pending
+
     def process_json_data(self, web_socket_message):
         """Process any json that is contained in the web socket message"""
 
@@ -496,6 +520,7 @@ class MyWebSocketResponse:
                             self.data.controller_state["brightness"] = max(0, min(100, int(brightness)))
                         except (ValueError, TypeError):
                             pass
+                    self.log_brightness(brightness)
                     
                     if self.backlight is not None:
                         try:
@@ -1541,6 +1566,8 @@ async def read_input(encoder, button, data):
     last_encoder_position = None
     consecutive_rejects = 0
     error_count = 0
+    press_started = None        # monotonic time the button was pressed, None while released
+    hold_logged = False         # "still held" logged for this press
     while True:
         try:
             new_encoder_position = -encoder.position
@@ -1565,6 +1592,19 @@ async def read_input(encoder, button, data):
                     consecutive_rejects = 0
             data.pressed = not button.value
             error_count = 0  # Reset error count on successful read
+            # Log long presses (to find what turns the brightness to full when nobody is at the knob: a 3 s hold
+            # on the page does that). Short presses are not logged.
+            now = time.monotonic()
+            if data.pressed and press_started is None:
+                press_started, hold_logged = now, False
+            elif data.pressed and not hold_logged and now - press_started >= KNOB_HOLD_LOG_S:
+                print(f"Knob: button held {KNOB_HOLD_LOG_S:.0f} s (the page sets full brightness)", flush=True)
+                hold_logged = True
+            elif not data.pressed and press_started is not None:
+                held = now - press_started
+                if held >= KNOB_PRESS_LOG_S:
+                    print(f"Knob: button pressed for {held:.1f} s", flush=True)
+                press_started = None
         except Exception as e:
             error_count += 1
             if DEBUG and error_count % 100 == 0:  # Only print every 100 errors to avoid spam

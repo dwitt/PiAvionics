@@ -53,7 +53,7 @@ import { FAILURE_LOOK } from './failureLook.mjs';
 
 // ----------------------------------------------------------------------------
 
-const VERSION = "0.8.34";
+const VERSION = "0.8.35";
 
 // Viewer mode: a page that is not the Pi's own display only watches. It sends
 // nothing to the server, ignores the encoder, and shows the QNH and brightness
@@ -79,6 +79,7 @@ const VIEW_ONLY = pageParams.get('view') === '1' || serverOverride !== null
 // so after the first pass the page keeps following controller_state.qnh, except while the person is
 // turning the dial. The page sends the QNH only when the person changes it.
 var gotFirstMessage = false;
+var lastMessageAt = Date.now();   // time (ms) the last message from the server arrived (logged with a long hold)
 var restoredFromServer = false;
 
 // What the server's facts mean for the display: which instruments can be trusted and what to announce
@@ -444,6 +445,7 @@ function RecieveWebSocketMessage(event) {
     // this will contain the data from the CAN bus
     dataObject = JSON.parse(event.data);
     gotFirstMessage = true;
+    lastMessageAt = Date.now();
     if (encoderRebasePending) {
         encoderRebasePending = false;
         if (typeof userInput !== 'undefined' && userInput) userInput.rebaseEncoder();
@@ -622,6 +624,9 @@ function setup() {
     userInput.report = (text) => sendCommand({ log: text });     // knob jumps go to the Pi's log
     // Knob held 3 s, from anywhere: full brightness, left in edit mode so it can be turned down
     userInput.onLongHold = () => {
+        // logged on the Pi, to find what turns the brightness to full when nobody is at the knob (2026-11-14)
+        const age = Date.now() - lastMessageAt;
+        sendCommand({ log: "knob held 3 s: full brightness (was " + brightness.value + ", last message " + age + " ms ago)" });
         brightness.value = 100;
         return brightness;
     };
