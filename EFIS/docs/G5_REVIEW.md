@@ -178,8 +178,8 @@ Of 31 G5 features: PiEFIS has 10, has 10 in part, lacks 8; 3 do not apply. Secti
 
 13. Standard-rate bank pointers: bank = atan(TAS × 0.0524 / g), TAS in m/s; ~15° at 100 kt (2.1.2.2).
 14. Pitch attitude offset ±5° from the Menu, long press to centre (2.1.7).
-15. CDI on the PFD — only useful if a full-screen PFD mode is added.
-16. Automatic backlight with an ambient light sensor (e.g. VEML7700) (1.4.4).
+15. ~~CDI on the PFD~~ — dropped 2026-11-15 (David): no full-screen PFD mode planned.
+16. ~~Automatic backlight with an ambient light sensor~~ — dropped 2026-11-15 (David).
 17. Data logging — covered by the planned CAN black-box logger; could also keep the message history.
 
 ## Making the display look professional
