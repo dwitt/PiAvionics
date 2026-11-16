@@ -1,6 +1,6 @@
 'use strict';
 
-export const VERSION = '1.0.4';
+export const VERSION = '1.0.5';
 
 import { Container, FillGradient, Graphics, TextStyle, Text } from './pixi.mjs';
 
@@ -15,6 +15,14 @@ import { Container, FillGradient, Graphics, TextStyle, Text } from './pixi.mjs';
  *****************************************************************************/
 // The pitch ladder is shown inside a circle this many pixels smaller than the bank arc
 const PITCH_MASK_INSET = 30;
+
+// Standard-rate turn bank angle pointers (G5 2.1.2.2): green marks on the bank arc at the bank angle for a
+// 3 degree per second turn at the current TAS, tan(bank) = TAS x rate / g; about 15 degrees at 100 kt.
+const STANDARD_RATE_RAD_S = 3 * Math.PI / 180;
+const GRAVITY = 9.80665;                    // m/s2
+const KNOTS_TO_MS = 0.514444;
+const STANDARD_RATE_MIN_TAS = 30;           // kt: below this (on the ground) the marks would sit on the zero mark
+const STANDARD_RATE_COLOUR = 0x00FF00;      // green, as the G5
 
 export class AttitudeIndicator {
     constructor(app) {
@@ -100,6 +108,14 @@ export class AttitudeIndicator {
    
         // add the bank arc container to the roll container
         this.rollContainer.addChild(this.createBankArcContainer(this.radius));
+
+        // the standard-rate marks turn with the arc, so the fixed pointer meets one at standard-rate bank
+        this.standardRateMarks = [this.createStandardRateMark(-1), this.createStandardRateMark(1)];
+        for (const mark of this.standardRateMarks) {
+            mark.visible = false;
+            this.rollContainer.addChild(mark);
+        }
+        this._standardRateBank = null;
 
         // Position the roll container in the center of the window
         this.rollContainer.x = this.displayWidth / 2;
@@ -542,6 +558,42 @@ export class AttitudeIndicator {
         this._smoothedY = this._smoothedY + elapsedTime * (newValue - this._smoothedY) / this._smoothing;
         this._lastUpdateY = now;
         return this._smoothedY;
+    }
+
+    /**
+     * Show the standard-rate bank angle marks for this TAS, or hide them
+     * @param {number|null} knots true airspeed, null when it cannot be trusted
+     */
+    set standardRateTas(knots) {
+        let bank = null;
+        if (knots !== null && knots !== undefined && knots >= STANDARD_RATE_MIN_TAS) {
+            bank = Math.atan(knots * KNOTS_TO_MS * STANDARD_RATE_RAD_S / GRAVITY) * 180 / Math.PI;
+            bank = Math.round(bank * 10) / 10;      // no redraw for changes too small to see
+        }
+        if (bank === this._standardRateBank) return;
+        this._standardRateBank = bank;
+        for (const mark of this.standardRateMarks) {
+            mark.visible = bank !== null;
+            if (bank !== null) mark.angle = mark.side * bank;
+        }
+    }
+
+    /**
+     * One standard-rate mark, drawn at the top of the arc and turned to its bank angle by standardRateTas
+     * @param {number} side -1 left, 1 right
+     */
+    createStandardRateMark(side) {
+        const mark = new Graphics();
+        mark.side = side;
+        const r = this.radius;
+        // a triangle outside the arc with its point on the arc, like the white zero mark (David chose this over
+        // the G5's arrows along the arc)
+        const height = 14, half = 7;
+        const path = [0, -r, half, -r - height, -half, -r - height];
+        mark.poly(path);
+        mark.fill({ color: STANDARD_RATE_COLOUR });
+        mark.stroke({ width: 1, color: 0x000000, alignment: 1 });
+        return mark;
     }
 
     /*************************************************************************

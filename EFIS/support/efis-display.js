@@ -53,7 +53,7 @@ import { FAILURE_LOOK } from './failureLook.mjs';
 
 // ----------------------------------------------------------------------------
 
-const VERSION = "0.8.38";
+const VERSION = "0.8.39";
 
 // Viewer mode: a page that is not the Pi's own display only watches. It sends
 // nothing to the server, ignores the encoder, and shows the QNH and brightness
@@ -204,6 +204,9 @@ const FPS_CAP_30 = storedFlag(FPS_CAP_KEY, true);
 // V-speed tags on the speed tape: the Menu's "V-Speed Tags" row, kept in this browser's storage
 const VSPEED_TAGS_KEY = 'efis.vspeedTags';
 let vspeedTagsShown = storedFlag(VSPEED_TAGS_KEY, true);
+// Standard-rate bank marks on the bank arc: the Menu's "Std Rate Marks" row, kept in this browser's storage
+const STD_RATE_MARKS_KEY = 'efis.stdRateMarks';
+let stdRateMarksShown = storedFlag(STD_RATE_MARKS_KEY, true);
 const SLIP_CUE_KEY = 'efis.slipCue';
 const SLIP_CUES = { both: "Both", ball: "Ball", trapezoid: "Trapezoid" };
 let slipCue = 'both';
@@ -746,6 +749,14 @@ function setup() {
             storeFlag(VSPEED_TAGS_KEY, vspeedTagsShown);
         },
     }, {
+        label: "Std Rate Marks",
+        getValue: () => stdRateMarksShown ? "On" : "Off",
+        keepOpen: true,
+        action: () => {
+            stdRateMarksShown = !stdRateMarksShown;
+            storeFlag(STD_RATE_MARKS_KEY, stdRateMarksShown);
+        },
+    }, {
         label: "Modules",
         getValue: () => {
             let notOk = 0;
@@ -1038,6 +1049,8 @@ function DisplayUpdateLoop(delta) {
     speedDisplay.update();
     tasDisplay.validity.tas = valid.trueAirspeed;
     tasDisplay.update();
+    // standard-rate bank marks on the bank arc from the TAS (G5 review feature 13)
+    attitudeIndicator.standardRateTas = (stdRateMarksShown && valid.trueAirspeed) ? tasDisplay.trueAirSpeedValue : null;
 
     if (dataObject.oat != null) {
         oatDisplay.temperature = dataObject.oat;

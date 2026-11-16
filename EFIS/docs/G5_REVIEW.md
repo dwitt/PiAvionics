@@ -177,6 +177,10 @@ Of 31 G5 features: PiEFIS has 10, has 10 in part, lacks 8; 3 do not apply. Secti
 ### Low priority
 
 13. Standard-rate bank pointers: bank = atan(TAS × 0.0524 / g), TAS in m/s; ~15° at 100 kt (2.1.2.2).
+    **Done 2026-11-15** (attitude-indicator 1.0.5, page 0.8.39): two green triangles outside the bank arc with
+    their points on it (like the white zero mark; David chose them over the G5's arrows along the arc), turning
+    with the arc so the yellow pointer meets one at standard-rate bank. Hidden without a trusted TAS or below
+    30 kt TAS. Menu row "Std Rate Marks" On/Off, kept in the browser's storage (default On).
 14. Pitch attitude offset ±5° from the Menu, long press to centre (2.1.7).
 15. ~~CDI on the PFD~~ — dropped 2026-11-15 (David): no full-screen PFD mode planned.
 16. ~~Automatic backlight with an ambient light sensor~~ — dropped 2026-11-15 (David).
