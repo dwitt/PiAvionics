@@ -2,15 +2,13 @@
 
 Tell Claude: "Read RESUME.md and carry on."
 
-## Update 2026-11-16 (latest): features 13 and 14 (page 0.8.40, server 1.7.12 on the Mac; the Pi has page 0.8.39)
-- **State:** commits 84feebc, 2608daa, 776e435 are on the Mac only, **not pushed**. The Pi has 0.8.39 (feature 13);
-  **feature 14 is not on the Pi yet** and needs a server restart as well as ctrl-shift-R (the server stores the
-  offset). Ask David before deploying and before pushing.
+## Update 2026-11-16 (latest): features 13 and 14 (page 0.8.40, server 1.7.12, all on the Pi)
+- **State:** the Mac, the Pi and GitHub match (feature 14 deployed and the server restarted 2026-11-16; pushed).
 - **Dropped 15 and 16** (CDI on the PFD, automatic backlight), David's choice.
 - **Feature 13, standard-rate bank marks, done and on the Pi** (attitude-indicator 1.0.5): green triangles outside
   the bank arc, points on it (David chose these over the G5's arrows), turning with the arc; hidden without a trusted
   TAS or below 30 kt. Menu row "Std Rate Marks" On/Off (browser storage, default On). Not yet seen with real TAS.
-- **Feature 14, pitch offset, done on the Mac** (pitchOffset.mjs 1.0.0, aircraft_settings 1.0.4, server 1.7.12):
+- **Feature 14, pitch offset, done and on the Pi** (pitchOffset.mjs 1.0.0, aircraft_settings 1.0.4, server 1.7.12):
   David's idea, on the knob as a mechanical AI, the last knob item (after selected altitude, "for now"). Cyan outline
   round the yellow symbol (2 px selected, 3 px editing), "PITCH +2.0°" box under the symbol while editing (beside
   the wing it hit the altitude tape), 0.5° per click, ±5°, long press while editing centres it; "+2.0°" beside the
