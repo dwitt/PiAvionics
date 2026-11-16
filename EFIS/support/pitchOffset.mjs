@@ -1,0 +1,148 @@
+'use strict';
+
+export const VERSION = '1.0.0';
+
+import { Container, Graphics, Text, TextStyle } from './pixi.mjs';
+
+const CYAN = 0x00FFFF;              // a value the pilot sets, and the knob's selected / editing outline
+const STEP = 0.5;                   // degrees per knob click
+const MAX_OFFSET = 5;               // degrees either way (as the G5)
+const SERVER_HOLD_MS = 3000;        // after a change here, the server's value is not taken for this long
+const OUTLINE_PAD = 8;              // px between the symbol and its outline
+const READOUT_GAP = 10;             // px between the right wing tip and the offset label
+const READOUT_BELOW = 6;            // px between the outline and the editing readout under it
+
+/**
+ * Pitch attitude offset (G5 review feature 14, G5 guide 2.1.7): the knob moves the yellow aircraft symbol up or
+ * down, as on a mechanical attitude indicator, up to 5 degrees either way in 0.5 degree steps. The horizon and the
+ * pitch ladder do not move. It is the last knob item.
+ *
+ * Selected: a 2 px cyan outline round the symbol. Editing: a 3 px outline and a "PITCH +2.0°" box under the
+ * symbol. A long press while editing centres the symbol (sync). While the offset is not zero a small cyan
+ * "+2.0°" stays right of the wing, so a moved symbol is never a surprise.
+ *
+ * The offset is kept on the Pi (aircraft_settings.json, attitude group): the page sends each change and takes the
+ * server's value at start, and from other pages, when it has not changed it itself for a moment.
+ */
+export class PitchOffset {
+
+    /**
+     * @param {PIXI.Application} app The PFD
+     * @param {AircraftIndicator} aircraft The yellow aircraft symbol (its graphics, half width and depth)
+     * @param {number} pitchRatio Pixels per degree of pitch (the attitude indicator's)
+     * @param {function} send Sends a command to the server
+     */
+    constructor(app, aircraft, pitchRatio, send) {
+        this.aircraft = aircraft;
+        this.centreY = aircraft.graphics.y;
+        this.pitchRatio = pitchRatio;
+        this.send = send;
+
+        this.offset = 0;                // degrees, + is up
+        this.selected = false;
+        this.editing = false;
+        this.lastEncoderValue = 0;
+        this.lastLocalChange = -Infinity;
+
+        // everything that moves with the symbol, drawn in its coordinates (0, 0 at the dot)
+        this.container = new Container();
+        this.container.x = aircraft.graphics.x;
+        this.container.y = this.centreY;
+
+        const left = -aircraft.halfWidth - OUTLINE_PAD;
+        const width = 2 * (aircraft.halfWidth + OUTLINE_PAD);
+        const top = -OUTLINE_PAD - 2;
+        const height = aircraft.depth + 2 * OUTLINE_PAD + 4;
+        this.selectedOutline = new Graphics().roundRect(left, top, width, height, 8)
+            .stroke({ width: 2, color: CYAN, alignment: 1 });
+        this.editingOutline = new Graphics().roundRect(left, top, width, height, 8)
+            .stroke({ width: 3, color: CYAN, alignment: 2 / 3 });
+
+        const style = { fontFamily: 'Tahoma', fontSize: 20, fill: CYAN };
+        this.label = new Text({ text: '', style: new TextStyle(style) });    // the offset while not editing
+        this.label.anchor.set(0, 0.5);
+        this.label.x = aircraft.halfWidth + READOUT_GAP;
+        this.label.y = aircraft.depth / 2;
+
+        this.readout = new Container();         // the box while editing
+        this.readoutText = new Text({ text: 'PITCH +0.0°', style: new TextStyle(style) });
+        this.readoutText.anchor.set(0, 0.5);
+        this.readoutText.x = 8;
+        const boxWidth = this.readoutText.width + 16;
+        const boxHeight = 30;
+        this.readout.addChild(new Graphics().roundRect(0, -boxHeight / 2, boxWidth, boxHeight, 8)
+            .fill({ color: 0x000000 }).stroke({ width: 3, color: CYAN, alignment: 2 / 3 }));
+        this.readout.addChild(this.readoutText);
+        // centred under the symbol's outline (right of the wing it ran into the altitude tape)
+        this.readout.x = -boxWidth / 2;
+        this.readout.y = top + height + READOUT_BELOW + boxHeight / 2;
+
+        this.container.addChild(this.selectedOutline, this.editingOutline, this.label, this.readout);
+        app.stage.addChild(this.container);
+        this.show();
+    }
+
+    /** Offset as shown: "+2.0°", "-1.5°", "0.0°" */
+    static format(offset) {
+        return (offset > 0 ? '+' : offset < 0 ? '−' : '') + Math.abs(offset).toFixed(1) + '°';
+    }
+
+    show() {
+        const y = this.centreY - this.offset * this.pitchRatio;
+        this.aircraft.graphics.y = y;
+        this.container.y = y;
+        this.selectedOutline.visible = this.selected && !this.editing;
+        this.editingOutline.visible = this.editing;
+        this.readout.visible = this.editing;
+        this.readoutText.text = 'PITCH ' + PitchOffset.format(this.offset);
+        this.label.visible = !this.editing && this.offset !== 0;
+        this.label.text = PitchOffset.format(this.offset);
+    }
+
+    setOffset(offset) {
+        offset = Math.max(-MAX_OFFSET, Math.min(MAX_OFFSET, Math.round(offset / STEP) * STEP));
+        if (offset === this.offset) return;
+        this.offset = offset;
+        this.lastLocalChange = performance.now();
+        this.send({ pitch_offset: offset });
+        this.show();
+    }
+
+    /**
+     * The offset the server has (aircraft settings), taken unless this page changed it a moment ago (the server's
+     * copy may not have caught up yet).
+     * @param {object} attitude dataObject.aircraft.attitude
+     */
+    fromServer(attitude) {
+        if (!attitude || typeof attitude.pitch_offset !== 'number') return;
+        if (this.editing || performance.now() - this.lastLocalChange < SERVER_HOLD_MS) return;
+        if (attitude.pitch_offset !== this.offset) {
+            this.offset = attitude.pitch_offset;
+            this.show();
+        }
+    }
+
+    /** Long press on the knob while editing (userInput): centre the symbol. */
+    sync() {
+        this.setOffset(0);
+        return true;
+    }
+
+    /** The text that flashes while a sync is held (userInput). */
+    get syncFlashTarget() {
+        return this.readoutText;
+    }
+
+    callback(selected, changable, value) {
+        const editing = selected && changable;
+        if (editing && !this.editing) this.lastEncoderValue = value;    // just pressed: no change yet
+        this.selected = selected;
+        this.editing = editing;
+        if (editing) {
+            const delta = value - this.lastEncoderValue;
+            this.lastEncoderValue = value;
+            if (delta !== 0) this.setOffset(this.offset + delta * STEP);
+        }
+        this.show();
+    }
+}

@@ -1,7 +1,7 @@
 """ Asynchronous I/O based webserver to handle page and websocket"""
 # pyright: reportMissingImports=false
 
-VERSION = "1.7.11"
+VERSION = "1.7.12"
 
 import asyncio
 import ipaddress
@@ -169,6 +169,7 @@ MARKER_INSTRUMENT = {
 }
 ORIENTATION_UPDATE_PERIOD = 0.2  # seconds between display orientation checks (trial timeout)
 AIRCRAFT_SETTINGS_PERIOD = 2     # seconds between checks for a changed aircraft settings file
+PITCH_OFFSET_SAVE_DELAY = 3      # seconds after the last pitch offset change before it is written to the SD card
 
 # Display clients (EFIS/docs/MULTI_CLIENT_PLAN.md). The page served to this computer's own browser
 # (the Pi's kiosk Chromium) is the controller: its commands are processed. Any other page is a
@@ -331,6 +332,7 @@ class MyWebSocketResponse:
         self.orientation = None     # display_orientation.DisplayOrientation, set in main()
         self._orientation_tasks = set()   # keeps the orientation commands from being garbage collected
         self.aircraft_settings = None     # aircraft_settings.AircraftSettings, set in main()
+        self._pitch_offset_save = None    # the pending save of a pitch offset change (a task)
         # Initialize backlight with error handling
         self.backlight = None
         self.last_brightness = None
@@ -590,6 +592,18 @@ class MyWebSocketResponse:
                     if dict_object.get('orientation_revert', False):
                         self._start_orientation(self.orientation_revert())
 
+                # The aircraft symbol's pitch offset from the knob (degrees, + up; allowed in the air): used at once,
+                # saved to aircraft_settings.json a moment after the knob stops
+                pitch_offset = dict_object.get('pitch_offset', None)
+                if pitch_offset is not None and self.aircraft_settings is not None:
+                    previous = self.aircraft_settings.settings["attitude"]["pitch_offset"]
+                    value = self.aircraft_settings.set_pitch_offset(pitch_offset)
+                    if value is not None and value != previous:
+                        if self.data is not None:
+                            self.data.aircraft = self.aircraft_settings.settings
+                        print(f"Pitch offset {previous:+.1f} -> {value:+.1f} deg from the page", flush=True)
+                        self._schedule_pitch_offset_save()
+
                 # New speeds from the Menu's Airspeed Limits or V-Speeds page (refused in the air):
                 # {"aircraft_settings": {"group": "airspeed" or "vspeeds", "speeds": {...}}, "request_id": n}
                 change = dict_object.get('aircraft_settings', None)
@@ -605,6 +619,23 @@ class MyWebSocketResponse:
             # If we didn't get valid JSON data, just ignore it
             if DEBUG:
                 print(f"Error decoding JSON message: {e}")
+
+    def _schedule_pitch_offset_save(self):
+        """Save the settings PITCH_OFFSET_SAVE_DELAY after the last pitch offset change (one write per adjustment,
+        not one per knob click)"""
+        if self._pitch_offset_save is not None:
+            self._pitch_offset_save.cancel()
+        self._pitch_offset_save = None
+        try:
+            self._pitch_offset_save = asyncio.get_running_loop().create_task(self._save_pitch_offset_later())
+        except RuntimeError:        # no running loop (not expected in the server)
+            pass
+
+    async def _save_pitch_offset_later(self):
+        await asyncio.sleep(PITCH_OFFSET_SAVE_DELAY)
+        ok, reason = await asyncio.to_thread(self.aircraft_settings.save)
+        offset = self.aircraft_settings.settings["attitude"]["pitch_offset"]
+        print(f"Pitch offset {offset:+.1f} deg " + ("saved" if ok else f"not saved: {reason}"), flush=True)
 
     def _start_orientation(self, coroutine):
         """Run an orientation or settings command in the background (the message handler is not async)"""

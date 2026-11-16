@@ -182,6 +182,12 @@ Of 31 G5 features: PiEFIS has 10, has 10 in part, lacks 8; 3 do not apply. Secti
     with the arc so the yellow pointer meets one at standard-rate bank. Hidden without a trusted TAS or below
     30 kt TAS. Menu row "Std Rate Marks" On/Off, kept in the browser's storage (default On).
 14. Pitch attitude offset ±5° from the Menu, long press to centre (2.1.7).
+    **Done 2026-11-15** (pitchOffset 1.0.0, page 0.8.40, server 1.7.12, aircraft_settings 1.0.4): on the knob,
+    not the Menu (David's idea, as a mechanical attitude indicator): the last knob item. Selected: 2 px cyan outline
+    round the yellow aircraft symbol; editing: 3 px outline and a "PITCH +2.0°" box under the symbol; 0.5° per
+    click, ±5°; long press while editing centres it. The symbol moves, the horizon and ladder do not. A cyan
+    "+2.0°" stays right of the wing while the offset is not zero. Kept on the Pi (aircraft_settings.json
+    "attitude" group, may be changed in the air), saved 3 s after the knob stops; viewer pages follow it.
 15. ~~CDI on the PFD~~ — dropped 2026-11-15 (David): no full-screen PFD mode planned.
 16. ~~Automatic backlight with an ambient light sensor~~ — dropped 2026-11-15 (David).
 17. Data logging — covered by the planned CAN black-box logger; could also keep the message history.

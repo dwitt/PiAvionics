@@ -31,6 +31,7 @@ import { SelectedAltitudeDisplay } from './selectedAltitudeDisplay.mjs';
 import { TempTimeDisplay, TEMP, TIME } from './tempTimeDisplay.mjs';
 // import { calculateCharacterVerticalCentre } from './utilityFunctions.mjs';
 import { UserInput } from './userInput.mjs';
+import { PitchOffset } from './pitchOffset.mjs';
 import { AirspeedWheel } from './airSpeedWheel.mjs';
 import { AltitudeWheel } from './altitudeWheel.mjs';
 import { Brightness } from './brightness.mjs';
@@ -53,7 +54,7 @@ import { FAILURE_LOOK } from './failureLook.mjs';
 
 // ----------------------------------------------------------------------------
 
-const VERSION = "0.8.39";
+const VERSION = "0.8.40";
 
 // Viewer mode: a page that is not the Pi's own display only watches. It sends
 // nothing to the server, ignores the encoder, and shows the QNH and brightness
@@ -399,6 +400,7 @@ var attitudeIndicator,
     tasDisplay,
     altitudeDisplay,
     selectedAltitudeDisplay,
+    pitchOffset,
     oatDisplay,
     utcDisplay,
     brightness,
@@ -612,6 +614,8 @@ function setup() {
         y-80, 35);      // the width and height of the VSI indicator
 
      var aircraft = new AircraftIndicator(app);
+    // the knob moves the aircraft symbol up or down (G5 review feature 14); drawn over the symbol
+    pitchOffset = new PitchOffset(app, aircraft, attitudeIndicator.pitchRatio, sendCommand);
 
     slipBallIndicator = new SlipBallIndicator(app);
     turnRateIndicator = new TurnRateIndicator(app, app.screen.width / 2, app.screen.height - 19);
@@ -863,6 +867,7 @@ function setup() {
     userInput.registerCallback(headingIndicator);
     userInput.registerCallback(altitudeDisplay);
     userInput.registerCallback(selectedAltitudeDisplay);  // the altitude bug (was the tape and its pop-up box)
+    userInput.registerCallback(pitchOffset);              // the aircraft symbol's pitch offset, last for now
 
     app.ticker.add(delta => DisplayUpdateLoop(delta));
 }
@@ -916,6 +921,7 @@ function DisplayUpdateLoop(delta) {
     airspeedWheel.alert = airspeedRibbon.overspeedLevel(shownAirspeed);
     // V-speed tags kept on the Pi too; with no airspeed they are listed at the foot of the tape instead
     airspeedRibbon.setVSpeeds(dataObject.aircraft && dataObject.aircraft.vspeeds);
+    pitchOffset.fromServer(dataObject.aircraft && dataObject.aircraft.attitude);
     airspeedRibbon.updateTags(shownAirspeed, vspeedTagsShown);
     if (valid.vsi) {
         vsiIndicator.value = dataObject.vsi;
@@ -1376,5 +1382,10 @@ function AircraftIndicator(app){
     aircraftGraphics.y = displayHeight/2;
 
     app.stage.addChild(aircraftGraphics);
+
+    // for the pitch offset (pitchOffset.mjs): the symbol, and its size for the outline
+    this.graphics = aircraftGraphics;
+    this.halfWidth = px1;
+    this.depth = py2;
 
 }

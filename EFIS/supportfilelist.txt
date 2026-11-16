@@ -31,3 +31,4 @@ annunciators.mjs
 modulePanel.mjs
 airspeedLimitsPanel.mjs
 windEstimate.mjs
+pitchOffset.mjs

@@ -20,7 +20,7 @@ screen orientation facts come from the real display_orientation.py with a preten
 
 tests/page_shots.py drives a headless Chrome through the scenarios and saves a screenshot of each.
 """
-VERSION = "1.8.0"
+VERSION = "1.8.1"
 import argparse
 import asyncio
 import copy
@@ -218,7 +218,7 @@ def main():
             "gps_fix_quality": 2, "gps_fix_3d": 3, "gps_declination": -10, "gps_satellites": 11, "gps_hdop": 0.9, "gps_vdop": 1.2,
             # navigation to a waypoint (computed by the real server from the flight plan and GPS position)
             "wpt_id": "CYFD", "dist": 12.3, "dtk": state.get("dtk", 92), "xtrack": state.get("xtrack", 0.4), "to_from": "TO", "bearing": state.get("bearing", 98),
-            "aircraft": {"airspeed": dict(state["limits"]), "vspeeds": dict(settings.settings["vspeeds"])}, "tm_hour": time.gmtime().tm_hour, "tm_min": time.gmtime().tm_min,
+            "aircraft": {"airspeed": dict(state["limits"]), "vspeeds": dict(settings.settings["vspeeds"]), "attitude": dict(settings.settings["attitude"])}, "tm_hour": time.gmtime().tm_hour, "tm_min": time.gmtime().tm_min,
             "aircraft_save": state["aircraft_save"], "controller_state": {"cdi_scale": state.get("cdi_scale", "auto")}, "cdi_auto_nm": state.get("cdi_auto", 5.0), "display": orientation.facts(), "position": state["position"], "pressed": state["pressed"],
         }
         data.update(facts)
@@ -249,6 +249,8 @@ def main():
                 if "cdi_scale" in command:
                     state["cdi_scale"] = command["cdi_scale"]
                     print("CDI scale ->", command["cdi_scale"], flush=True)
+                if "pitch_offset" in command:
+                    print("pitch offset ->", settings.set_pitch_offset(command["pitch_offset"]), flush=True)
                 if isinstance(command.get("log"), str):
                     print("Page:", command["log"], flush=True)
                 if "orientation_request" in command:

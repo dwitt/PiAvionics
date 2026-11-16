@@ -9,12 +9,16 @@ missing or fails the checks is replaced as a whole by its defaults (the log says
 from half a set of speeds; a file that cannot be read gives the defaults for everything.
 
     {"airspeed": {"vso": 35, "vs1": 40, "vfe": 87, "vno": 108, "vne": 171},
-     "vspeeds": {"vr": 52, "vx": 70, "vy": 74, "vg": 61}}
+     "vspeeds": {"vr": 52, "vx": 70, "vy": 74, "vg": 61},
+     "attitude": {"pitch_offset": 0.0}}
+
+The attitude group holds the pitch offset of the yellow aircraft symbol (degrees, + is up, -5 to 5 in 0.5 steps). It
+is set with the knob (the last knob item) and may be changed in the air, unlike the speeds.
 """
 import json
 import os
 
-VERSION = "1.0.3"
+VERSION = "1.0.4"
 
 SAVE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "aircraft_settings.json")
 
@@ -65,10 +69,38 @@ def check_vspeeds(speeds):
     return check_speeds(speeds, DEFAULT_VSPEEDS, "vspeeds")
 
 
+DEFAULT_ATTITUDE = {
+    "pitch_offset": 0.0,    # degrees the aircraft symbol is moved up (+) or down (-)
+}
+PITCH_OFFSET_MAX = 5.0      # degrees either way (as the G5)
+PITCH_OFFSET_STEP = 0.5     # degrees per knob click
+
+
+def check_attitude(attitude):
+    """Return None if the attitude settings are usable, otherwise why not."""
+    if not isinstance(attitude, dict):
+        return "attitude is not a set of settings"
+    value = attitude.get("pitch_offset")
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return "pitch_offset is missing or not a number"
+    if not -PITCH_OFFSET_MAX <= value <= PITCH_OFFSET_MAX:
+        return f"pitch_offset {value} is outside -{PITCH_OFFSET_MAX} to {PITCH_OFFSET_MAX}"
+    return None
+
+
+def clean_pitch_offset(value):
+    """The pitch offset from the page as a number in range on a 0.5 degree step, or None if it is not a number."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or value != value:
+        return None
+    value = max(-PITCH_OFFSET_MAX, min(PITCH_OFFSET_MAX, float(value)))
+    return round(value / PITCH_OFFSET_STEP) * PITCH_OFFSET_STEP
+
+
 # each group: its defaults and its check
 GROUPS = {
     "airspeed": (DEFAULT_AIRSPEED, check_airspeed),
     "vspeeds": (DEFAULT_VSPEEDS, check_vspeeds),
+    "attitude": (DEFAULT_ATTITUDE, check_attitude),
 }
 
 
@@ -151,7 +183,7 @@ class AircraftSettings:
         """Save a new set of speeds for one group ("airspeed" or "vspeeds", from the Menu's pages). `speeds_kt` are
         the airspeed and ground speed in knots (None entries ignored): any above AIRBORNE_KT refuses the change.
         Returns (True, None) or (False, reason); the reason is shown on the page."""
-        if group not in GROUPS:
+        if group not in ("airspeed", "vspeeds"):      # the attitude group is set with the knob (set_pitch_offset)
             return False, f"Unknown settings {group}"
         if any(s is not None and s > AIRBORNE_KT for s in speeds_kt):
             return False, "Not while flying"
@@ -168,4 +200,25 @@ class AircraftSettings:
         changes = ", ".join(f"{n} {old[n]} -> {new[n]}" for n in default if old[n] != new[n]) or "no change"
         self._log(f"aircraft settings: {group} saved from the page ({changes})")
         self.reload_if_changed()
+        return True, None
+
+    def set_pitch_offset(self, value):
+        """Take a new pitch offset from the knob (allowed in the air). It is kept in memory at once (the pages see it
+        on the next update); save() writes the file, which the server does a moment after the knob stops.
+        Returns the offset used, or None if the value was not a number."""
+        value = clean_pitch_offset(value)
+        if value is None:
+            return None
+        old = self.settings["attitude"]["pitch_offset"]
+        if value != old:
+            self.settings = dict(self.settings, attitude={"pitch_offset": value})
+        return value
+
+    def save(self):
+        """Write the settings in memory to the file (in a thread: it waits for the SD card). Returns (ok, reason)."""
+        try:
+            save(self.settings, self._path)
+        except (OSError, ValueError) as e:
+            return False, str(e)
+        self._stamp = self._file_stamp()    # our own write: no reload needed
         return True, None
