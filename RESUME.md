@@ -1,8 +1,30 @@
-# Resume here (last saved 2026-11-15)
+# Resume here (last saved 2026-11-16)
 
 Tell Claude: "Read RESUME.md and carry on."
 
-## Update 2026-11-15 (late evening, latest): ALIGNING, IMU 1.0.19, backup display GPS icon (page 0.8.38, server 1.7.11, IMU_AHRS 1.0.19, Backup_Display 1.7.43, all on the Pi / boards)
+## Update 2026-11-16 (latest): features 13 and 14 (page 0.8.40, server 1.7.12 on the Mac; the Pi has page 0.8.39)
+- **State:** commits 84feebc, 2608daa, 776e435 are on the Mac only, **not pushed**. The Pi has 0.8.39 (feature 13);
+  **feature 14 is not on the Pi yet** and needs a server restart as well as ctrl-shift-R (the server stores the
+  offset). Ask David before deploying and before pushing.
+- **Dropped 15 and 16** (CDI on the PFD, automatic backlight), David's choice.
+- **Feature 13, standard-rate bank marks, done and on the Pi** (attitude-indicator 1.0.5): green triangles outside
+  the bank arc, points on it (David chose these over the G5's arrows), turning with the arc; hidden without a trusted
+  TAS or below 30 kt. Menu row "Std Rate Marks" On/Off (browser storage, default On). Not yet seen with real TAS.
+- **Feature 14, pitch offset, done on the Mac** (pitchOffset.mjs 1.0.0, aircraft_settings 1.0.4, server 1.7.12):
+  David's idea, on the knob as a mechanical AI, the last knob item (after selected altitude, "for now"). Cyan outline
+  round the yellow symbol (2 px selected, 3 px editing), "PITCH +2.0°" box under the symbol while editing (beside
+  the wing it hit the altitude tape), 0.5° per click, ±5°, long press while editing centres it; "+2.0°" beside the
+  wing while not zero. Kept in aircraft_settings.json "attitude" group (allowed in the air; saved 3 s after the knob
+  stops; logged "Pitch offset a -> b deg from the page" and "... saved"). Mockup checks: steps, -5 limit, reload
+  brings it back, long press centres. Note: a hold past 3 s still goes to full brightness (as before).
+- **Feature 12 (message history) set aside** by David. Answered so far: the list lives on the server. Open: keep
+  across a restart, where the [!] goes, record blips under 1 s. The list contents were described to him (every
+  warning / caution, MODULE RESTARTED with the module, knob not answering, GPS fix lost / regained, WMM expiry;
+  not the per-instrument flags or a normal ALIGNING).
+- **Left on the G5 list:** 12 (set aside), 17 (data logging, same as PLAN.md item 24), and the display-look item 10
+  (HSI corners: waypoint / distance and DTK placement; bottom left is empty).
+
+## Update 2026-11-15 (late evening): ALIGNING, IMU 1.0.19, backup display GPS icon (page 0.8.38, server 1.7.11, IMU_AHRS 1.0.19, Backup_Display 1.7.43, all on the Pi / boards)
 - **State:** the Mac, the Pi, the boards and GitHub match. After a page deploy David presses ctrl-shift-R.
 - **Feature 11, ALIGNING, done** (details in G5_REVIEW.md): amber ALIGNING over the attitude while the IMU starts and
   for 3 s after its attitude arrives; IMU_AHRS 1.0.19 sends the invalid marker and STARTING until its filter has run
