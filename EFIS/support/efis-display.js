@@ -54,7 +54,7 @@ import { FAILURE_LOOK } from './failureLook.mjs';
 
 // ----------------------------------------------------------------------------
 
-const VERSION = "0.8.40";
+const VERSION = "0.8.41";
 
 // Viewer mode: a page that is not the Pi's own display only watches. It sends
 // nothing to the server, ignores the encoder, and shows the QNH and brightness
@@ -1383,9 +1383,24 @@ function AircraftIndicator(app){
 
     app.stage.addChild(aircraftGraphics);
 
-    // for the pitch offset (pitchOffset.mjs): the symbol, and its size for the outline
+    // for the pitch offset (pitchOffset.mjs): the symbol, its size, and its knob outline
     this.graphics = aircraftGraphics;
     this.halfWidth = px1;
     this.depth = py2;
+
+    // The symbol's shape in cyan, `edge` px wider than its black edge all round, to draw under it: the knob's
+    // selected / editing line, tight round the wings and the dot
+    this.outline = (edge) => {
+        const outline = new Graphics();
+        outline.moveTo(-px1, 0);
+        outline.lineTo(-1.5 * px4, 0);
+        outline.lineTo(-1.5 * px4, py2);
+        outline.moveTo(px1, 0);
+        outline.lineTo(1.5 * px4, 0);
+        outline.lineTo(1.5 * px4, py2);
+        outline.stroke({ width: 8 + 2 * edge, color: 0x00FFFF, cap: "round", join: "round" });
+        outline.circle(0, 0, 5 + edge).fill({ color: 0x00FFFF });   // the dot: radius 3 and a 2 px black edge
+        return outline;
+    };
 
 }

@@ -1,6 +1,6 @@
 'use strict';
 
-export const VERSION = '1.0.0';
+export const VERSION = '1.0.1';
 
 import { Container, Graphics, Text, TextStyle } from './pixi.mjs';
 
@@ -8,7 +8,8 @@ const CYAN = 0x00FFFF;              // a value the pilot sets, and the knob's se
 const STEP = 0.5;                   // degrees per knob click
 const MAX_OFFSET = 5;               // degrees either way (as the G5)
 const SERVER_HOLD_MS = 3000;        // after a change here, the server's value is not taken for this long
-const OUTLINE_PAD = 8;              // px between the symbol and its outline
+const SELECTED_EDGE = 2;            // px of cyan round the symbol's black edge when selected
+const EDITING_EDGE = 3;             // and when editing
 const READOUT_GAP = 10;             // px between the right wing tip and the offset label
 const READOUT_BELOW = 6;            // px between the outline and the editing readout under it
 
@@ -17,7 +18,7 @@ const READOUT_BELOW = 6;            // px between the outline and the editing re
  * down, as on a mechanical attitude indicator, up to 5 degrees either way in 0.5 degree steps. The horizon and the
  * pitch ladder do not move. It is the last knob item.
  *
- * Selected: a 2 px cyan outline round the symbol. Editing: a 3 px outline and a "PITCH +2.0°" box under the
+ * Selected: a 2 px cyan line tight round the symbol's parts (wings and dot). Editing: a 3 px line and a "PITCH +2.0°" box under the
  * symbol. A long press while editing centres the symbol (sync). While the offset is not zero a small cyan
  * "+2.0°" stays right of the wing, so a moved symbol is never a surprise.
  *
@@ -49,14 +50,15 @@ export class PitchOffset {
         this.container.x = aircraft.graphics.x;
         this.container.y = this.centreY;
 
-        const left = -aircraft.halfWidth - OUTLINE_PAD;
-        const width = 2 * (aircraft.halfWidth + OUTLINE_PAD);
-        const top = -OUTLINE_PAD - 2;
-        const height = aircraft.depth + 2 * OUTLINE_PAD + 4;
-        this.selectedOutline = new Graphics().roundRect(left, top, width, height, 8)
-            .stroke({ width: 2, color: CYAN, alignment: 1 });
-        this.editingOutline = new Graphics().roundRect(left, top, width, height, 8)
-            .stroke({ width: 3, color: CYAN, alignment: 2 / 3 });
+        // the cyan line tight round the wings and the dot: the symbol's shape drawn wider in cyan, under it
+        // (David did not like a box round the whole symbol)
+        this.outlines = new Container();
+        this.outlines.x = aircraft.graphics.x;
+        this.outlines.y = this.centreY;
+        this.selectedOutline = aircraft.outline(SELECTED_EDGE);
+        this.editingOutline = aircraft.outline(EDITING_EDGE);
+        this.outlines.addChild(this.selectedOutline, this.editingOutline);
+        app.stage.addChildAt(this.outlines, app.stage.getChildIndex(aircraft.graphics));
 
         const style = { fontFamily: 'Tahoma', fontSize: 20, fill: CYAN };
         this.label = new Text({ text: '', style: new TextStyle(style) });    // the offset while not editing
@@ -73,11 +75,11 @@ export class PitchOffset {
         this.readout.addChild(new Graphics().roundRect(0, -boxHeight / 2, boxWidth, boxHeight, 8)
             .fill({ color: 0x000000 }).stroke({ width: 3, color: CYAN, alignment: 2 / 3 }));
         this.readout.addChild(this.readoutText);
-        // centred under the symbol's outline (right of the wing it ran into the altitude tape)
+        // centred under the symbol (right of the wing it ran into the altitude tape)
         this.readout.x = -boxWidth / 2;
-        this.readout.y = top + height + READOUT_BELOW + boxHeight / 2;
+        this.readout.y = aircraft.depth + 10 + READOUT_BELOW + boxHeight / 2;
 
-        this.container.addChild(this.selectedOutline, this.editingOutline, this.label, this.readout);
+        this.container.addChild(this.label, this.readout);
         app.stage.addChild(this.container);
         this.show();
     }
@@ -91,6 +93,7 @@ export class PitchOffset {
         const y = this.centreY - this.offset * this.pitchRatio;
         this.aircraft.graphics.y = y;
         this.container.y = y;
+        this.outlines.y = y;
         this.selectedOutline.visible = this.selected && !this.editing;
         this.editingOutline.visible = this.editing;
         this.readout.visible = this.editing;
