@@ -1,6 +1,6 @@
 'use strict';
 
-export const VERSION = '1.0.1';
+export const VERSION = '1.0.2';
 
 import { Container, Graphics, Text, TextStyle } from './pixi.mjs';
 
@@ -19,8 +19,8 @@ const READOUT_BELOW = 6;            // px between the outline and the editing re
  * pitch ladder do not move. It is the last knob item.
  *
  * Selected: a 2 px cyan line tight round the symbol's parts (wings and dot). Editing: a 3 px line and a "PITCH +2.0°" box under the
- * symbol. A long press while editing centres the symbol (sync). While the offset is not zero a small cyan
- * "+2.0°" stays right of the wing, so a moved symbol is never a surprise.
+ * symbol. A long press while editing centres the symbol (sync). While selected (not editing) a small cyan
+ * "+2.0°" shows right of the wing; otherwise nothing shows the offset (David: only when selected).
  *
  * The offset is kept on the Pi (aircraft_settings.json, attitude group): the page sends each change and takes the
  * server's value at start, and from other pages, when it has not changed it itself for a moment.
@@ -61,7 +61,7 @@ export class PitchOffset {
         app.stage.addChildAt(this.outlines, app.stage.getChildIndex(aircraft.graphics));
 
         const style = { fontFamily: 'Tahoma', fontSize: 20, fill: CYAN };
-        this.label = new Text({ text: '', style: new TextStyle(style) });    // the offset while not editing
+        this.label = new Text({ text: '', style: new TextStyle(style) });    // the offset while selected
         this.label.anchor.set(0, 0.5);
         this.label.x = aircraft.halfWidth + READOUT_GAP;
         this.label.y = aircraft.depth / 2;
@@ -98,7 +98,7 @@ export class PitchOffset {
         this.editingOutline.visible = this.editing;
         this.readout.visible = this.editing;
         this.readoutText.text = 'PITCH ' + PitchOffset.format(this.offset);
-        this.label.visible = !this.editing && this.offset !== 0;
+        this.label.visible = this.selected && !this.editing;    // only while selected (David), editing has the box
         this.label.text = PitchOffset.format(this.offset);
     }
 
