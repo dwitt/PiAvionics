@@ -1,8 +1,8 @@
 'use strict';
 
-export const VERSION = '1.0.2';
+export const VERSION = '1.0.3';
 
-import { Container, Graphics, Text, TextStyle } from './pixi.mjs';
+import { Container, Text, TextStyle } from './pixi.mjs';
 
 const CYAN = 0x00FFFF;              // a value the pilot sets, and the knob's selected / editing outline
 const STEP = 0.5;                   // degrees per knob click
@@ -11,16 +11,15 @@ const SERVER_HOLD_MS = 3000;        // after a change here, the server's value i
 const SELECTED_EDGE = 2;            // px of cyan round the symbol's black edge when selected
 const EDITING_EDGE = 3;             // and when editing
 const READOUT_GAP = 10;             // px between the right wing tip and the offset label
-const READOUT_BELOW = 6;            // px between the outline and the editing readout under it
 
 /**
  * Pitch attitude offset (G5 review feature 14, G5 guide 2.1.7): the knob moves the yellow aircraft symbol up or
  * down, as on a mechanical attitude indicator, up to 5 degrees either way in 0.5 degree steps. The horizon and the
  * pitch ladder do not move. It is the last knob item.
  *
- * Selected: a 2 px cyan line tight round the symbol's parts (wings and dot). Editing: a 3 px line and a "PITCH +2.0°" box under the
- * symbol. A long press while editing centres the symbol (sync). While selected (not editing) a small cyan
- * "+2.0°" shows right of the wing; otherwise nothing shows the offset (David: only when selected).
+ * Selected: a 2 px cyan line tight round the symbol's parts (wings and dot) and the offset ("+2.0°") in cyan right of
+ * the wing. Editing: a 3 px line and the same offset in bold. Not selected: nothing shows the offset (David). A long
+ * press while editing centres the symbol (sync).
  *
  * The offset is kept on the Pi (aircraft_settings.json, attitude group): the page sends each change and takes the
  * server's value at start, and from other pages, when it has not changed it itself for a moment.
@@ -61,25 +60,13 @@ export class PitchOffset {
         app.stage.addChildAt(this.outlines, app.stage.getChildIndex(aircraft.graphics));
 
         const style = { fontFamily: 'Tahoma', fontSize: 20, fill: CYAN };
-        this.label = new Text({ text: '', style: new TextStyle(style) });    // the offset while selected
+        // the offset beside the wing while selected or editing, bold while editing (David: no PITCH box)
+        this.label = new Text({ text: '', style: new TextStyle(style) });
         this.label.anchor.set(0, 0.5);
         this.label.x = aircraft.halfWidth + READOUT_GAP;
         this.label.y = aircraft.depth / 2;
 
-        this.readout = new Container();         // the box while editing
-        this.readoutText = new Text({ text: 'PITCH +0.0°', style: new TextStyle(style) });
-        this.readoutText.anchor.set(0, 0.5);
-        this.readoutText.x = 8;
-        const boxWidth = this.readoutText.width + 16;
-        const boxHeight = 30;
-        this.readout.addChild(new Graphics().roundRect(0, -boxHeight / 2, boxWidth, boxHeight, 8)
-            .fill({ color: 0x000000 }).stroke({ width: 3, color: CYAN, alignment: 2 / 3 }));
-        this.readout.addChild(this.readoutText);
-        // centred under the symbol (right of the wing it ran into the altitude tape)
-        this.readout.x = -boxWidth / 2;
-        this.readout.y = aircraft.depth + 10 + READOUT_BELOW + boxHeight / 2;
-
-        this.container.addChild(this.label, this.readout);
+        this.container.addChild(this.label);
         app.stage.addChild(this.container);
         this.show();
     }
@@ -96,9 +83,8 @@ export class PitchOffset {
         this.outlines.y = y;
         this.selectedOutline.visible = this.selected && !this.editing;
         this.editingOutline.visible = this.editing;
-        this.readout.visible = this.editing;
-        this.readoutText.text = 'PITCH ' + PitchOffset.format(this.offset);
-        this.label.visible = this.selected && !this.editing;    // only while selected (David), editing has the box
+        this.label.visible = this.selected;                     // selected or editing only (David)
+        this.label.style.fontWeight = this.editing ? 'bold' : 'normal';
         this.label.text = PitchOffset.format(this.offset);
     }
 
@@ -133,7 +119,7 @@ export class PitchOffset {
 
     /** The text that flashes while a sync is held (userInput). */
     get syncFlashTarget() {
-        return this.readoutText;
+        return this.label;
     }
 
     callback(selected, changable, value) {

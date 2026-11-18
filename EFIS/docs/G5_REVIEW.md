@@ -185,9 +185,10 @@ Of 31 G5 features: PiEFIS has 10, has 10 in part, lacks 8; 3 do not apply. Secti
     **Done 2026-11-15** (pitchOffset 1.0.0, page 0.8.40, server 1.7.12, aircraft_settings 1.0.4): on the knob,
     not the Menu (David's idea, as a mechanical attitude indicator): the last knob item. Selected: 2 px cyan outline
     tight round the wings and dot of the yellow aircraft symbol (2026-11-18, was a box; David); editing: 3 px
-    line and a "PITCH +2.0°" box under the symbol (pitchOffset 1.0.1, page 0.8.41); 0.5° per
+    line (pitchOffset 1.0.1, page 0.8.41); 0.5° per
     click, ±5°; long press while editing centres it. The symbol moves, the horizon and ladder do not. A cyan
-    "+2.0°" right of the wing while selected only (2026-11-18, David; it used to stay whenever not zero). Kept on the Pi (aircraft_settings.json
+    "+2.0°" right of the wing only while selected or editing, bold while editing (2026-11-18, David; it used to
+    stay whenever not zero, and editing had a "PITCH +2.0°" box under the symbol; pitchOffset 1.0.3, page 0.8.43). Kept on the Pi (aircraft_settings.json
     "attitude" group, may be changed in the air), saved 3 s after the knob stops; viewer pages follow it.
 15. ~~CDI on the PFD~~ — dropped 2026-11-15 (David): no full-screen PFD mode planned.
 16. ~~Automatic backlight with an ambient light sensor~~ — dropped 2026-11-15 (David).
