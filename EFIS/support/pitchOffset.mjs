@@ -1,6 +1,6 @@
 'use strict';
 
-export const VERSION = '1.0.4';
+export const VERSION = '1.0.5';
 
 import { Container, Graphics, Text, TextStyle } from './pixi.mjs';
 
@@ -22,8 +22,9 @@ const LABEL_PAD_Y = 1;              // and above and below it
  * pitch ladder do not move. It is the last knob item.
  *
  * Selected: a 2 px cyan line tight round the symbol's parts (wings and dot) and the offset ("+2.0°") in cyan right of
- * the wing on a semi-transparent black background with round corners (as the ribbons). Editing: a 3 px line and the same offset in bold. Not selected: nothing shows the offset (David). A long
- * press while editing centres the symbol (sync).
+ * the wing, right justified on a fixed-size semi-transparent black background with round corners (as the ribbons).
+ * Editing: a 3 px line and the same offset in bold. Not selected: nothing shows the offset (David). A long press
+ * while editing centres the symbol (sync).
  *
  * The offset is kept on the Pi (aircraft_settings.json, attitude group): the page sends each change and takes the
  * server's value at start, and from other pages, when it has not changed it itself for a moment.
@@ -66,12 +67,28 @@ export class PitchOffset {
         const style = { fontFamily: 'Tahoma', fontSize: 20, fill: CYAN };
         // the offset beside the wing while selected or editing, bold while editing (David: no PITCH box)
         this.label = new Text({ text: '', style: new TextStyle(style) });
-        this.label.anchor.set(0, 0.5);
-        this.label.x = aircraft.halfWidth + READOUT_GAP;
+
+        // the widest the label gets (bold, five degrees either way), so the box is a fixed size and the number,
+        // right justified in it, does not move as it goes through zero or turns bold (David)
+        this.label.style.fontWeight = 'bold';
+        let textWidth = 0;
+        for (const offset of [MAX_OFFSET, -MAX_OFFSET]) {
+            this.label.text = PitchOffset.format(offset);
+            textWidth = Math.max(textWidth, this.label.width);
+        }
+        const boxLeft = aircraft.halfWidth + READOUT_GAP - LABEL_PAD_X;
+        const boxWidth = textWidth + 2 * LABEL_PAD_X;
+        const boxHeight = this.label.height + 2 * LABEL_PAD_Y;
+
+        this.label.anchor.set(1, 0.5);
+        this.label.x = boxLeft + boxWidth - LABEL_PAD_X;
         this.label.y = aircraft.depth / 2;
 
         // a semi-transparent black background behind the label, as the ribbons have, so it reads over the sky
         this.labelBack = new Graphics();
+        this.labelBack.roundRect(boxLeft, this.label.y - boxHeight / 2, boxWidth, boxHeight, LABEL_CORNER);
+        this.labelBack.fill({ color: 0x000000, alpha: LABEL_BACK_ALPHA });
+        this.labelBack.stroke({ color: 0x000000, alpha: LABEL_BACK_ALPHA, width: 1, alignment: 0 });
 
         this.container.addChild(this.labelBack, this.label);
         app.stage.addChild(this.container);
@@ -93,19 +110,7 @@ export class PitchOffset {
         this.label.visible = this.selected;                     // selected or editing only (David)
         this.label.style.fontWeight = this.editing ? 'bold' : 'normal';
         this.label.text = PitchOffset.format(this.offset);
-        this.drawLabelBack();
-    }
-
-    /** The label's background, sized to the label (its width changes with the text and bold). */
-    drawLabelBack() {
-        this.labelBack.clear();
-        this.labelBack.visible = this.label.visible;
-        if (!this.label.visible) return;
-        const w = this.label.width + 2 * LABEL_PAD_X;
-        const h = this.label.height + 2 * LABEL_PAD_Y;
-        this.labelBack.roundRect(this.label.x - LABEL_PAD_X, this.label.y - h / 2, w, h, LABEL_CORNER);
-        this.labelBack.fill({ color: 0x000000, alpha: LABEL_BACK_ALPHA });
-        this.labelBack.stroke({ color: 0x000000, alpha: LABEL_BACK_ALPHA, width: 1, alignment: 0 });
+        this.labelBack.visible = this.selected;
     }
 
     setOffset(offset) {
