@@ -1,6 +1,6 @@
 'use strict';
 
-export const VERSION = '1.0.5';
+export const VERSION = '1.0.6';
 
 import { Container, Graphics, Text, TextStyle } from './pixi.mjs';
 
@@ -12,7 +12,8 @@ const SELECTED_EDGE = 2;            // px of cyan round the symbol's black edge 
 const EDITING_EDGE = 3;             // and when editing
 const READOUT_GAP = 10;             // px between the right wing tip and the offset label
 const LABEL_BACK_ALPHA = 0.25;      // the label's black background, as the ribbons (0.25 fill, 1 px edge)
-const LABEL_PAD_X = 6;              // px of background either side of the label
+const LABEL_PAD_X = 6;              // px of background right of the label
+const LABEL_PAD_LEFT = 2;           // and left of the widest label (clear of the wing's cyan outline, David)
 const LABEL_CORNER = 8;             // corner radius, the stand-alone box standard
 const LABEL_PAD_Y = 1;              // and above and below it
 
@@ -76,8 +77,8 @@ export class PitchOffset {
             this.label.text = PitchOffset.format(offset);
             textWidth = Math.max(textWidth, this.label.width);
         }
-        const boxLeft = aircraft.halfWidth + READOUT_GAP - LABEL_PAD_X;
-        const boxWidth = textWidth + 2 * LABEL_PAD_X;
+        const boxLeft = aircraft.halfWidth + READOUT_GAP - LABEL_PAD_LEFT;
+        const boxWidth = textWidth + LABEL_PAD_LEFT + LABEL_PAD_X;
         const boxHeight = this.label.height + 2 * LABEL_PAD_Y;
 
         this.label.anchor.set(1, 0.5);
