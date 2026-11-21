@@ -2,13 +2,15 @@
 
 Tell Claude: "Read RESUME.md and carry on."
 
-## Update 2026-11-20: pitch offset look reworked (page 0.8.44, pitchOffset 1.0.4, on the Pi)
+## Update 2026-11-20: pitch offset look reworked (page 0.8.45, pitchOffset 1.0.5, on the Pi)
 - **State:** the Mac, the Pi and GitHub match (page files only, no server restart; David presses ctrl-shift-R).
 - **Pitch offset look, after feature 14:** the knob's selected (2 px) / editing (3 px) outline is now the symbol's
   own shape drawn wider in cyan, not a box; one offset label beside the wing, shown only while the item is
   selected and bold while editing; the "PITCH +2.0°" box under the symbol is gone.
 - **Label background (1.0.4):** black 0.25 fill and 1 px edge as the ribbons, 8 px round corners, shown with the
   label. David picked 0.25 over 0.5 "to try"; not yet seen on the Pi.
+- **Fixed-size box (1.0.5):** sized for the widest reading (±5.0° bold), number right justified, so nothing moves
+  going through zero or turning bold. About 6 px from the altitude readout box at small offsets.
 
 ## Update 2026-11-16: features 13 and 14 (page 0.8.40, server 1.7.12, all on the Pi)
 - **State:** the Mac, the Pi and GitHub match (feature 14 deployed and the server restarted 2026-11-16; pushed).
