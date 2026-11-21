@@ -1,18 +1,24 @@
-# Resume here (last saved 2026-11-20)
+# Resume here (last saved 2026-11-21)
 
 Tell Claude: "Read RESUME.md and carry on."
 
-## Update 2026-11-20: pitch offset look reworked (page 0.8.46, pitchOffset 1.0.6, on the Pi)
+## Update 2026-11-20 (latest): pitch offset look reworked (page 0.8.46, pitchOffset 1.0.6, on the Pi)
 - **State:** the Mac, the Pi and GitHub match (page files only, no server restart; David presses ctrl-shift-R).
 - **Pitch offset look, after feature 14:** the knob's selected (2 px) / editing (3 px) outline is now the symbol's
   own shape drawn wider in cyan, not a box; one offset label beside the wing, shown only while the item is
   selected and bold while editing; the "PITCH +2.0°" box under the symbol is gone.
 - **Label background (1.0.4):** black 0.25 fill and 1 px edge as the ribbons, 8 px round corners, shown with the
-  label. David picked 0.25 over 0.5 "to try"; not yet seen on the Pi.
+  label. David picked 0.25 over 0.5 "to try".
 - **Fixed-size box (1.0.5):** sized for the widest reading (±5.0° bold), number right justified, so nothing moves
   going through zero or turning bold. About 6 px from the altitude readout box at small offsets.
 - **Box clear of the wing (1.0.6):** left padding 2 px (right 6), so the box starts 8 px from the wing tip, clear
-  of the cyan outline; the number did not move.
+  of the cyan outline; the number did not move. David saw each step on the Pi and asked for the next.
+- **Mockups this session:** the fake feed needs a venv with aiohttp (and pillow for comparison images); the pitch
+  offset is one knob click back: `states.py OUT position=-1 shot:sel pressed=1 pressed=0 position=4 shot:edit`.
+- **Next: David to choose** between display item 10 (HSI corners: waypoint / distance and DTK placement, bottom
+  left empty; render layouts on the Mac first), feature 12 (message history, waiting on his three answers: keep
+  across a restart, where the [!] goes, record blips under 1 s), or feature 17 / PLAN.md item 24 (data logging).
+  Flight checks still open: wind, track marker, ALIGNING settle time, standard-rate marks with real TAS.
 
 ## Update 2026-11-16: features 13 and 14 (page 0.8.40, server 1.7.12, all on the Pi)
 - **State:** the Mac, the Pi and GitHub match (feature 14 deployed and the server restarted 2026-11-16; pushed).
