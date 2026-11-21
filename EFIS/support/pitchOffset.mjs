@@ -1,8 +1,8 @@
 'use strict';
 
-export const VERSION = '1.0.3';
+export const VERSION = '1.0.4';
 
-import { Container, Text, TextStyle } from './pixi.mjs';
+import { Container, Graphics, Text, TextStyle } from './pixi.mjs';
 
 const CYAN = 0x00FFFF;              // a value the pilot sets, and the knob's selected / editing outline
 const STEP = 0.5;                   // degrees per knob click
@@ -11,6 +11,10 @@ const SERVER_HOLD_MS = 3000;        // after a change here, the server's value i
 const SELECTED_EDGE = 2;            // px of cyan round the symbol's black edge when selected
 const EDITING_EDGE = 3;             // and when editing
 const READOUT_GAP = 10;             // px between the right wing tip and the offset label
+const LABEL_BACK_ALPHA = 0.25;      // the label's black background, as the ribbons (0.25 fill, 1 px edge)
+const LABEL_PAD_X = 6;              // px of background either side of the label
+const LABEL_CORNER = 8;             // corner radius, the stand-alone box standard
+const LABEL_PAD_Y = 1;              // and above and below it
 
 /**
  * Pitch attitude offset (G5 review feature 14, G5 guide 2.1.7): the knob moves the yellow aircraft symbol up or
@@ -18,7 +22,7 @@ const READOUT_GAP = 10;             // px between the right wing tip and the off
  * pitch ladder do not move. It is the last knob item.
  *
  * Selected: a 2 px cyan line tight round the symbol's parts (wings and dot) and the offset ("+2.0°") in cyan right of
- * the wing. Editing: a 3 px line and the same offset in bold. Not selected: nothing shows the offset (David). A long
+ * the wing on a semi-transparent black background with round corners (as the ribbons). Editing: a 3 px line and the same offset in bold. Not selected: nothing shows the offset (David). A long
  * press while editing centres the symbol (sync).
  *
  * The offset is kept on the Pi (aircraft_settings.json, attitude group): the page sends each change and takes the
@@ -66,7 +70,10 @@ export class PitchOffset {
         this.label.x = aircraft.halfWidth + READOUT_GAP;
         this.label.y = aircraft.depth / 2;
 
-        this.container.addChild(this.label);
+        // a semi-transparent black background behind the label, as the ribbons have, so it reads over the sky
+        this.labelBack = new Graphics();
+
+        this.container.addChild(this.labelBack, this.label);
         app.stage.addChild(this.container);
         this.show();
     }
@@ -86,6 +93,19 @@ export class PitchOffset {
         this.label.visible = this.selected;                     // selected or editing only (David)
         this.label.style.fontWeight = this.editing ? 'bold' : 'normal';
         this.label.text = PitchOffset.format(this.offset);
+        this.drawLabelBack();
+    }
+
+    /** The label's background, sized to the label (its width changes with the text and bold). */
+    drawLabelBack() {
+        this.labelBack.clear();
+        this.labelBack.visible = this.label.visible;
+        if (!this.label.visible) return;
+        const w = this.label.width + 2 * LABEL_PAD_X;
+        const h = this.label.height + 2 * LABEL_PAD_Y;
+        this.labelBack.roundRect(this.label.x - LABEL_PAD_X, this.label.y - h / 2, w, h, LABEL_CORNER);
+        this.labelBack.fill({ color: 0x000000, alpha: LABEL_BACK_ALPHA });
+        this.labelBack.stroke({ color: 0x000000, alpha: LABEL_BACK_ALPHA, width: 1, alignment: 0 });
     }
 
     setOffset(offset) {
