@@ -1,8 +1,14 @@
-# Resume here (last saved 2026-11-16)
+# Resume here (last saved 2026-11-20)
 
 Tell Claude: "Read RESUME.md and carry on."
 
-## Update 2026-11-16 (latest): features 13 and 14 (page 0.8.40, server 1.7.12, all on the Pi)
+## Update 2026-11-20: pitch offset look reworked (page 0.8.43, pitchOffset 1.0.3, on the Pi)
+- **State:** the Mac, the Pi and GitHub match (page files only, no server restart; David presses ctrl-shift-R).
+- **Pitch offset look, after feature 14:** the knob's selected (2 px) / editing (3 px) outline is now the symbol's
+  own shape drawn wider in cyan, not a box; one offset label beside the wing, shown only while the item is
+  selected and bold while editing; the "PITCH +2.0°" box under the symbol is gone.
+
+## Update 2026-11-16: features 13 and 14 (page 0.8.40, server 1.7.12, all on the Pi)
 - **State:** the Mac, the Pi and GitHub match (feature 14 deployed and the server restarted 2026-11-16; pushed).
 - **Dropped 15 and 16** (CDI on the PFD, automatic backlight), David's choice.
 - **Feature 13, standard-rate bank marks, done and on the Pi** (attitude-indicator 1.0.5): green triangles outside
